@@ -1,3 +1,9 @@
+# Updated report companion: revised planning and incremental HTML build.
+# --run=revised-html requires fitted statistics and the current validated report layout.
+# Raw-IR preparation remains a separate mode; this does not freshly render every chapter.
+# Corrected DHS Table 7.14 five-year reason window; first-year rates unchanged.
+# Updated full-frame inference and five planning sets with 95% intervals.
+# --run=survey-update rebuilds active numerical outputs from a supplied IR file.
 # Parameterized IR preparation: --run=prepare; --validate-input checks inputs only.
 #!/usr/bin/env Rscript
 # DRC — numerical source companion to the final HTML
@@ -153,7 +159,7 @@ def main():
     if a.country=='DRC':
         issues += [dict(section='method-duration-class-discontinuation',issue='Original grouping uses Pill/Injectables only for short acting; condoms are omitted relative to Ethiopia.',status='definition_discrepancy'),
                    dict(section='selected-reason-risk-strata',issue='Original DRC bands are in-sample predictions; Ethiopia uses held-out PSU predictions.',status='method_discrepancy'),
-                   dict(section='historical-duration-aware-planning',issue='Three tables are present; Ethiopia contains eight. Same section names do not establish coverage.',status='coverage_discrepancy')]
+                   dict(section='historical-duration-aware-planning',issue='Confirm all eight current planning tables against the active survey-update numerical outputs; saved-cell matches alone do not validate inference.',status='verification_scope')]
     if a.country=='Nigeria':issues += [dict(section='regional-actionable-method-mix-decomposition',issue='Original code pools IUD with other modern and uses a different cohort/estimator from the Ethiopia pairwise shared-mix analysis.',status='method_discrepancy'),dict(section='three-approach-planning',issue='Saved planning uses projected 2025 stock and 2026 scenarios; earlier requested 2024 to 2025 horizon needs resolution.',status='horizon_review')]
     issues += [dict(section='historical-duration-aware-planning; aft-duration-aware-planning',issue='mCPR equivalents use year-end nonmodern counts with observed switching/restarting; distinguish from gross actionable original-method endings.',status='estimand_review')]
     summary=dict(country=a.country,report_sha256=hashlib.sha256(a.report_html.read_bytes()).hexdigest(),
@@ -176,12 +182,12 @@ if __name__=='__main__':main()
 )-----"
 COUNTRY <- "DRC"
 REPORT_BASENAME <- "DRC_discontinuation_analysis.html"
-REPORT_SHA256 <- "60c6e48d07e0c6fd1c411fef720979513ca9ab8cfd625d5c109957327e9c35f0"
+REPORT_SHA256 <- "1f871b9d7c937713cc95311ef4b57601647ca57463b91e3f02ce7405de69e1ca"
 RAW_RELATIVE <- "Data/CDIR81FL.dta"
 CORE_MODULES <- c("01_drc_calendar_life_table.R")
 PLANNING_MODULES <- c("01_drc_calendar_life_table.R", "02_drc_descriptive_analyses.R", "05_drc_current_user_planning.R", "06_drc_historical_landmarks.R", "07_drc_duration_aware_planning.R", "08_drc_aft_duration_by_method_cause.R", "12_drc_2026_planning.py", "203_build_drc_planning_tables.py")
-REQUIRED_R_PACKAGES <- c('digest','haven','jsonlite','survey','survival','nnet','ggplot2','grid','gridExtra','parallel','scales','sf','svglite')
-BOOTSTRAP_ENV <- c("DRC_BOOTSTRAP_REPS", "DRC_MODEL_BOOTSTRAP_REPS", "DRC_SELECTED_BOOTSTRAP_REPS", "DRC_SELECTED_MODEL_BOOTSTRAP_REPS", "DRC_SUBGROUP_BOOTSTRAP_REPS", "REFERENCE_BOOTSTRAP_REPS", "REFERENCE_MODEL_REPS")
+REQUIRED_R_PACKAGES <- c('digest','haven','jsonlite','survey','survival','nnet','ggplot2','grid','gridExtra','parallel','scales','sf','svglite','abind','MASS')
+BOOTSTRAP_ENV <- c("DRC_PLANNING_BOOTSTRAP_REPS","DRC_BOOTSTRAP_REPS", "DRC_MODEL_BOOTSTRAP_REPS", "DRC_SELECTED_BOOTSTRAP_REPS", "DRC_SELECTED_MODEL_BOOTSTRAP_REPS", "DRC_SUBGROUP_BOOTSTRAP_REPS", "REFERENCE_BOOTSTRAP_REPS", "REFERENCE_MODEL_REPS")
 SECTION_INDEX <- r"-----(section_id	title
 overview	Modern-method discontinuation
 initiation	EC-inclusive initiation diagnostic
@@ -298,7 +304,7 @@ parse_options <- function(args) {
     i <- i + 1L
   }
   allowed <- c('list','validate','extract','overwrite','help','packages','run',
-               'project-root','ir-file','auxiliary-dir','python','bootstrap-reps','reconcile','report-html','fresh-root','audit-output','verify-planning','expected-ir-sha256','validate-input')
+               'project-root','ir-file','auxiliary-dir','python','bootstrap-reps','reconcile','report-html','fresh-root','audit-output','verify-planning','expected-ir-sha256','validate-input','statistics-dir','base-html','revision-inputs')
   if (length(setdiff(names(out), allowed))) stop('Unrecognized option.')
   out
 }
@@ -389,6 +395,10 @@ prepare_ir <- function(root, ir_file) {
 
 main <- function() {
   opt <- parse_options(commandArgs(trailingOnly=TRUE))
+  if (identical(opt$run,"build-html")) opt$run <- "revised-html"
+  if (identical(opt$run,"build-planning")) opt$run <- "revised-planning"
+  if (isTRUE(opt$help)) cat("Build modes: --run=build-html|build-planning, --statistics-dir, --base-html, --revision-inputs. See the revised README for the build boundary.\n")
+  if (!is.null(opt$run) && opt$run %in% c("revised-html","revised-planning")) return(run_revised_report(opt))
   if (isTRUE(opt$reconcile) || isTRUE(opt[['verify-planning']])) {
     if (is.null(opt[['report-html']]) || is.null(opt[['project-root']]))
       stop('Reconciliation requires --report-html and --project-root.')
@@ -407,7 +417,7 @@ main <- function() {
   }
   if (!length(opt) || isTRUE(opt$help)) {
     cat('Portable numerical source collection for ', COUNTRY, '.\n',sep='')
-    cat('Options: --list, --validate, --validate-input, --packages, --extract, --run=prepare|core|planning|reference|MODULE[,MODULE], --reconcile\n')
+    cat('Options: --list, --validate, --validate-input, --packages, --extract, --run=prepare|survey-update|survey-planning|core|reference|MODULE[,MODULE], --reconcile\n')
     cat('Inputs: --project-root, --ir-file, --auxiliary-dir; optional --expected-ir-sha256, --python and --bootstrap-reps.\n')
     cat('No analyses run without --run. Original modules and supplied inputs determine the outputs.\n')
     return(invisible(NULL))
@@ -459,7 +469,12 @@ main <- function() {
   if(preparing)selected<-c(CORE_MODULES,'210_prepare_analysis_inputs.R')
   if (identical(selected,'core')) selected <- CORE_MODULES
   if (identical(selected,'reference')) selected <- '200_reference_analysis_extensions.R'
-  if (identical(selected,'planning')) selected <- PLANNING_MODULES
+  if(length(selected)==1L && selected %in% c('planning','survey-update')) {
+    selected <- c("01_drc_calendar_life_table.R","210_prepare_analysis_inputs.R","02_drc_descriptive_analyses.R","17_drc_selected_reason_subgroups.R","214_fit_point_models.R","211_full_frame_survey_inference.R","05_drc_current_user_planning.R","06_drc_historical_landmarks.R","07_drc_duration_aware_planning.R","08_drc_aft_duration_by_method_cause.R","212_planning_survey_ci.R","213_summarize_planning.R","216_reconcile_reason_distributions.R")
+    # Point-only legacy tables are immediately followed by full-frame inference.
+    Sys.setenv(DRC_BOOTSTRAP_REPS='0',DRC_SELECTED_BOOTSTRAP_REPS='0')
+  }
+  if(identical(selected,'survey-planning'))selected<-c('212_planning_survey_ci.R','213_summarize_planning.R')
   if (any(!selected %in% names(MODULES))) stop('Unknown module; use --list for filenames.')
   if (!nzchar(ir) && any(selected %in% CORE_MODULES))
     stop('Supply --ir-file or DHS_IR_FILE before running the core analysis.')
@@ -1368,7 +1383,7 @@ stopifnot(abs(sum(reasons$cause_specific_12_month_pct[reasons$scope=='National']
 
 # Stratified PSU bootstrap for national, province, and national-method rates.
 focus<-c('National',province_names,paste0('National: ',c('Injectables','Implants','Pill','IUD','Other modern')))
-frame<-unique(e[,c('cluster','stratum')]);frame$id<-seq_len(nrow(frame))
+frame <- full_survey_frame();frame$id<-seq_len(nrow(frame))
 stopifnot(!anyDuplicated(frame$cluster));groups<-split(frame$id,frame$stratum)
 B<-as.integer(Sys.getenv('DRC_BOOTSTRAP_REPS',unset='250'))
 draw<-array(NA_real_,c(B,length(focus),4L,2L),dimnames=list(NULL,focus,c('3','6','9','12'),c('all','actionable')))
@@ -2091,7 +2106,7 @@ predict_cif <- function(model,zone,weights){
   }
   100*weighted.mean(cumulative,weights)
 }
-frame <- unique(e[,c('cluster','stratum')]); frame$id <- seq_len(nrow(frame))
+frame <- full_survey_frame(); frame$id <- seq_len(nrow(frame))
 groups <- split(frame$id,frame$stratum)
 stopifnot(!anyDuplicated(frame$cluster))
 # One analytic-sample stratum has only one contributing PSU. Hold that PSU
@@ -2234,7 +2249,7 @@ point <- do.call(rbind,lapply(names(scopes),function(key){
     as.list(cause),as.list(shares),
     limited_precision=n<30L)
 }))
-frame <- unique(e[,c('cluster','stratum')]);frame$id <- seq_len(nrow(frame))
+frame <- full_survey_frame();frame$id <- seq_len(nrow(frame))
 stopifnot(!anyDuplicated(frame$cluster))
 groups <- split(frame$id,frame$stratum)
 B <- as.integer(Sys.getenv('DRC_SELECTED_BOOTSTRAP_REPS','120'))
@@ -2397,7 +2412,7 @@ person<-readRDS(file.path(derived,'drc_2023_24_person_month.rds'))
 episodes<-readRDS(file.path(derived,'drc_2023_24_model_episode_covariates.rds'))
 person$any_end<-as.integer(person$outcome!='continue')
 options(survey.lonely.psu='adjust')
-design<-survey::svydesign(ids=~cluster,strata=~stratum,weights=~wt,data=person,nest=TRUE)
+design<-survey::svydesign(ids=~cluster,strata=~stratum,weights=~wt,data=complete_survey_data(person),nest=TRUE)
 form<-any_end~month+method_group+zone_name+age_group+parity_group+marital_group+education+wealth+residence+start_year
 fit<-survey::svyglm(form,design=design,family=quasibinomial())
 saveRDS(fit,file.path(derived,'drc_all_reason_full_model.rds'))
@@ -2494,7 +2509,7 @@ predict_all <- function(fit, w) {
   }, numeric(1))
 }
 point <- predict_all(model, reference$wt)
-frame <- unique(e[, c('cluster', 'stratum')]); frame$id <- seq_len(nrow(frame))
+frame <- full_survey_frame(); frame$id <- seq_len(nrow(frame))
 groups <- split(frame$id, frame$stratum)
 stopifnot(!anyDuplicated(frame$cluster))
 B <- as.integer(Sys.getenv('DRC_SUBGROUP_BOOTSTRAP_REPS', '120'))
@@ -2540,7 +2555,7 @@ write.csv(spec, file.path(support, 'drc_actionable_adjusted_subgroups.csv'), row
 MODULES[["34_drc_html_extra_analyses.R"]] <- list(
   language="R",
   original_sha256="a70af052f11ad01c4f6addd114122cf201b692c9b6154a51c5f7cc1368f2a289",
-  packaged_sha256="a70af052f11ad01c4f6addd114122cf201b692c9b6154a51c5f7cc1368f2a289",
+  packaged_sha256="4c4728e5d570340d50b32186df7848a892b244dbf9dc1a44db31fcae710a41e1",
   args=character(),
   code=r"-----(#!/usr/bin/env Rscript
 # DRC descriptive analyses needed for the Ethiopia-sequence HTML.
@@ -2551,7 +2566,7 @@ e <- readRDS(file.path(root, 'Data', 'Derived',
                        'drc_2023_24_modern_episodes.rds'))
 support <- file.path(root, 'output', 'Supporting_data')
 labels <- c('1'='Method failure', '2'='Wanted pregnancy',
-            '3'='Partner disapproval', '4'='Other side effects/health',
+            '3'='Partner disapproval', '4'='Other side effects/health', '5'='Other side effects/health',
             '6'='Access/cost/convenience', '7'='Want more effective method',
             '8'='Access/cost/convenience', '9'='Infrequent sex/husband away',
             '10'='Access/cost/convenience', '11'='Other recorded: fatalistic',
@@ -2617,12 +2632,16 @@ province_reasons <- province_reasons[,c('province','reason','weighted_endings',
                                         'share_of_endings_pct','observed_endings_n')]
 write.csv(province_reasons,file.path(support,
   'drc_all_reason_province_reason_shares.csv'),row.names=FALSE)
-calendar <- readRDS(file.path(root,'Data','Derived',
-                              'drc_2023_24_calendar_events.rds'))
-modern_codes <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,17L,18L,19L,20L)
-five <- calendar[calendar$method_code %in% modern_codes &
-                 calendar$end<=calendar$interview-4L &
-                 calendar$reason_code>0,]
+# DHS Table 7.14 uses reported reason-months, not first-year episode runs.
+ir <- if(file.exists(file.path(root,'Data/ir.rds')))readRDS(file.path(root,'Data/ir.rds'))else as.data.frame(haven::read_dta(Sys.getenv('DRC_IR_FILE',unset=file.path(root,'Data/CDIR81FL.dta'))))
+modern_codes <- c(1L,2L,3L,4L,5L,6L,7L,11L,13L,14L,15L,17L,18L)
+method_chars <- strsplit('123456789WNALCFEMS~','')[[1]]
+reason_chars <- c('1'=1L,'2'=2L,'3'=3L,'4'=4L,'5'=5L,'6'=6L,'7'=7L,'8'=8L,'9'=9L,'C'=10L,'F'=11L,'A'=12L,'D'=13L,'M'=15L,'W'=96L,'K'=98L,'?'=99L)
+five <- do.call(rbind,lapply(0:59,function(t){
+ p<-as.integer(ir$v018)+t;r<-substring(ir$vcal_2,p,p);method<-match(substring(ir$vcal_1,p,p),method_chars)
+ i<-which(nzchar(trimws(r))&method%in%modern_codes)
+ data.frame(method_code=method[i],reason_code=unname(reason_chars[r[i]]),wt=as.numeric(ir$v005[i])/1e6)
+}))
 five$method <- ifelse(five$method_code==1L,'Pill',
                ifelse(five$method_code==2L,'IUD',
                ifelse(five$method_code==3L,'Injectables',
@@ -2767,7 +2786,7 @@ saveRDS(m2,file.path(derived,'drc_selected_reason_province_model_2.rds'))
 point <- data.frame(province=zones,
   method_adjusted_pct=vapply(zones,function(z)predict_cif(m1,z,reference$wt),numeric(1)),
   fully_adjusted_pct=vapply(zones,function(z)predict_cif(m2,z,reference$wt),numeric(1)))
-frame <- unique(e[,c('cluster','stratum')]);frame$id <- seq_len(nrow(frame))
+frame <- full_survey_frame();frame$id <- seq_len(nrow(frame))
 groups <- split(frame$id,frame$stratum)
 B <- as.integer(Sys.getenv('DRC_SELECTED_MODEL_BOOTSTRAP_REPS','100'))
 one <- function(b) {
@@ -3342,6 +3361,7 @@ saveRDS(person,file.path(derived,'drc_2023_24_person_month.rds'))
 
 })
 ir<-as.data.frame(haven::read_dta(Sys.getenv('DRC_IR_FILE',unset=file.path(root,'Data','CDIR81FL.dta'))))
+saveRDS(ir,file.path(root,'Data/ir.rds'))
 
 # Save an explicit month-level calendar alongside the original run-level data.
 # Nonuse, pregnancy, births and terminations remain in this broad calendar.
@@ -3391,10 +3411,1228 @@ EXTERNAL_INPUTS[["Data/validation_reference/drc_table_7_13_released_data.csv"]] 
 "All methods",3.10486919541947,15.4679777565294,9.60977843282686,3.83539793214873,3.96632875518934,4.79634145417049,2.51464717482386,4.38222612437393,3.07816538759441,50.7557322130765,3.60181417317953,9635.93640399991,8934,6014,801
 )-----"
 
+
+MODULES[["211_full_frame_survey_inference.R"]] <- list(language="R",packaged_sha256="726800b74c3062a28dadf209b2ac05a425a75809c66245e382c25c8dce0595ae",args=character(),code=r"-----(#!/usr/bin/env Rscript
+# Full-frame design linearization for DRC life tables and fitted predictions.
+# Includes joint covariance and empirical standardization-reference uncertainty.
+a<-commandArgs(TRUE);root<-normalizePath(if(length(a))a[1]else Sys.getenv('DRC_PROJECT_ROOT'));sup<-file.path(root,'output/Supporting_data');der<-file.path(root,'Data/Derived')
+suppressPackageStartupMessages(library(haven));suppressPackageStartupMessages(library(nnet));suppressPackageStartupMessages(library(survey))
+ir<-readRDS(file.path(root,'Data/ir.rds'));e<-readRDS(file.path(der,'drc_2023_24_modern_episodes.rds'));ep<-readRDS(file.path(der,'drc_2023_24_model_episode_covariates.rds'));person<-readRDS(file.path(der,'drc_2023_24_person_month.rds'))
+frame<-unique(data.frame(cluster=as.numeric(ir$v021),stratum=as.numeric(ir$v022)));N<-nrow(frame);groups<-split(seq_len(N),frame$stratum);df<-N-length(groups);crit<-qt(.975,df)
+stopifnot(N==778,length(groups)==51,df==727,all(lengths(groups)>1))
+cluster_sum<-function(v,cluster){v<-as.matrix(v);z<-matrix(0,N,ncol(v));q<-rowsum(v,match(cluster,frame$cluster),reorder=FALSE);z[as.integer(rownames(q)),]<-q;z}
+design_vcov<-function(z){v<-matrix(0,ncol(z),ncol(z));for(ids in groups){q<-z[ids,,drop=FALSE];q<-sweep(q,2,colMeans(q));v<-v+length(ids)/(length(ids)-1)*crossprod(q)};v}
+bounds<-function(p,se,prob=TRUE){if(!prob)return(c(p-crit*se,p+crit*se));if(p<=0||p>=100)return(c(max(0,p-crit*se),min(100,p+crit*se)));100*plogis(qlogis(p/100)+c(-1,1)*crit*se/(p*(1-p/100)))}
+action<-c(1L,4L,5L,6L,7L,8L,10L,15L)
+cif<-function(d,targets=list(all=function(x)rep(TRUE,nrow(x)),actionable=function(x)x$reason_code%in%action,selected=function(x)!x$reason_code%in%c(2L,3L))){
+ s<-1;ds<-rep(0,N);f<-numeric(length(targets));dif<-matrix(0,N,length(targets));out<-vector('list',12)
+ marked<-do.call(cbind,lapply(targets,function(fun)fun(d)))
+ for(t in 1:12){at<-d$entry<t&d$exposure>=t;den<-sum(d$wt[at]);if(den<=0)return(NULL)
+  en<-at&d$discontinued&d$exposure==t;ha<-sum(d$wt[en])/den
+  h<-colSums(marked*(d$wt*en))/den
+  dha<-cluster_sum(d$wt*(as.numeric(en)-ha*as.numeric(at))/den,d$cluster)[,1]
+  dh<-cluster_sum((marked*as.numeric(en)-outer(as.numeric(at),h))*d$wt/den,d$cluster)
+  dif<-dif+outer(ds,h)+s*dh;f<-f+s*h;ds<-(1-ha)*ds-s*dha;s<-s*(1-ha)
+  out[[t]]<-list(point=100*f,influence=100*dif)
+ }
+ out
+}
+# Raw timepoint estimates and joint province influences preserve all point estimates.
+times<-read.csv(file.path(sup,'drc_modern_timepoints.csv'));raw_if<-list()
+for(scope in unique(times$scope)){
+ ix<-if(scope=='National')rep(TRUE,nrow(e))else if(startsWith(scope,'National: '))e$method_group==substring(scope,11) else if(grepl(': ',scope,fixed=TRUE)){v<-strsplit(scope,': ',fixed=TRUE)[[1]];e$province==v[1]&e$method_group==v[2]}else e$province==scope
+ d<-e[ix,];z<-cif(d);if(is.null(z))next
+ for(t in c(3L,6L,9L,12L)){
+  row<-which(times$scope==scope&times$month==t);stopifnot(length(row)==1)
+  stopifnot(abs(times$all_reason_pct[row]-z[[t]]$point[1])<1e-8,abs(times$actionable_pct[row]-z[[t]]$point[2])<1e-8)
+  for(k in 1:2){se<-sqrt(design_vcov(z[[t]]$influence[,k,drop=FALSE])[1,1]);ci<-bounds(z[[t]]$point[k],se);stem<-c('all_reason','actionable')[k]
+   times[row,paste0(stem,'_ci_low')]<-ci[1];times[row,paste0(stem,'_ci_high')]<-ci[2]}
+ }
+ raw_if[[scope]]<-z
+}
+write.csv(times,file.path(sup,'drc_modern_timepoints.csv'),row.names=FALSE)
+# Life-table derivative check against a small perturbation to one PSU weight.
+zz<-cif(e);cl<-frame$cluster[match(e$cluster[1],frame$cluster)];dd<-e;delta<-1e-5;dd$wt[dd$cluster==cl]<-dd$wt[dd$cluster==cl]*(1+delta);fd<-(cif(dd)[[12]]$point-zz[[12]]$point)/delta
+stopifnot(max(abs(fd-zz[[12]]$influence[match(cl,frame$cluster),]))<1e-4)
+selected<-read.csv(file.path(sup,'drc_selected_reason_subgroups.csv'))
+for(i in seq_len(nrow(selected))){key<-selected$group[i];v<-strsplit(key,'::',fixed=TRUE)[[1]];ix<-if(key=='National')rep(TRUE,nrow(ep))else if(length(v)==2)as.character(ep[[v[1]]])==v[2]else as.character(ep[[v[1]]])==v[3]&as.character(ep[[v[2]]])==v[4]
+ z<-cif(ep[ix,]);if(is.null(z))next;stopifnot(abs(selected$selected_12_month_pct[i]-z[[12]]$point[3])<1e-7)
+ se<-sqrt(design_vcov(z[[12]]$influence[,3,drop=FALSE])[1,1]);ci<-bounds(z[[12]]$point[3],se);selected$ci_low[i]<-ci[1];selected$ci_high[i]<-ci[2]
+}
+write.csv(selected,file.path(sup,'drc_selected_reason_subgroups.csv'),row.names=FALSE)
+cat('Updated raw full-frame life-table intervals; derivative check passed.\n');flush.console()
+# Fit-score influence for weighted multinomial coefficients.
+fit_system<-function(fit,dat,binary=FALSE){
+ if(binary){X<-model.matrix(fit);be<-coef(fit);stopifnot(!anyNA(be));pr<-as.numeric(fitted(fit));h<-crossprod(X,X*(dat$wt*pr*(1-pr)));score<-X*(dat$wt*(dat$any_end-pr));bread<-MASS::ginv(h)}else{
+  X<-model.matrix(delete.response(terms(fit)),dat,contrasts.arg=fit$contrasts);pr<-predict(fit,newdata=dat,type='probs');lev<-fit$lev[-1];score<-do.call(cbind,lapply(lev,function(y)X*(dat$wt*(as.numeric(dat$outcome==y)-pr[,y]))));bread<-MASS::ginv(fit$Hessian)
+ }
+ psi<-cluster_sum(score,dat$cluster)%*%t(bread);list(fit=fit,psi=psi,V=design_vcov(psi),binary=binary)
+}
+reference<-ep[ep$entry==0L,]
+predict_influence<-function(system,variable=NULL,value=NULL,target='actionable'){
+ fit<-system$fit;d<-reference;if(!is.null(variable))d[[variable]]<-factor(value,levels=levels(reference[[variable]]))
+ p<-if(system$binary)length(coef(fit))else ncol(coef(fit));K<-if(system$binary)1L else nrow(coef(fit));Q<-matrix(0,nrow(d),p*K);DS<-Q;S<-rep(1,nrow(d));F<-rep(0,nrow(d))
+ for(t in 1:12){d$month<-factor(t,levels=1:12);X<-model.matrix(delete.response(terms(fit)),d,contrasts.arg=fit$contrasts)
+  if(system$binary){pa<-plogis(as.numeric(X%*%coef(fit)));pc<-1-pa;dA<-X*(pa*pc);dC<--dA}else{
+   eta<-X%*%t(coef(fit));base<-pmax(0,eta[,1],eta[,2]);ex<-exp(eta-base);den<-exp(-base)+rowSums(ex);P<-ex/den;pc<-exp(-base)/den;j<-match(target,fit$lev[-1]);pa<-P[,j]
+   dA<-do.call(cbind,lapply(1:K,function(k)X*(pa*(as.numeric(k==j)-P[,k]))));dC<-do.call(cbind,lapply(1:K,function(k)X*(-pc*P[,k])))
+  }
+  Q<-Q+DS*pa+dA*S;DS<-DS*pc+dC*S;F<-F+S*pa;S<-S*pc
+ }
+ den<-sum(d$wt);point<-100*sum(d$wt*F)/den;g<-100*colSums(Q*d$wt)/den
+ psi<-as.numeric(system$psi%*%g)+cluster_sum(100*d$wt*(F-point/100)/den,d$cluster)[,1]
+ se<-sqrt(design_vcov(matrix(psi,ncol=1))[1,1]);ci<-bounds(point,se)
+ list(point=point,se=se,low=ci[1],high=ci[2],influence=psi,gradient=g)
+}
+# Explicit finite-difference check of the conditional model gradient.
+check_gradient<-function(system,target){
+ fit<-system$fit;ans<-predict_influence(system,target=target);k<-which.max(abs(ans$gradient));eps<-1e-5;f2<-fit
+ 
+ # A separate direct trajectory implementation avoids reusing the derivative.
+ beta<-if(system$binary)coef(fit)else as.vector(t(coef(fit)));direct<-function(b){s<-rep(1,nrow(reference));f<-rep(0,nrow(reference));d<-reference
+  for(t in 1:12){d$month<-factor(t,levels=1:12);X<-model.matrix(delete.response(terms(fit)),d,contrasts.arg=fit$contrasts)
+   if(system$binary){pa<-plogis(as.numeric(X%*%b));pc<-1-pa}else{B<-matrix(b,nrow=nrow(coef(fit)),byrow=TRUE);eta<-X%*%t(B);base<-pmax(0,eta[,1],eta[,2]);ex<-exp(eta-base);den<-exp(-base)+rowSums(ex);pa<-ex[,match(target,fit$lev[-1])]/den;pc<-exp(-base)/den}
+   f<-f+s*pa;s<-s*pc}
+ 100*weighted.mean(f,reference$wt)}
+ bb<-beta;bb[k]<-bb[k]+eps;fd<-(direct(bb)-direct(beta))/eps;stopifnot(abs(fd-ans$gradient[k])<max(.001,abs(fd)*.0001));TRUE
+}
+# Existing weighted point fits are retained; covariance uses all survey PSUs.
+model1<-readRDS(file.path(der,'drc_actionable_province_model_1.rds'));model2<-readRDS(file.path(der,'drc_actionable_province_model_2.rds'))
+systems<-list(fit_system(model1,person),fit_system(model2,person));check_gradient(systems[[2]],'actionable')
+coef_rows<-list()
+for(k in 1:2){fit<-systems[[k]]$fit;se<-sqrt(pmax(diag(systems[[k]]$V),0));beta<-as.vector(t(coef(fit)));coef_rows[[k]]<-data.frame(model=c('Method + duration','Full')[k],outcome=rep(fit$lev[-1],each=ncol(coef(fit))),covariate=rep(colnames(coef(fit)),length(fit$lev)-1),odds_ratio=exp(beta),ci_low=exp(beta-crit*se),ci_high=exp(beta+crit*se),p_value=2*pt(-abs(beta/se),df),survey_se=se,design_df=df);saveRDS(systems[[k]]$V,file.path(sup,paste0('model_',k,'_survey_vcov.rds')))}
+write.csv(do.call(rbind,coef_rows),file.path(sup,'drc_actionable_province_model_odds_ratios.csv'),row.names=FALSE)
+reg<-read.csv(file.path(sup,'drc_actionable_province_adjusted_rates.csv'));zones<-levels(ep$zone_name);joint<-list()
+for(k in 1:2){out<-lapply(c(NA_character_,zones),function(z)predict_influence(systems[[k]],if(is.na(z))NULL else'zone_name',z));names(out)<-c('National',zones);joint[[k]]<-out
+ for(name in names(out)){i<-match(name,reg$zone);z<-out[[name]];stem<-paste0('model_',k);stopifnot(abs(reg[[paste0(stem,'_common_mix_pct')]][i]-z$point)<1e-7);reg[[paste0(stem,'_low')]][i]<-z$low;reg[[paste0(stem,'_high')]][i]<-z$high}
+}
+for(i in seq_len(nrow(reg))){q<-times[times$scope==reg$zone[i]&times$month==12,];reg$unadjusted_low[i]<-q$actionable_ci_low;reg$unadjusted_high[i]<-q$actionable_ci_high}
+reg$small_actionable_cell<-reg$actionable_endings_n<30;reg$inference_method<-'full-frame design linearization';write.csv(reg,file.path(sup,'drc_actionable_province_adjusted_rates.csv'),row.names=FALSE)
+rows<-list()
+for(k in 1:2)for(pair in combn(zones,2,simplify=FALSE)){aa<-joint[[k]][[pair[1]]];bb<-joint[[k]][[pair[2]]];delta<-aa$point-bb$point;se<-sqrt(design_vcov(matrix(aa$influence-bb$influence,ncol=1))[1,1]);ci<-bounds(delta,se,FALSE)
+ rows[[length(rows)+1L]]<-data.frame(stage=c('Method adjusted','Fully adjusted')[k],province_1=pair[1],province_2=pair[2],difference_pp=delta,ci_low=ci[1],ci_high=ci[2],p_value=2*pt(-abs(delta/se),df),design_df=df,small_cell=any(reg$small_actionable_cell[match(pair,reg$zone)]))}
+pairs<-do.call(rbind,rows);pairs$p_holm<-ave(pairs$p_value,pairs$stage,FUN=function(p)p.adjust(p,'holm'));pairs$significant_05<-pairs$p_holm<.05;pairs$significant_10<-pairs$p_holm<.10;write.csv(pairs,file.path(sup,'drc_actionable_adjusted_pairwise.csv'),row.names=FALSE)
+for(t in c(3L,12L)){rows<-lapply(combn(zones,2,simplify=FALSE),function(pair){aa<-raw_if[[pair[1]]][[t]];bb<-raw_if[[pair[2]]][[t]];delta<-aa$point[2]-bb$point[2];se<-sqrt(design_vcov(matrix(aa$influence[,2]-bb$influence[,2],ncol=1))[1,1]);ci<-bounds(delta,se,FALSE);data.frame(month=t,province_1=pair[1],province_2=pair[2],difference_pp=delta,se_pp=se,ci_low=ci[1],ci_high=ci[2],p_raw=2*pt(-abs(delta/se),df))});q<-do.call(rbind,rows);q$p_holm<-p.adjust(q$p_raw,'holm');q$significant_05<-q$p_holm<.05;write.csv(q,file.path(sup,paste0('drc_actionable_raw_pairwise_',t,'month.csv')),row.names=FALSE)}
+vars<-c('age_group','parity_group','marital_group','education','wealth','residence');rows<-list()
+for(v in vars)for(level in levels(reference[[v]])){z<-predict_influence(systems[[2]],v,level);rows[[length(rows)+1L]]<-data.frame(covariate=v,category=level,adjusted_12mo_pct=z$point,ci_low=z$low,ci_high=z$high,design_df=df)}
+write.csv(do.call(rbind,rows),file.path(sup,'drc_actionable_adjusted_subgroups.csv'),row.names=FALSE)
+cat('Actionable model full-frame covariance, marginal intervals and pairwise tests updated.\n');flush.console()
+# Broader selected-reason models are retained as explicitly labelled HTML diagnostics.
+p2<-person;obs<-pmin(12L,ep$exposure)-ep$entry;index<-rep(seq_len(nrow(ep)),obs);mt<-as.integer(as.character(person$month));ended<-ep$discontinued[index]&mt==ep$exposure[index]
+p2$outcome<-factor(ifelse(!ended,'continue',ifelse(ep$reason_code[index]%in%c(2L,3L),'competing','selected')),levels=c('continue','selected','competing'))
+selected_systems<-lapply(1:2,function(k){fit<-readRDS(file.path(der,paste0('drc_selected_reason_province_model_',k,'.rds')));if(is.null(fit$Hessian))fit$Hessian<-nnet:::multinomHess(fit,model.matrix(delete.response(terms(fit)),p2,contrasts.arg=fit$contrasts));fit_system(fit,p2)})
+selreg<-read.csv(file.path(sup,'drc_selected_reason_province_adjusted_rates.csv'));selif<-list()
+for(k in 1:2){z<-lapply(zones,function(zone)predict_influence(selected_systems[[k]],'zone_name',zone,target='selected'));names(z)<-zones;selif[[k]]<-z;stem<-c('method_adjusted','fully_adjusted')[k]
+ for(i in seq_len(nrow(selreg))){q<-z[[selreg$province[i]]];stopifnot(abs(selreg[[paste0(stem,'_pct')]][i]-q$point)<1e-7);selreg[[paste0(stem,'_low')]][i]<-q$low;selreg[[paste0(stem,'_high')]][i]<-q$high}}
+for(i in seq_len(nrow(selreg))){j<-match(paste0('zone_name::',selreg$province[i]),selected$group);selreg$observed_low[i]<-selected$ci_low[j];selreg$observed_high[i]<-selected$ci_high[j]}
+write.csv(selreg,file.path(sup,'drc_selected_reason_province_adjusted_rates.csv'),row.names=FALSE)
+srows<-list();for(k in 1:2)for(pair in combn(zones,2,simplify=FALSE)){aa<-selif[[k]][[pair[1]]];bb<-selif[[k]][[pair[2]]];delta<-aa$point-bb$point;se<-sqrt(design_vcov(matrix(aa$influence-bb$influence,ncol=1))[1,1]);ci<-bounds(delta,se,FALSE);srows[[length(srows)+1L]]<-data.frame(stage=c('Method adjusted','Fully adjusted')[k],province_1=pair[1],province_2=pair[2],difference_pp=delta,ci_low=ci[1],ci_high=ci[2],p_value=2*pt(-abs(delta/se),df),small_cell=any(selreg$small_cell[match(pair,selreg$province)]))}
+q<-do.call(rbind,srows);q$p_holm<-ave(q$p_value,q$stage,FUN=function(x)p.adjust(x,'holm'));q$significant_05<-q$p_holm<.05;write.csv(q,file.path(sup,'drc_selected_reason_adjusted_pairwise.csv'),row.names=FALSE)
+# Full survey frame for the all-cause binary model, preserving its weighted fit.
+pb<-person;pb$any_end<-as.integer(pb$outcome!='continue');form<-any_end~month+method_group+zone_name+age_group+parity_group+marital_group+education+wealth+residence+start_year
+missing<-frame[!frame$cluster%in%pb$cluster,];extra<-pb[rep(1L,nrow(missing)),];extra$cluster<-missing$cluster;extra$stratum<-missing$stratum;extra$wt<-0
+options(survey.lonely.psu='adjust');des<-svydesign(ids=~cluster,strata=~stratum,weights=~wt,data=rbind(pb,extra),nest=TRUE)
+fitb<-svyglm(form,design=des,family=quasibinomial());saveRDS(fitb,file.path(der,'drc_all_reason_full_model.rds'))
+# Fit-score matrix is computed on positive-weight observations only.
+fit0<-glm(form,data=pb,weights=wt,family=quasibinomial());sysb<-fit_system(fit0,pb,TRUE);stopifnot(max(abs(coef(fitb)-coef(fit0)))<1e-6);check_gradient(sysb,'any')
+rows<-list();for(v in c('method_group',vars))for(level in levels(reference[[v]])){z<-predict_influence(sysb,v,level);rows[[length(rows)+1L]]<-data.frame(covariate=v,category=level,adjusted_12mo_pct=z$point,ci_low=z$low,ci_high=z$high,design_df=df)}
+write.csv(do.call(rbind,rows),file.path(sup,'drc_all_reason_adjusted_subgroups.csv'),row.names=FALSE)
+saveRDS(list(frame=frame,raw_if=raw_if,joint=joint,selected_joint=selif),file.path(der,'drc_full_frame_inference.rds'))
+# Broader first-year cause projections with joint risk/current-stock variance.
+causes<-list('Method failure'=1L,'Other fertility'=c(9L,12L,13L),'Bleeding changes'=15L,'Other health'=c(4L,5L),'More effective'=7L,'Access/cost/convenience'=c(6L,8L,10L),'Other recorded'=c(11L,96L,98L,99L,0L))
+W<-as.numeric(ir$v005)/1e6;modern<-as.numeric(ir$v313)==3L;method<-ifelse(as.integer(ir$v312)==3L,'Injectables',ifelse(as.integer(ir$v312)==11L,'Implants',ifelse(as.integer(ir$v312)==1L,'Pill',ifelse(as.integer(ir$v312)==2L,'IUD','Other modern'))))
+method[as.integer(ir$v312)==16L]<-'EC'
+T<-sum(W);M<-sum(W[modern]);w25<-25246885;rows<-list(c('Method','Reason','Projected 2025 current users','Cause-specific first-year probability','Illustrative original-method endings'))
+for(m in c('Injectables','Implants','Pill','IUD','Other modern')){
+ Mm<-sum(W[modern&method==m]);stock<-w25*(Mm/T+.004*Mm/M)
+ stock_if<-cluster_sum(W*(-w25*Mm/T^2-w25*.004*Mm/M^2*as.numeric(modern)+w25*(1/T+.004/M)*as.numeric(modern&method==m)),as.numeric(ir$v021))[,1]
+ ss<-sqrt(design_vcov(matrix(stock_if,ncol=1))[1,1]);sc<-bounds(stock,ss,FALSE)
+ zz<-cif(e[e$method_group==m,],lapply(causes,function(c)function(x)x$reason_code%in%c))[[12]]
+ for(j in seq_along(causes)){
+  p<-zz$point[j]/100;ppsi<-zz$influence[,j]/100;v<-stock*p;vpsi<-stock_if*p+stock*ppsi;se<-sqrt(design_vcov(matrix(vpsi,ncol=1))[1,1]);ci<-bounds(v,se,FALSE);ps<-sqrt(design_vcov(matrix(zz$influence[,j],ncol=1))[1,1]);pc<-bounds(100*p,ps)
+  fmt<-function(x,l,u,percent=FALSE){if(x==0&&l==0&&u==0)return('0 (CI unavailable†)');sprintf(if(percent)'%.1f%% (%.1f–%.1f)'else'%.0f (%.0f–%.0f)',x,max(0,l),u)}
+  rows[[length(rows)+1L]]<-c(m,names(causes)[j],fmt(stock,sc[1],sc[2]),fmt(100*p,pc[1],pc[2],TRUE),fmt(v,ci[1],ci[2]))
+ }
+}
+dir.create(file.path(root,'output/survey_planning'),recursive=TRUE,showWarnings=FALSE)
+jsonlite::write_json(rows,file.path(root,'output/survey_planning/selected_projection.json'),auto_unbox=TRUE,pretty=TRUE)
+cat('All displayed inference updated using',N,'PSUs;',length(groups),'strata;',df,'design degrees of freedom.\n')
+)-----")
+
+MODULES[["212_planning_survey_ci.R"]] <- list(language="R",packaged_sha256="052bbd849a2178d61a49493007fba0d5b7896596ff6942577890e81c3f91e871",args=character(),code=r"-----(#!/usr/bin/env Rscript
+# DRC: gross actionable endings and switching sensitivities, with survey uncertainty.
+# Input/output roots are command-line parameters. No personal locations are stored.
+a<-commandArgs(TRUE);root<-normalizePath(if(length(a))a[1]else Sys.getenv('DRC_PROJECT_ROOT'));out<-if(length(a)>=2)a[2]else file.path(root,'output/survey_planning')
+B<-if(length(a)>=3)as.integer(a[3])else as.integer(Sys.getenv('DRC_PLANNING_BOOTSTRAP_REPS','500'));cores<-if(length(a)>=4)as.integer(a[4])else 4L
+dir.create(out,recursive=TRUE,showWarnings=FALSE)
+suppressPackageStartupMessages(library(survival));stopifnot(requireNamespace('haven',quietly=TRUE))
+ir<-readRDS(file.path(root,'Data/ir.rds'));e<-readRDS(file.path(root,'Data/Derived/drc_2023_24_modern_episodes.rds'))
+cal<-readRDS(file.path(root,'Data/Derived/drc_2023_24_calendar_events.rds'));sup<-file.path(root,'output/Supporting_data')
+pop<-read.csv(file.path(sup,'drc_wpp2024_wra_2024_2026.csv'))
+w24<-pop$women_15_49[pop$year==2024];w25<-pop$women_15_49[pop$year==2025];w26<-pop$women_15_49[pop$year==2026]
+methods<-c('Injectables','Implants','Pill','IUD','Other modern');model_methods<-methods[methods!='IUD']
+causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
+codes<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L));action<-unlist(codes)
+modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L);endpoint_modern<-c(modern,16L)
+mg<-function(x)ifelse(x==3L,'Injectables',ifelse(x==11L,'Implants',ifelse(x==1L,'Pill',ifelse(x==2L,'IUD','Other modern'))))
+cg<-function(x){v<-rep(NA_integer_,length(x));for(j in 1:5)v[x%in%codes[[j]]]<-j;v}
+wt<-as.numeric(ir$v005)/1e6;psu<-as.numeric(ir$v021);stratum<-as.numeric(ir$v022)
+frame<-unique(data.frame(psu,stratum));groups<-split(seq_len(nrow(frame)),frame$stratum);pi<-match(psu,frame$psu)
+stopifnot(nrow(frame)==778L,length(groups)==51L,all(lengths(groups)>1),!anyDuplicated(frame$psu))
+u<-as.numeric(ir$v313)==3;um<-mg(as.numeric(ir$v312));um[as.numeric(ir$v312)==16L]<-'EC'
+ix<-which(u & as.numeric(ir$v312)%in%modern)
+current<-data.frame(woman=ix,method=um[ix],elapsed=as.integer(ir$v337[ix]),wt=wt[ix])
+stopifnot(!anyNA(current$elapsed),all(current$elapsed>=0))
+bins<-c(-1,3,6,12,24,36,48,60,Inf);blabel<-c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
+current$bin<-as.integer(cut(current$elapsed,bins))
+bywoman<-split(seq_len(nrow(cal)),cal$woman_row);spells<-cal[cal$method_code%in%modern & cal$start>cal$calendar_start,]
+records<-vector('list',nrow(spells))
+for(i in seq_len(nrow(spells))){q<-spells[i,];last<-min(q$end,q$interview-15L);if(last<q$start)next
+ t<-seq.int(q$start,last);future<-t+12L;tl<-cal[bywoman[[as.character(q$woman_row)]],];j<-findInterval(future,tl$start)
+ stopifnot(all(j>0),all(tl$end[j]>=future));end<-q$end<future&q$reason_code%in%action
+ records[[i]]<-data.frame(woman=q$woman_row,episode=i,method=mg(q$method_code),elapsed=t-q$start,wt=q$wt,
+ cause=ifelse(end,cg(q$reason_code),NA_integer_),net=end&!tl$method_code[j]%in%endpoint_modern,
+ direct=end&!is.na(q$next_code)&q$next_code%in%endpoint_modern)
+}
+land<-do.call(rbind,records);land$bin<-as.integer(cut(land$elapsed,bins))
+ci<-setNames(lapply(methods,function(m)which(current$method==m)),methods)
+li<-setNames(lapply(methods,function(m)lapply(1:8,function(b)which(land$method==m&land$bin%in%if(b==8)c(6L,7L)else b))),methods)
+support<-do.call(rbind,lapply(methods,function(m)do.call(rbind,lapply(1:5,function(j){z<-land$method==m&!is.na(land$cause)&land$cause==j;n<-length(unique(land$episode[z]));data.frame(method=m,cause=causes[j],unique_episodes=n,pool_across_methods=n<10)}))))
+write.csv(support,file.path(out,'switching_support.csv'),row.names=FALSE)
+# Preserve the existing six-cause AFT specification. IUD shares the pooled
+# Other-modern curve because the IUD sample is too sparse for separate fits.
+af<-e[e$entry==0L&e$exposure>0,];af$method<-factor(ifelse(af$method_group=='IUD','Other modern',as.character(af$method_group)),levels=model_methods)
+for(j in 1:5)af[[paste0('cause',j)]]<-as.integer(af$discontinued&af$reason_code%in%codes[[j]])
+af$other<-as.integer(af$discontinued&!af$reason_code%in%action)
+events<-c(paste0('cause',1:5),'other');fam<-read.csv(file.path(sup,'drc_aft_duration_fit.csv'))
+dists<-fam$distribution[match(c(causes,'Other endings'),fam$cause)];stopifnot(!anyNA(dists))
+maxage<-max(current$elapsed)+12L;times<-0:maxage
+H<-function(t,mu,sc,dist){if(dist=='weibull')return((t/exp(mu))^(1/sc));if(dist=='exponential')return(t/exp(mu));if(dist=='loglogistic')return(log1p(exp((log(t)-mu)/sc)));if(dist=='lognormal')return(-pnorm((log(t)-mu)/sc,lower.tail=FALSE,log.p=TRUE));stop('Unknown AFT family')}
+measure<-function(mult){
+ iw<-wt*mult[pi];ew<-e$wt*mult[pi[e$woman_row]];lw<-land$wt*mult[pi[land$woman]];cw<-current$wt*mult[pi[current$woman]]
+ mcpr<-100*sum(iw[u])/sum(iw);mix<-vapply(c(methods,'EC'),function(m)sum(iw[u&um==m])/sum(iw[u]),0.0)
+ stock<-w25*(mcpr+.4)/100*mix
+ risk<-array(0,c(8L,5L,5L),dimnames=list(c('First-year gross','Historical gross','AFT gross','Historical switching','AFT switching','First-year direct switches','Historical direct switches','AFT direct switches'),methods,causes))
+ for(m in methods){d<-which(e$method_group==m);s<-1;v<-numeric(5)
+  for(t in 1:12){at<-d[e$entry[d]<t&e$exposure[d]>=t];den<-sum(ew[at]);stopifnot(den>0);en<-at[e$discontinued[at]&e$exposure[at]==t]
+   v<-v+s*vapply(codes,function(z)sum(ew[en[e$reason_code[en]%in%z]])/den,0.0);s<-s*(1-sum(ew[en])/den)}
+  risk[1,m,]<-v
+  for(j in 1:5){en<-d[e$discontinued[d]&e$exposure[d]<=12&e$reason_code[d]%in%codes[[j]]];den<-sum(ew[en]);if(den>0)risk[6,m,j]<-v[j]*sum(ew[en[e$next_code[en]%in%endpoint_modern]])/den}
+  ix<-ci[[m]];den<-sum(cw[ix]);for(b in 1:8){share<-sum(cw[ix[current$bin[ix]==b]])/den;if(share==0)next
+   z<-li[[m]][[b]];dd<-sum(lw[z]);if(dd<=0)stop('Empty historical duration cell')
+   for(j in 1:5){ok<-!is.na(land$cause[z])&land$cause[z]==j
+    risk[2,m,j]<-risk[2,m,j]+share*sum(lw[z][ok])/dd
+    risk[4,m,j]<-risk[4,m,j]+share*sum(lw[z][ok&land$net[z]])/dd
+    risk[7,m,j]<-risk[7,m,j]+share*sum(lw[z][ok&land$direct[z]])/dd}}
+ }
+ aw<-af$wt*mult[pi[af$woman_row]]
+ fits<-lapply(1:6,function(j){ad<-af;ad$fw<-aw;fit<-suppressWarnings(survreg(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit)))||!is.finite(fit$scale))stop('AFT fit failed');fit})
+ for(m in methods){mm<-if(m=='IUD')'Other modern'else m;nd<-data.frame(method=factor(mm,levels=model_methods))
+  hh<-sapply(1:6,function(j){f<-fits[[j]];mu<-as.numeric(predict(f,newdata=nd,type='lp'));pmax(0,diff(H(times,mu,f$scale,dists[j])))})
+  ix<-ci[[m]];den<-sum(cw[ix]);for(age in unique(current$elapsed[ix])){share<-sum(cw[ix[current$elapsed[ix]==age]])/den;h<-hh[age+1:12,,drop=FALSE];total<-rowSums(h);s<-c(1,exp(-cumsum(total)))[1:12]
+   v<-colSums(s*(-expm1(-total))*h/pmax(total,1e-300))[1:5];risk[3,m,]<-risk[3,m,]+share*v}
+  for(j in 1:5){pooled<-support$pool_across_methods[support$method==m&support$cause==causes[j]]
+   denh<-if(pooled)sum(stock[methods]*risk[2,,j])else risk[2,m,j]
+   frac<-if(denh>0)(if(pooled)sum(stock[methods]*risk[4,,j])else risk[4,m,j])/denh else NA_real_
+   direct<-if(denh>0)(if(pooled)sum(stock[methods]*risk[7,,j])else risk[7,m,j])/denh else NA_real_
+   stopifnot(is.finite(frac),is.finite(direct),frac>=0,frac<=1+1e-8)
+   risk[5,m,j]<-risk[3,m,j]*frac;risk[8,m,j]<-risk[3,m,j]*direct}
+ }
+ result<-risk;for(m in methods)result[,m,]<-risk[,m,]*stock[m]
+ stopifnot(all(is.finite(result)),all(result>=0),all(apply(risk,c(1,2),sum)<=1+1e-8))
+ list(counts=result,risk=risk,mcpr=mcpr,mix=mix,stock=stock,users2024=w24*mcpr/100*mix)
+}
+point<-measure(rep(1,nrow(frame)));saveRDS(point,file.path(out,'planning_point.rds'))
+# Main gross outputs must reproduce the saved report to numerical tolerance.
+references<-list(read.csv(file.path(sup,'drc_current_users_by_method_and_actionable_projection.csv')),read.csv(file.path(sup,'drc_duration_aware_current_user_bridge.csv')),read.csv(file.path(sup,'drc_survival_model_duration_by_method.csv')))
+fields<-c('illustrative_original_method_endings','projected_actionable_original_method_endings','survival_original_method_endings')
+for(i in 1:3){q<-references[[i]];j<-match(methods,q$method);target<-q[[fields[i]]][j]*point$stock[methods]/q$current_users_2024[j];stopifnot(max(abs(rowSums(point$counts[i,,])-target))<.2)}
+cat('Point totals:',apply(point$counts,1,sum),'\n');flush.console()
+checkpoint<-file.path(out,'replicates');dir.create(checkpoint,showWarnings=FALSE)
+# Smoothed Rao-Wu resampling retains sparse support, including two-PSU strata.
+# Epsilon=1e-4; deviations are rescaled by 1/(1-epsilon) in the summary.
+epsilon<-1e-4
+one<-function(b){f<-file.path(checkpoint,sprintf('rep_%04d.rds',b));if(file.exists(f))return(readRDS(f));set.seed(20261105L+b)
+ mult<-numeric(nrow(frame));for(ids in groups){n<-length(ids);raw<-n/(n-1)*tabulate(sample.int(n,n-1,replace=TRUE),nbins=n);mult[ids]<-epsilon+(1-epsilon)*raw}
+ z<-tryCatch(measure(mult),error=function(e)list(error=conditionMessage(e)));saveRDS(z,f);z}
+if(B>0){draws<-parallel::mclapply(seq_len(B),one,mc.cores=cores,mc.preschedule=FALSE);valid<-!vapply(draws,function(x)!is.null(x$error),FALSE);cat('Valid',sum(valid),'of',B,'\n');stopifnot(mean(valid)>=.95);saveRDS(draws[valid],file.path(out,'planning_replicates.rds'))}
+saveRDS(list(wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(groups),replicates=B,epsilon=epsilon,methods=methods,causes=causes,
+ definitions=c('Gross: every actionable ending treated as user lost','Switching sensitivity includes EC at year end; AFT pathway fractions pool across methods for <10 distinct historical episodes','IUD AFT uses Other-modern proxy; selected AFT families fixed','2025 mCPR = survey +0.4 pp; 2026 baseline increments 0,0.5,0.4 pp; population fixed')),file.path(out,'planning_metadata.rds'))
+)-----")
+
+MODULES[["213_summarize_planning.R"]] <- list(language="R",packaged_sha256="9120b3b56610a0fbb2536e1570655f4fc19f787c5edc52f6dbc665ec37e04e60",args=character(),code=r"-----(a<-commandArgs(TRUE);o<-if(length(a))a[1]else file.path(Sys.getenv('DRC_PROJECT_ROOT'),'output/survey_planning')
+p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
+metrics<-function(x){
+ x$counts<-abind::abind(x$counts,x$counts[1,,,drop=FALSE]-x$counts[6,,,drop=FALSE],x$counts[2,,,drop=FALSE]-x$counts[4,,,drop=FALSE],x$counts[3,,,drop=FALSE]-x$counts[5,,,drop=FALSE],along=1)
+ y<-c(stock_no_ec=sum(x$stock[meta$methods]),mcpr2024=x$mcpr,mcpr2025=x$mcpr+.4,users2025=sum(x$stock),users2024=sum(x$users2024))
+ for(m in c(meta$methods,'EC'))y[paste('stock',m,sep='|')]<-x$stock[m]
+ for(i in 1:11)for(m in c(meta$methods,'Total'))for(c in c(meta$causes,'Total')){
+  mi<-if(m=='Total')1:5 else match(m,meta$methods);ci<-if(c=='Total')1:5 else match(c,meta$causes)
+  v<-sum(x$counts[i,mi,ci]);s<-if(m=='Total')sum(x$stock[meta$methods])else x$stock[m];key<-paste(i,m,c,sep='|')
+  y[paste0('count|',key)]<-v;y[paste0('pp|',key)]<-100*v/meta$wra2026;y[paste0('risk|',key)]<-100*v/s
+ }
+ base<-x$mcpr+.4+c(0,.5,.4)
+ for(j in 1:3){y[paste0('base|',j)]<-base[j];y[paste0('baseusers|',j)]<-base[j]/100*meta$wra2026
+  for(i in 1:11)for(m in c(meta$methods,'EC','Total')){
+   mix<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(x$counts[i,,])else if(m=='EC')0 else sum(x$counts[i,m,]);b<-base[j]*mix;key<-paste(j,i,m,sep='|')
+   y[paste0('usualusers|',key)]<-b/100*meta$wra2026;y[paste0('retainedusers|',key)]<-b/100*meta$wra2026+add;y[paste0('usualmcpr|',key)]<-b;y[paste0('retainedmcpr|',key)]<-b+100*add/meta$wra2026
+  }
+ }
+ # Earlier 2024-to-2025 diagnostics, with the same probability definitions.
+ legacy_base<-x$mcpr+c(0,(x$mcpr-8.121123)/10,.4)
+ for(i in 1:5)for(m in c(meta$methods,'Total'))for(c in c(meta$causes,'Total')){
+  mi<-if(m=='Total')1:5 else match(m,meta$methods);ci<-if(c=='Total')1:5 else match(c,meta$causes)
+  allcounts<-sweep(x$counts[i,,,drop=FALSE][1,,],1,x$users2024[meta$methods]/x$stock[meta$methods],'*')
+  v<-sum(allcounts[mi,ci]);key<-paste(i,m,c,sep='|');y[paste0('legacy_count|',key)]<-v;y[paste0('legacy_pp|',key)]<-100*v/meta$wra2025
+  den<-sum(x$counts[if(i==4)2 else if(i==5)3 else i,mi,ci]);y[paste0('fraction|',key)]<-if(den>0)100*sum(x$counts[i,mi,ci])/den else 0
+ }
+ for(m in c(meta$methods,'EC','Total'))y[paste0('legacy_stock|',m)]<-if(m=='Total')sum(x$users2024)else x$users2024[m]
+ for(j in 1:3){y[paste0('legacy_base|',j)]<-legacy_base[j]
+  for(i in 1:5)for(m in c(meta$methods,'EC','Total')){
+   mix<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(sweep(x$counts[i,,,drop=FALSE][1,,],1,x$users2024[meta$methods]/x$stock[meta$methods],'*'))else if(m=='EC')0 else sum(x$counts[i,m,])*x$users2024[m]/x$stock[m]
+   v<-legacy_base[j]*mix;key<-paste(j,i,m,sep='|');y[paste0('legacy_usualusers|',key)]<-v/100*meta$wra2025;y[paste0('legacy_retainedusers|',key)]<-v/100*meta$wra2025+add;y[paste0('legacy_usualmcpr|',key)]<-v;y[paste0('legacy_retainedmcpr|',key)]<-v+100*add/meta$wra2025
+  }
+ }
+ y
+}
+pt<-metrics(p);ds<-vapply(d,metrics,pt)
+# Correct the first-order attenuation from the small positive multiplier floor.
+ds<-pt+(ds-pt)/(1-meta$epsilon)
+lo<-apply(ds,1,quantile,.025);hi<-apply(ds,1,quantile,.975)
+# Rare outcomes can put the observed estimate outside percentile bounds.
+# Expand only as needed to include the point; retain the empirical bounds.
+lo<-pmax(0,pmin(lo,pt));hi<-pmax(hi,pt)
+percent<-grepl("^(risk|fraction|usualmcpr|retainedmcpr|legacy_usualmcpr|legacy_retainedmcpr)\\|",names(pt));hi[percent]<-pmin(100,hi[percent])
+write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(o,'planning_intervals.csv'),row.names=FALSE)
+meta$valid_replicates<-length(d);jsonlite::write_json(meta,file.path(o,'metadata.json'),auto_unbox=TRUE,pretty=TRUE)
+cat('95% intervals for',length(pt),'metrics from',ncol(ds),'valid replicates\n')
+)-----")
+
+MODULES[["214_fit_point_models.R"]] <- list(language="R",packaged_sha256="d141c96d2656bc8322109161f38f4cef565ca2f6ac0cf3957ebae3e5ef2baffa",args=character(),code=r"-----(#!/usr/bin/env Rscript
+# DRC DHS 2023–24: adjusted province comparison for actionable discontinuation.
+# Run after scripts 01 and 02. Unit of fitting is the episode-month. Outcomes
+# are continuation, actionable discontinuation, and another competing ending.
+# Therefore pregnancy intentions, partner disapproval, other fertility reasons,
+# and unresolved reasons remain in the starting cohort and leave at their end.
+# The two multinomial discrete-time models mirror the Ethiopia specification:
+# A: month of method use, method, zone; B: A plus measured characteristics.
+# Method use month is elapsed duration since the ORIGINAL method began, not
+# duration at interview. Both models retain delayed-entry episodes for fitting.
+# Adjusted zone probabilities predict a 12-month first-year trajectory on the
+# SAME observed-start national episodes with each zone assigned in turn. This
+# is common-composition standardization, not each zone's actual observed mix.
+
+root <- Sys.getenv("DRC_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
+support <- file.path(root,'output/Supporting_data')
+derived <- file.path(root,'Data/Derived')
+if(!requireNamespace('nnet',quietly=TRUE))stop('nnet package is required')
+e <- readRDS(file.path(derived,'drc_2023_24_modern_episodes.rds'))
+ir <- as.data.frame(haven::read_dta(Sys.getenv('DRC_IR_FILE', unset=file.path(root,'Data','CDIR81FL.dta'))))
+times <- read.csv(file.path(support,'drc_modern_timepoints.csv'))
+actionable <- c(1L,4L,5L,6L,7L,8L,10L,15L)
+e$zone_name <- factor(e$province, levels=c('Kinshasa','Kongo Central','Kwango','Kwilu','Mai-Ndombe','Équateur','Nord-Ubangi','Sud-Ubangi','Mongala','Tshuapa','Tshopo','Bas-Uélé','Haut-Uélé','Ituri','Nord-Kivu','Sud-Kivu','Maniema','Haut-Katanga','Haut-Lomami','Lualaba','Tanganyika','Lomami','Sankuru','Kasaï Oriental','Kasaï','Kasaï Central'))
+e$method_group <- factor(e$method_group,
+  levels=c('Implants','Injectables','Pill','IUD','Other modern'))
+e$age_at_start <- (e$start-as.numeric(ir$v011[e$woman_row]))/12
+stopifnot(all(e$age_at_start>=10),all(e$age_at_start<50))
+# A small number of calendar episodes began before age 15, although every
+# respondent was 15–49 at interview. Retain them in an honestly labeled group.
+e$age_group <- factor(ifelse(e$age_at_start<20,'Under 20',
+  ifelse(e$age_at_start<25,'20–24',ifelse(e$age_at_start<35,'25–34','35–49'))),
+  levels=c('25–34','Under 20','20–24','35–49'))
+bcols <- grep('^b3_',names(ir),value=TRUE)
+b <- as.matrix(ir[e$woman_row,bcols])
+parity <- rowSums(!is.na(b) & b<=e$start)
+e$parity_group <- factor(ifelse(parity==0,'0',ifelse(parity<=2,'1–2',
+  ifelse(parity<=4,'3–4','5+'))),levels=c('0','1–2','3–4','5+'))
+marital <- as.numeric(ir$v501[e$woman_row])
+e$marital_group <- factor(ifelse(marital==0,'Never in union',
+  ifelse(marital==1,'Married',ifelse(marital==2,'Living together',
+  'Formerly in union'))),
+  levels=c('Married','Never in union','Living together','Formerly in union'))
+educ <- as.numeric(ir$v106[e$woman_row])
+e$education <- factor(ifelse(educ==0,'None',ifelse(educ==1,'Primary',
+  ifelse(educ %in% c(2,3),'Secondary or higher',NA_character_))),
+  levels=c('None','Primary','Secondary or higher'))
+e$wealth <- factor(c('Poorest','Poorer','Middle','Richer','Richest')[
+  as.numeric(ir$v190[e$woman_row])],
+  levels=c('Poorest','Poorer','Middle','Richer','Richest'))
+e$residence <- factor(ifelse(as.numeric(ir$v025[e$woman_row])==1,'Urban','Rural'),
+  levels=c('Urban','Rural'))
+# Pool recent starts to avoid sparse cohort terms.
+year <- (e$start-1L)%/%12L+1900L
+e$start_year <- factor(ifelse(year>=2023,'2023–24',as.character(year)))
+complete <- complete.cases(e[,c('method_group','zone_name','age_group',
+  'parity_group','marital_group','education','wealth','residence','start_year')])
+cat('Complete-case episodes:',sum(complete),'of',nrow(e),'\n')
+e <- e[complete,]
+saveRDS(e,file.path(derived,'drc_2023_24_model_episode_covariates.rds'))
+
+observed_months <- pmax(0L,pmin(12L,e$exposure)-e$entry)
+idx <- rep(seq_len(nrow(e)),observed_months)
+month <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
+  e$entry,observed_months),use.names=FALSE)
+person <- e[idx,c('wt','cluster','stratum','method_group','zone_name',
+  'age_group','parity_group','marital_group','education','wealth',
+  'residence','start_year')]
+person$month <- factor(month,levels=1:12)
+end <- e$discontinued[idx] & month==e$exposure[idx]
+person$outcome <- factor(ifelse(!end,'continue',
+  ifelse(e$reason_code[idx] %in% actionable,'actionable','competing')),
+  levels=c('continue','actionable','competing'))
+stopifnot(!anyNA(person),nrow(person)>10000)
+saveRDS(person,file.path(derived,'drc_2023_24_person_month.rds'))
+
+f1 <- outcome~month+method_group+zone_name
+f2 <- outcome~month+method_group+zone_name+age_group+parity_group+
+  marital_group+education+wealth+residence+start_year
+fit <- function(formula,data,wts,with_hessian=TRUE){
+  data$fit_weight <- wts
+  m <- nnet::multinom(formula,data=data,weights=fit_weight,trace=FALSE,
+    maxit=350,MaxNWts=10000,Hess=with_hessian)
+  m$call$formula <- formula
+  if(m$convergence!=0L)stop('Model did not converge')
+  m
+}
+model1 <- fit(f1,person,person$wt)
+model2 <- fit(f2,person,person$wt)
+saveRDS(model1,file.path(derived,'drc_actionable_province_model_1.rds'))
+saveRDS(model2,file.path(derived,'drc_actionable_province_model_2.rds'))
+
+# The common reference is modern episodes observed from initiation, thus its
+# covariates represent the cohort to whom first-year predictions apply.
+standard <- e[e$entry==0L,]
+predict_cif <- function(model,zone,reference=standard,weights=reference$wt){
+  d <- reference
+  if(!is.null(zone) && !is.na(zone))
+    d$zone_name <- factor(zone,levels=levels(e$zone_name))
+  survival <- rep(1,nrow(d)); cumulative <- numeric(nrow(d))
+  for(t in 1:12){
+    d$month <- factor(t,levels=1:12)
+    p <- predict(model,newdata=d,type='probs')
+    cumulative <- cumulative+survival*p[,'actionable']
+    survival <- survival*p[,'continue']
+  }
+  100*weighted.mean(cumulative,weights)
+}
+zones <- levels(e$zone_name)
+point <- do.call(rbind,lapply(zones,function(z){
+  raw <- times[times$scope==z & times$month==12,]
+  data.frame(zone=z,eligible_episodes_n=raw$eligible_episodes_n,
+    actionable_endings_n=raw$actionable_endings_n,
+    unadjusted_pct=raw$actionable_pct,unadjusted_low=raw$actionable_ci_low,
+    unadjusted_high=raw$actionable_ci_high,
+    model_1_common_mix_pct=predict_cif(model1,z),
+    model_2_common_mix_pct=predict_cif(model2,z))
+}))
+national <- times[times$scope=='National' & times$month==12,]
+point <- rbind(data.frame(zone='National',
+  eligible_episodes_n=national$eligible_episodes_n,
+  actionable_endings_n=national$actionable_endings_n,
+  unadjusted_pct=national$actionable_pct,
+  unadjusted_low=national$actionable_ci_low,
+  unadjusted_high=national$actionable_ci_high,
+  model_1_common_mix_pct=predict_cif(model1,NULL),
+  model_2_common_mix_pct=predict_cif(model2,NULL)),point)
+write.csv(point,file.path(support,'drc_actionable_province_adjusted_rates.csv'),
+  row.names=FALSE)
+
+
+# Broader selected-reason diagnostics retain their existing outcome definition.
+p2<-person
+obs<-pmin(12L,e$exposure)-e$entry;index<-rep(seq_len(nrow(e)),obs)
+mt<-as.integer(as.character(person$month));ended<-e$discontinued[index]&mt==e$exposure[index]
+p2$outcome<-factor(ifelse(!ended,'continue',ifelse(e$reason_code[index]%in%c(2L,3L),'competing','selected')),levels=c('continue','selected','competing'))
+selected_models<-lapply(list(f1,f2),function(f)fit(f,p2,p2$wt,TRUE))
+for(k in 1:2)saveRDS(selected_models[[k]],file.path(derived,paste0('drc_selected_reason_province_model_',k,'.rds')))
+pred<-function(model,zone){d<-standard;d$zone_name<-factor(zone,levels=levels(e$zone_name));s<-rep(1,nrow(d));v<-rep(0,nrow(d));for(t in 1:12){d$month<-factor(t,levels=1:12);p<-predict(model,newdata=d,type='probs');v<-v+s*p[,'selected'];s<-s*p[,'continue']};100*weighted.mean(v,d$wt)}
+raw<-read.csv(file.path(support,'drc_selected_reason_subgroups.csv'));z<-raw[raw$group%in%paste0('zone_name::',zones),];z<-z[match(paste0('zone_name::',zones),z$group),]
+point<-data.frame(province=zones,method_adjusted_pct=vapply(zones,function(a)pred(selected_models[[1]],a),0.0),fully_adjusted_pct=vapply(zones,function(a)pred(selected_models[[2]],a),0.0),method_adjusted_low=NA_real_,method_adjusted_high=NA_real_,fully_adjusted_low=NA_real_,fully_adjusted_high=NA_real_,observed_pct=z$selected_12_month_pct,observed_low=z$ci_low,observed_high=z$ci_high,eligible_episodes_n=z$eligible_episodes_n,selected_endings_n=z$selected_endings_n,small_cell=z$selected_endings_n<30L)
+write.csv(point,file.path(support,'drc_selected_reason_province_adjusted_rates.csv'),row.names=FALSE)
+cat('Weighted actionable and broader selected-reason point fits completed.\n')
+)-----")
+
+MODULES[["216_reconcile_reason_distributions.R"]] <- list(language="R",packaged_sha256="cd41f25bddd298261217cf16a07c7e51cf9a193d7c615b9a99f87ad87740e6ce",args=character(),code=r"-----(#!/usr/bin/env Rscript
+# DRC reason-distribution validation, using DHS calendar Example 5 / Table 7.14.
+# Run on supplied IR input; output paths are project-relative.
+a<-commandArgs(TRUE);root<-if(length(a))normalizePath(a[1])else Sys.getenv('DRC_PROJECT_ROOT');out<-if(length(a)>1)a[2]else file.path(root,'output/Supporting_data');dir.create(out,recursive=TRUE,showWarnings=FALSE)
+suppressPackageStartupMessages(library(haven))
+x<-if(file.exists(file.path(root,'Data/ir.rds')))readRDS(file.path(root,'Data/ir.rds'))else as.data.frame(read_dta(Sys.getenv('DRC_IR_FILE',unset=file.path(root,'Data/CDIR81FL.dta'))))
+methodchars<-strsplit('123456789WNALCFEMS~','')[[1]]
+reasonchars<-c('1'=1L,'2'=2L,'3'=3L,'4'=4L,'5'=5L,'6'=6L,'7'=7L,'8'=8L,'9'=9L,'C'=10L,'F'=11L,'A'=12L,'D'=13L,'M'=15L,'W'=96L,'K'=98L,'?'=99L)
+labels<-c('1'='Method failure','2'='Wanted pregnancy','3'='Partner disapproval','7'='Want more effective method','15'='Changes in menstrual bleeding','4'='Other side effects/health','5'='Other side effects/health','6'='Lack of access/too far','10'='Cost too much','8'='Inconvenient to use','11'='Fatalistic','12'='Difficulty becoming pregnant/menopause','9'='Infrequent sex/husband away','13'='Marital dissolution/separation','96'='Other','98'="Don't know",'99'='Missing')
+reason_order<-unname(labels[c('1','2','3','7','15','4','6','10','8','11','12','9','13','96','98','99')])
+recs<-lapply(0:59,function(t){p<-as.integer(x$v018)+t;v<-substring(x$vcal_2,p,p);i<-which(nzchar(trimws(v)));data.frame(woman=i,months_before_interview=rep(t,length(i)),method_code=match(substring(x$vcal_1[i],p[i],p[i]),methodchars),reason_code=unname(reasonchars[v[i]]),wt=as.numeric(x$v005[i])/1e6)})
+d<-do.call(rbind,recs);stopifnot(!anyNA(d),all(d$method_code>0));d$reason<-unname(labels[as.character(d$reason_code)]);stopifnot(!anyNA(d$reason))
+# Published Table 7.14 "Other" combines traditional W with LAM and other modern.
+d$published_method<-c('Pill','IUD','Injectables','Diaphragm','Male condom','Female sterilization','Male sterilization','Rhythm','Withdrawal','Other','Implants','Abstinence','Other','Female condom','Foam/jelly','EC','Other','SDM','Unknown')[d$method_code]
+# All recognized ongoing modern methods, excluding EC and traditional/unknown codes.
+modern_codes<-c(1L,2L,3L,4L,5L,6L,7L,11L,13L,14L,15L,17L,18L)
+d$modern<-d$method_code%in%modern_codes
+d$method<-ifelse(d$method_code==1L,'Pill',ifelse(d$method_code==2L,'IUD',ifelse(d$method_code==3L,'Injectables',ifelse(d$method_code==11L,'Implants','Other modern'))))
+# Reference transcribed from DRC DHS 2023–24 Table 7.14. Suppressed columns
+# are checked for counts only, never treated as published percentage values.
+reference<-list(
+ 'Injectables'=c(3.2,30.6,1.8,9.6,17.8,22,2.1,3.4,1.1,1.2,.2,3.3,2.2,.8,.7,0),
+ 'Implants'=c(.4,32.8,3,2.5,15.2,29.2,.6,1.1,.4,2.1,3.8,2.7,1.4,4.2,.5,.1),
+ 'Pill'=c(6.4,24.4,5.5,5.9,20.1,15.7,.3,.8,4,2,0,10.2,0,2.2,.1,2.5),
+ 'Male condom'=c(3.3,21.3,16.7,8.5,1.9,2.9,2.5,2.2,5.2,.4,.2,23.8,6.7,3.9,.3,.3),
+ 'EC'=c(5.2,25.1,.8,4.9,9.7,7.4,1.1,4.8,1.6,.1,1.2,23.5,6.3,3.8,0,4.5),
+ 'SDM'=c(14.5,32.5,5.7,11.5,4.2,2.2,0,0,3.3,.3,2.4,15.9,2.2,2,1.1,2),
+ 'Rhythm'=c(13.5,41.2,5.1,5.5,3.8,.4,.7,0,2.5,2.5,.6,18.9,2.3,1.1,.6,1.3),
+ 'Withdrawal'=c(9.2,35.1,12.3,11.4,1.3,.9,.2,0,3.4,1,1.1,15.3,2.7,3.7,1.9,.6),
+ 'Other'=c(5.4,33.9,8.3,16.1,5.6,1.7,.1,0,1.1,4,.1,15.3,1.3,3.6,.8,2.8),
+ 'All methods'=c(7.9,33.4,7.2,8.4,7.1,7.2,.8,.9,2.7,1.8,1,14.6,2.6,2.5,.8,1.3))
+counts<-c('Male sterilization'=0,'IUD'=24,'Injectables'=614,'Implants'=609,'Pill'=422,'Male condom'=580,'Female condom'=11,'EC'=221,'SDM'=370,'Rhythm'=1712,'Withdrawal'=1078,'Other'=660,'All methods'=6301)
+validation<-do.call(rbind,lapply(names(reference),function(m){q<-if(m=='All methods')d else d[d$published_method==m,];v<-vapply(reason_order,function(r)100*sum(q$wt[q$reason==r])/sum(q$wt),0.0);data.frame(method=m,reason=reason_order,estimate_pct=v,published_pct=reference[[m]],difference_pp=round(v,1)-reference[[m]],matches=round(v,1)==reference[[m]])}))
+check_counts<-do.call(rbind,lapply(names(counts),function(m){q<-if(m=='All methods')d else d[d$published_method==m,];data.frame(method=m,weighted_count=sum(q$wt),published_count=unname(counts[m]),matches=round(sum(q$wt))==counts[m])}))
+stopifnot(all(validation$matches),all(check_counts$matches))
+write.csv(validation,file.path(out,'drc_table_7_14_validation.csv'),row.names=FALSE);write.csv(check_counts,file.path(out,'drc_table_7_14_count_validation.csv'),row.names=FALSE)
+# Full-frame ratio linearization for reason shares. Counts are weighted;
+# observed sample sizes remain explicitly unweighted.
+frame<-unique(data.frame(psu=as.numeric(x$v021),stratum=as.numeric(x$v022)));frame<-frame[order(frame$stratum,frame$psu),];fi<-match(as.numeric(x$v021),frame$psu);df<-nrow(frame)-length(unique(frame$stratum));crit<-qt(.975,df)
+share_rows<-function(q,method,reason_var='reason',order=reason_order){den<-sum(q$wt);n<-nrow(q);lapply(order,function(r){v<-as.numeric(q[[reason_var]]==r);p<-sum(q$wt*v)/den;sc<-q$wt*(v-p)/den;ps<-rowsum(sc,fi[q$woman],reorder=FALSE);score<-numeric(nrow(frame));score[as.integer(rownames(ps))]<-ps[,1];variance<-sum(vapply(split(score,frame$stratum),function(v){length(v)/(length(v)-1)*sum((v-mean(v))^2)},0.0));se<-sqrt(variance);if(p>0&&p<1){ci<-plogis(qlogis(p)+c(-1,1)*crit*se/(p*(1-p)))}else ci<-c(NA,NA);data.frame(method=method,reason=r,share_pct=100*p,ci_low=100*ci[1],ci_high=100*ci[2],weighted_endings=sum(q$wt*v),observed_endings_n=sum(v),method_endings_n=n,weighted_method_endings=den,sparse_method=n<25,sparse_reason=sum(v)<5)})}
+methods<-c('All modern','Injectables','Implants','Pill','IUD','Other modern');m<-d[d$modern,]
+grouped<-do.call(rbind,lapply(methods,function(s)do.call(rbind,share_rows(if(s=='All modern')m else m[m$method==s,],s))))
+write.csv(grouped,file.path(out,'drc_five_year_reason_shares_corrected.csv'),row.names=FALSE)
+# Same nine reason groups used for first-year presentation comparisons.
+group9<-function(v){ifelse(v%in%c('Lack of access/too far','Cost too much','Inconvenient to use'),'Access/cost/convenience',ifelse(v%in%c('Difficulty becoming pregnant/menopause','Infrequent sex/husband away','Marital dissolution/separation'),'Other fertility',ifelse(v%in%c('Fatalistic','Other',"Don't know",'Missing'),'Other recorded',v)))}
+order9<-c('Method failure','Wanted pregnancy','Other fertility','Changes in menstrual bleeding','Other side effects/health','Want more effective method','Access/cost/convenience','Partner disapproval','Other recorded')
+m$reason9<-group9(m$reason)
+grouped9<-do.call(rbind,lapply(methods,function(s)do.call(rbind,share_rows(if(s=='All modern')m else m[m$method==s,],s,'reason9',order9))))
+write.csv(grouped9,file.path(out,'drc_five_year_reason_groups_corrected.csv'),row.names=FALSE)
+# Correct the old five-year CSV without changing its column contract.
+oldfile<-file.path(root,'output/Supporting_data/drc_five_year_reason_distribution_by_method.csv');old<-if(file.exists(oldfile))read.csv(oldfile)else NULL
+labels_detail<-c('1'='Method failure','2'='Wanted pregnancy','3'='Partner disapproval','7'='Want more effective method','15'='Changes in menstrual bleeding','4'='Other side effects/health','5'='Other side effects/health','6'='Access/cost/convenience','10'='Access/cost/convenience','8'='Access/cost/convenience','11'='Other recorded: fatalistic','12'='Difficulty becoming pregnant/menopause','9'='Infrequent sex/husband away','13'='Marital dissolution/separation','96'='Other recorded: other','98'='Other recorded: unknown','99'='Other recorded: missing')
+m$detail<-unname(labels_detail[as.character(m$reason_code)]);r<-aggregate(wt~method+detail,m,sum);names(r)<-c('method','reason','weighted_endings');den<-tapply(m$wt,m$method,sum);r$share_within_method_pct<-100*r$weighted_endings/den[r$method];r$observed_endings_n<-vapply(seq_len(nrow(r)),function(i)sum(m$method==r$method[i]&m$detail==r$reason[i]),0L)
+write.csv(r,file.path(out,'drc_five_year_reason_distribution_by_method.csv'),row.names=FALSE)
+if(!is.null(old)){comp<-merge(old[,c('method','reason','share_within_method_pct')],r[,c('method','reason','share_within_method_pct')],by=c('method','reason'),all=TRUE,suffixes=c('_old','_corrected'));comp[is.na(comp)]<-0;comp$difference_pp<-comp$share_within_method_pct_corrected-comp$share_within_method_pct_old
+write.csv(comp,file.path(out,'drc_reason_share_corrections.csv'),row.names=FALSE)}
+write.csv(as.data.frame(table(m$method)),file.path(out,'drc_reason_method_sample_sizes.csv'),row.names=FALSE)
+cat('Table 7.14:',sum(validation$matches),'of',nrow(validation),'published percentage cells and',sum(check_counts$matches),'of',nrow(check_counts),'weighted counts match.\n')
+print(grouped9[,c('method','reason','share_pct')]);if(!is.null(old))print(comp[order(-abs(comp$difference_pp)),][1:10,])
+
+# First-year recorded-ending shares retain the presentation's existing scope.
+e<-readRDS(file.path(root,'Data/Derived/drc_2023_24_modern_episodes.rds'))
+f<-e[e$discontinued&e$exposure<=12,];f$woman<-f$woman_row;f$method<-as.character(f$method_group);f$reason<-unname(labels[as.character(f$reason_code)]);f$reason[is.na(f$reason)]<-'Missing';f$reason9<-group9(f$reason)
+first<-do.call(rbind,lapply(methods,function(s)do.call(rbind,share_rows(if(s=='All modern')f else f[f$method==s,],s,'reason9',order9))))
+write.csv(first,file.path(out,'drc_first_year_reason_groups_checked.csv'),row.names=FALSE)
+# Specific modern methods are available separately from the presentation groups.
+names_individual<-c('Pill','IUD','Injectables','Diaphragm','Male condom','Female sterilization','Male sterilization','Rhythm','Withdrawal','Other traditional','Implants','Abstinence','LAM','Female condom','Foam/jelly','EC','Other modern specified','SDM','Unknown')
+m$individual_method<-names_individual[m$method_code]
+ind<-do.call(rbind,lapply(unique(m$individual_method),function(k)do.call(rbind,share_rows(m[m$individual_method==k,],k,'reason9',order9))))
+write.csv(ind,file.path(out,'drc_five_year_reason_groups_individual_methods.csv'),row.names=FALSE)
+# Both display horizons use weights, and CI denominators use the full survey frame.
+stopifnot(max(abs(tapply(first$share_pct,first$method,sum)-100))<1e-8,max(abs(tapply(grouped9$share_pct,grouped9$method,sum)-100))<1e-8)
+cat('Both reason-share tables sum to 100% within every method before rounding.\n')
+# Individual-method first-year shares and timing, preserving sparse support flags.
+f$individual_method<-names_individual[f$method_code]
+individual_first<-do.call(rbind,lapply(unique(f$individual_method),function(k)do.call(rbind,share_rows(f[f$individual_method==k,],k,'reason9',order9))))
+write.csv(individual_first,file.path(out,'drc_first_year_reason_groups_individual_methods.csv'),row.names=FALSE)
+variance_psu<-function(v)sum(vapply(split(v,frame$stratum),function(z)length(z)/(length(z)-1)*sum((z-mean(z))^2),0.0))
+psutotal<-function(w,id){z<-numeric(nrow(frame));if(length(w)){q<-rowsum(w,id,reorder=FALSE);z[as.integer(rownames(q))]<-q[,1]};z}
+act<-c(1L,4L,5L,6L,7L,8L,10L,15L)
+individual_times<-do.call(rbind,lapply(sort(unique(e$method_code)),function(code){
+ q<-e[e$method_code==code,];id<-fi[q$woman_row];s<-1;ds<-numeric(nrow(frame));v<-c(all_reason=0,actionable=0);dv<-matrix(0,2,nrow(frame));rows<-list()
+ for(t in 1:12){at<-q$entry<t&q$exposure>=t;en<-at&q$exposure==t&q$discontinued;rp<-psutotal(q$wt[at],id[at]);R<-sum(rp)
+  if(R>0){dp<-psutotal(q$wt[en],id[en]);ap<-psutotal(q$wt[en&q$reason_code%in%act],id[en&q$reason_code%in%act]);h<-c(sum(dp)/R,sum(ap)/R);dh<-rbind((dp-h[1]*rp)/R,(ap-h[2]*rp)/R);dv<-dv+h%o%ds+s*dh;v<-v+s*h;ds<-ds*(1-h[1])-s*dh[1,];s<-s*(1-h[1])
+  }else if(s>1e-10){v[]<-NA_real_;dv[]<-NA_real_}
+  if(t%in%c(3L,6L,9L,12L)){z<-data.frame(method=names_individual[code],month=t,eligible_episodes_n=nrow(q),observed_first_year_endings=sum(q$discontinued&q$exposure<=12),limited_precision=nrow(q)<50L||sum(q$discontinued&q$exposure<=12)<25L)
+   for(j in 1:2){ci<-c(NA_real_,NA_real_);if(is.finite(v[j])&&v[j]>0&&v[j]<1){se<-sqrt(variance_psu(dv[j,]));ci<-plogis(qlogis(v[j])+c(-1,1)*crit*se/(v[j]*(1-v[j])))};nm<-names(v)[j];z[[paste0(nm,'_pct')]]<-100*v[j];z[[paste0(nm,'_ci_low')]]<-100*ci[1];z[[paste0(nm,'_ci_high')]]<-100*ci[2]}
+   rows[[length(rows)+1L]]<-z}
+ };do.call(rbind,rows)
+}))
+write.csv(individual_times,file.path(out,'drc_individual_method_timepoints_checked.csv'),row.names=FALSE)
+cat('Individual-method reason shares and survey-design timing intervals exported.\n')
+)-----")
+
+# Shared full sampling frame. Zero-weight records preserve factor levels while
+# supplying PSUs omitted by an outcome domain; source observations are intact.
+SURVEY_FRAME_HELPERS <- r"-----(
+full_survey_frame <- function(){r<-Sys.getenv('DRC_PROJECT_ROOT');x<-if(file.exists(file.path(r,'Data/ir.rds')))readRDS(file.path(r,'Data/ir.rds'))else as.data.frame(haven::read_dta(Sys.getenv('DRC_IR_FILE',unset=file.path(r,'Data/CDIR81FL.dta')),col_select=c(v021,v022)));unique(data.frame(cluster=as.numeric(x$v021),stratum=as.numeric(x$v022)))}
+complete_survey_data <- function(d){f<-full_survey_frame();miss<-f[!f$cluster%in%d$cluster,];if(nrow(miss)){z<-d[rep(1L,nrow(miss)),,drop=FALSE];z$cluster<-miss$cluster;z$stratum<-miss$stratum;z$wt<-0;d<-rbind(d,z)};d}
+)-----"
+
 # Register labelled-variable conversions in fresh module subprocesses.
 for(module_name in names(MODULES))if(MODULES[[module_name]]$language=='R') {
-  MODULES[[module_name]]$code<-paste0("if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')\n",MODULES[[module_name]]$code)
+  MODULES[[module_name]]$code<-paste0("if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')\n",SURVEY_FRAME_HELPERS,"\n",MODULES[[module_name]]$code)
 }
 
 # Execute only when called as the command-line entry point.
+
+# Latest revision calculations and incremental report rendering.
+REVISED_GROWTH_ASSUMPTIONS <- r"--------({
+  "scenarios": [
+    {
+      "scenario": "Recent DHS trend (2014\u20132024)",
+      "annual_change_pp": 0.1772811744012914
+    },
+    {
+      "scenario": "Longer-term DHS trend (2007\u20132024)",
+      "annual_change_pp": 0.1905467681009662
+    },
+    {
+      "scenario": "FPET-informed growth",
+      "annual_change_pp": 0.4000000000000004
+    }
+  ],
+  "rates_from": {
+    "dhs2007": 6.654640011984162,
+    "dhs2014": 8.121123325687673,
+    "dhs2024": 9.893935069700587,
+    "fpet2024": 10.4,
+    "fpet2025": 10.8
+  }
+})--------"
+REVISED_TABLE_SCHEMA <- r"--------([
+  {
+    "title": "First-year: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "First-year: users by method and cause",
+    "kind": "cause",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "First-year: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: 10-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 1
+  },
+  {
+    "title": "First-year: 17-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 2
+  },
+  {
+    "title": "First-year: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: users by method and cause",
+    "kind": "cause",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: 10-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 1
+  },
+  {
+    "title": "Historical duration-aware: 17-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 2
+  },
+  {
+    "title": "Historical duration-aware: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: users by method and cause",
+    "kind": "cause",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: 10-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 1
+  },
+  {
+    "title": "AFT survival: 17-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 2
+  },
+  {
+    "title": "AFT survival: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: users by method and cause",
+    "kind": "cause",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: 10-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 1
+  },
+  {
+    "title": "Historical sensitivity: 17-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 2
+  },
+  {
+    "title": "Historical sensitivity: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 5,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: users by method and cause",
+    "kind": "cause",
+    "approach": 5,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: 10-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 1
+  },
+  {
+    "title": "AFT sensitivity: 17-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 2
+  },
+  {
+    "title": "AFT sensitivity: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 5,
+    "scenario": null
+  }
+])--------"
+REVISION_HELPERS <- list(
+  "300_revised_planning.R" = r"--------(#!/usr/bin/env Rscript
+# Usage: compute_2025.R SAVED_STATS_DIR VERIFIED_GROWTH_JSON OUTPUT_DIR
+# Reuses saved point estimates and 500 survey bootstrap draws. Models are not refitted.
+a<-commandArgs(TRUE);stopifnot(length(a)==3)
+suppressPackageStartupMessages(library(jsonlite))
+point<-readRDS(file.path(a[1],'planning_point.rds'));reps<-readRDS(file.path(a[1],'planning_replicates.rds'));meta<-readRDS(file.path(a[1],'planning_metadata.rds'))
+outdir<-a[3];dir.create(outdir,recursive=TRUE,showWarnings=FALSE)
+verified<-fromJSON(a[2]);rates<-verified$scenarios$annual_change_pp
+labels<-verified$scenarios$scenario
+if(is.null(meta$epsilon))meta$epsilon<-0
+metrics<-function(x){
+ counts<-x$risk
+ for(m in meta$methods)counts[,m,]<-x$risk[,m,]*x$users2024[m]
+ counts<-abind::abind(counts,counts[1,,,drop=FALSE]-counts[6,,,drop=FALSE],counts[2,,,drop=FALSE]-counts[4,,,drop=FALSE],counts[3,,,drop=FALSE]-counts[5,,,drop=FALSE],along=1)
+ y<-c(stock_no_ec=sum(x$users2024[meta$methods]),mcpr2024=x$mcpr,users2024=sum(x$users2024))
+ for(m in c(meta$methods,'EC'))y[paste('stock',m,sep='|')]<-x$users2024[m]
+ for(i in 1:11)for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
+  mi<-if(m=='Total')1:5 else match(m,meta$methods);ci<-if(ca=='Total')1:5 else match(ca,meta$causes)
+  v<-sum(counts[i,mi,ci]);stock<-if(m=='Total')sum(x$users2024[meta$methods])else x$users2024[m];key<-paste(i,m,ca,sep='|')
+  y[paste0('count|',key)]<-v;y[paste0('pp|',key)]<-100*v/meta$wra2025;y[paste0('risk|',key)]<-100*v/stock
+ }
+ for(j in 1:3){base<-x$mcpr+rates[j];y[paste0('base|',j)]<-base;y[paste0('baseusers|',j)]<-base/100*meta$wra2025
+  for(i in 1:5)for(m in c(meta$methods,'EC','Total')){
+   share<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(counts[i,,])else if(m=='EC')0 else sum(counts[i,m,]);usual<-base*share
+   key<-paste(j,i,m,sep='|');y[paste0('usualusers|',key)]<-usual/100*meta$wra2025;y[paste0('retainedusers|',key)]<-usual/100*meta$wra2025+add
+   y[paste0('usualmcpr|',key)]<-usual;y[paste0('retainedmcpr|',key)]<-usual+100*add/meta$wra2025
+  }
+ }
+ for(i in 1:5)for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
+  base<-if(i==4)2 else if(i==5)3 else i;key<-paste(i,m,ca,sep='|');den<-y[paste0('count|',base,'|',m,'|',ca)]
+  y[paste0('fraction|',key)]<-if(den>0)100*y[paste0('count|',key)]/den else 0
+ }
+ copykeys<-names(y)[grepl('^(count|pp|stock|base|usualusers|retainedusers|usualmcpr|retainedmcpr)[|]',names(y))]
+ for(k in copykeys)y[paste0('legacy_',k)]<-y[k]
+ y['legacy_stock|Total']<-sum(x$users2024)
+ y
+}
+pt<-metrics(point);ds<-vapply(reps,metrics,pt);ds<-pt+(ds-pt)/(1-meta$epsilon)
+lo<-apply(ds,1,quantile,.025);hi<-apply(ds,1,quantile,.975);lo<-pmax(0,pmin(lo,pt));hi<-pmax(hi,pt)
+pct<-grepl('^(risk|usualmcpr|retainedmcpr)[|]',names(pt));hi[pct]<-pmin(100,hi[pct])
+write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(outdir,'revised_planning_intervals.csv'),row.names=FALSE)
+write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(outdir,'planning_intervals.csv'),row.names=FALSE)
+meta$reference_year<-2024;meta$outcome_year<-2025;meta$definitions[4]<-'Observed 2024 current-user cohort; 2025 mCPR under recent DHS, longer-term DHS, or FPET-informed annual change. Growth and population assumptions are fixed.'
+write_json(meta,file.path(outdir,'metadata.json'),auto_unbox=TRUE,pretty=TRUE)
+summary<-data.frame(scenario=labels,annual_change_pp=rates,mcpr2024=point$mcpr,mcpr2025=point$mcpr+rates,users2024=sum(point$users2024),users2025=(point$mcpr+rates)/100*meta$wra2025)
+write.csv(summary,file.path(outdir,'scenario_summary.csv'),row.names=FALSE)
+jsonlite::write_json(list(scenarios=summary,reference_year=2024,outcome_year=2025,wra2024=meta$wra2024,wra2025=meta$wra2025,methods=meta$methods,causes=meta$causes,replicates=length(reps),rates_from=verified$rates_from,reference_stock=as.list(point$users2024),ending_totals=sapply(1:5,function(i)pt[paste0('count|',i,'|Total|Total')]),pp_totals=sapply(1:5,function(i)pt[paste0('pp|',i,'|Total|Total')])),file.path(outdir,'revision_inputs.json'),auto_unbox=TRUE,pretty=TRUE,digits=15)
+stopifnot(!anyNA(pt),all(pt[grepl('^(count|pp)[|]',names(pt))]>=-1e-6))
+cat('2025 mCPR gains (gross first-year / historical / AFT; switching historical / AFT):\n');print(sapply(1:5,function(i)pt[paste0('pp|',i,'|Total|Total')]))
+print(summary)
+)--------",
+  "301_revised_tables.py" = r"--------(#!/usr/bin/env python3
+"""Usage: build_tables.py REVISED_STATS_DIR ORIGINAL_SPECS_JSON OUTPUT_DIR"""
+from pathlib import Path
+import sys,csv,json,copy
+stats,oldfile,out=map(Path,sys.argv[1:]);out.mkdir(exist_ok=True,parents=True)
+meta=json.loads((stats/'revision_inputs.json').read_text());D={r['key']:{k:float(r[k]) for k in ['estimate','lower','upper']} for r in csv.DictReader((stats/'revised_planning_intervals.csv').open())}
+methods=meta['methods'];causes=meta['causes'];old=json.loads(oldfile.read_text())
+labels=[f'10-year DHS trend\n({meta["scenarios"][0]["annual_change_pp"]:+.2f} pp/year)',f'17-year DHS trend\n({meta["scenarios"][1]["annual_change_pp"]:+.2f} pp/year)',f'FPET-informed growth\n({meta["scenarios"][2]["annual_change_pp"]:+.2f} pp/year)']
+short=['10-year DHS trend','17-year DHS trend','FPET-informed growth']
+def val(key,kind='num',deck=False):
+ x=D[key];scale=1000 if deck and kind=='num' else 1;digits=(1 if deck else 0) if kind=='num' else 1 if kind=='risk' else 2
+ def f(y):return '<0.01' if kind=='pp' and 0<y<.005 else '<0.1' if kind=='num' and deck and 0<y/scale<.05 else f'{y/scale:,.{digits}f}'
+ suffix=' pp' if kind=='pp' else '%' if kind in ['risk','pct'] else ''
+ v=f(x['estimate'])+suffix
+ if x['estimate']==x['lower']==x['upper']==0:return v+'\n(CI unavailable†)'
+ if abs(x['upper']-x['lower'])>1e-10:v+='\n('+f(x['lower'])+'–'+f(x['upper'])+')'
+ return v
+def make(sp,deck):
+ s=copy.deepcopy(sp);a=s['approach'];kind=s['kind'];base=2 if a==4 else 3 if a==5 else a;label=s['title'].split(':')[0]
+ s['subtitle']='Users in thousands; estimates (95% CI)' if deck else 'Numbers of women; estimates (95% survey intervals)'
+ c=lambda m,ca:val(f'count|{a}|{m}|{ca}',deck=deck)
+ pp=lambda m,ca:val(f'pp|{a}|{m}|{ca}','pp',deck)
+ stock=lambda m:val('users2024' if m=='Total' else 'stock|'+m,deck=deck)
+ name=lambda m:'IUD*' if m=='IUD' else m
+ heads=['Method / measure','Method\nfailure','Want more\neffective','Bleeding\nchanges','Other side\neffects/health','Access/cost/\nconvenience','All actionable\ncauses']
+ if kind=='method':
+  s['table']=[['Method','2024 survey\ncurrent users','Original-method ending\nprobability' if a>3 else 'Actionable ending\nprobability','Year-end losses\nafter switching' if a>3 else 'Users ending\noriginal method','mCPR equivalent']]
+  for m in methods:s['table'].append([name(m),stock(m),val(f'risk|{base}|{m}|Total','risk',deck),c(m,'Total'),pp(m,'Total')])
+  s['table'].append(['EC',stock('EC'),'Not applied','Not estimated','Not estimated'])
+  s['table'].append(['Current-user mix\nexcluding EC',val('stock_no_ec',deck=deck),val(f'risk|{base}|Total|Total','risk',deck),c('Total','Total'),pp('Total','Total')])
+ elif kind in ['cause','cause_pp']:
+  s['table']=[heads]+[[name(m),*[c(m,ca) for ca in causes],c(m,'Total')] for m in methods]
+  s['table'].append(['Year-end losses' if a>3 else 'Users ending method',*[c('Total',ca) for ca in causes],c('Total','Total')])
+  if kind=='cause_pp':
+   pop=meta['wra2025']/1000 if deck else meta['wra2025']
+   s['table'].append(['2025 women aged\n15–49 (fixed)',*[f'{pop:,.1f}']*6]);s['table'].append(['mCPR increase (pp)',*[pp('Total',ca) for ca in causes],pp('Total','Total')])
+ elif kind=='baseline':
+  s['title']=label+': mCPR growth scenarios';s['subtitle']='2024 survey baseline and projected 2025 mCPR under three annual-change assumptions'
+  s['table']=[['Different mCPR\ngrowth scenarios','Annual change\n(pp/year)','2024 survey\nmCPR','Projected 2025\nmCPR']]+[[labels[j-1],f'{meta["scenarios"][j-1]["annual_change_pp"]:+.2f}',val('mcpr2024','pct',deck),val(f'base|{j}','pct',deck)] for j in range(1,4)]
+ elif kind=='scenario':
+  s['table']=[['Different mCPR\ngrowth scenarios','2025 users\nusual scenario','2025\nmCPR','2025 users\nif retained','mCPR\nif retained','Increase\n(pp)']]
+  for j in range(1,4):
+   k=f'{j}|{a}|Total';s['table'].append([labels[j-1],val('usualusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedusers|'+k,deck=deck),val('retainedmcpr|'+k,'pct',deck),pp('Total','Total')])
+ elif kind=='method_scenario':
+  j=s['scenario'];s['title']=label+': '+short[j-1]+' by method'
+  s['table']=[['Method','2024 survey\nusers','2025 users\nusual scenario','Losses\navoided','2025 users\nif retained','2025\nmCPR','mCPR\nif retained']]
+  for m in methods+['EC','Total']:
+   k=f'{j}|{a}|{m}';s['table'].append(['All modern' if m=='Total' else name(m),stock(m),val('usualusers|'+k,deck=deck),'Not estimated' if m=='EC' else c(m,'Total'),val('retainedusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedmcpr|'+k,'pct',deck)])
+ else:raise ValueError(kind)
+ definitions={1:'First-year: weighted actionable cumulative incidence in months 1–12 after initiation, applied to observed 2024 current users. Elapsed use is not incorporated.',2:'Historical: observed next-12-month actionable ending probability at current elapsed duration. The 61+ month group uses 37–60-month experience.',3:'AFT: six weighted method-specific cause-specific survival models predict next-12-month outcomes conditional on elapsed use. Five actionable causes compete with other endings.'}
+ s['note']=definitions[base]
+ s['note']+=(' Sensitivity: year-end losses deduct modern-to-modern switches and later restarters; EC counts as modern at year end.' if a>3 else ' Every actionable original-method ending is treated as a lost user. Switching/restarting is not deducted.')
+ s['note']+=' Partner/spousal disapproval is excluded. The observed 2024 cohort is fixed across scenarios. 95% intervals use 500 stratified PSU bootstrap draws; growth and population assumptions are fixed. CI bounds are not additive.'
+ if base==3:s['note']+=' * IUD uses the Other-modern AFT curve. Sparse switching fractions pool across methods.' if a>3 else ' * IUD uses the Other-modern AFT curve.'
+ else:s['note']+=' * IUD: 23 eligible episodes and 14 current users.'
+ s['note']+=' † No reliable empirical CI when no events were observed.'
+ if kind=='method':s['note']+=' Total ending probability averages method-specific risks using the 2024 current-user mix, excluding EC.'
+ if kind=='baseline':s['note']=f'Recent annual change = (2024 DHS {meta["rates_from"]["dhs2024"]:.4f}% − 2014 DHS {meta["rates_from"]["dhs2014"]:.4f}%)/10. Longer-term change = (2024 DHS − 2007 DHS {meta["rates_from"]["dhs2007"]:.4f}%)/17. FPET-informed change = {meta["rates_from"]["fpet2025"]:.1f}% − {meta["rates_from"]["fpet2024"]:.1f}%. Each is added to the 2024 DHS baseline. Growth assumptions are fixed.'
+ return s
+for deck in [True,False]:(out/('planning_slides.json' if deck else 'planning_html.json')).write_text(json.dumps([make(s,deck) for s in old],indent=2))
+print('Built 40 DRC tables for 2024-to-2025, including both switching sensitivity sets.')
+)--------",
+  "302_revised_html.py" = r"--------(from pathlib import Path
+from lxml import html,etree
+from html import escape
+import json,csv,re,copy,sys
+source,freshfile,stats,specfile,target=map(Path,sys.argv[1:]);doc=html.parse(str(freshfile));old=html.parse(str(source));oldids=set(old.xpath('//section/@id'))
+specs=json.loads(specfile.read_text());meta=json.loads((stats/'metadata.json').read_text());D={r['key']:{k:float(r[k]) for k in ['estimate','lower','upper']} for r in csv.DictReader((stats/'planning_intervals.csv').open())}
+
+for sid in ['switching-sensitivity','historical-switching-sensitivity','aft-observed-pathway-sensitivity']:
+ for e in doc.xpath(f'//section[@id="{sid}"]'):e.getparent().remove(e)
+methods=meta['methods'];causes=meta['causes'];short=['Method failure','Want more effective','Bleeding changes','Other side effects/health','Access/cost/convenience']
+main=doc.find('.//main')
+def sec(sid):return doc.xpath(f'//section[@id="{sid}"]')[0]
+def content(sid,title,markup):
+ s=sec(sid);s.clear();s.set('id',sid);h=html.Element('h2');h.text=title;s.append(h)
+ for el in html.fragments_fromstring(markup):
+  if isinstance(el,str):s.text=(s.text or'')+el
+  else:s.append(el)
+ return s
+def table(rows):return '<div class="table-wrap"><table class="analysis-table"><thead><tr>'+''.join('<th>'+escape(str(c)).replace('\n','<br>')+'</th>' for c in rows[0])+'</tr></thead><tbody>'+''.join('<tr>'+''.join(('<th scope="row">' if j==0 else'<td>')+escape(str(c)).replace('\n','<br>')+('</th>' if j==0 else'</td>') for j,c in enumerate(row))+'</tr>' for row in rows[1:])+'</tbody></table></div>'
+def article(s):return '<article class="planning-table"><h3>'+escape(s['title'])+'</h3><p>'+escape(s['subtitle'])+'</p>'+table(s['table'])+'<p class="note">'+escape(s['note'])+'</p></article>'
+def val(key,kind='count'):
+ x=D[key];digits=0 if kind=='count'else 1 if kind=='risk'else 2
+ def f(v):return '<0.01' if kind=='pp'and 0<v<.005 else f'{v:,.{digits}f}'
+ suffix=' pp'if kind=='pp'else'%'if kind in ['risk','pct']else''
+ v=f(x['estimate'])+suffix
+ if x['lower']==x['upper']==0:return v+'\n(CI unavailable†)'
+ if abs(x['upper']-x['lower'])<1e-9:return v+'\n(fixed)'if kind=='pct'else v
+ return v+'\n('+f(x['lower'])+'–'+f(x['upper'])+')'
+def cirows(a,legacy=False):
+ prefix='legacy_'if legacy else'';wra=meta['wra2025']if legacy else meta['wra2025'];rows=[['Method / measure',*short,'All actionable causes']]
+ for m in methods:rows.append(['IUD*'if m=='IUD'else m]+[val(f'{prefix}count|{a}|{m}|{c}')for c in causes]+[val(f'{prefix}count|{a}|{m}|Total')])
+ rows.append(['Users ending / year-end losses']+[val(f'{prefix}count|{a}|Total|{c}')for c in causes]+[val(f'{prefix}count|{a}|Total|Total')])
+ rows.append([f'{2025} women aged 15–49 (fixed)']+[f'{wra:,.1f}']*6)
+ rows.append(['mCPR equivalent (pp)']+[val(f'{prefix}pp|{a}|Total|{c}','pp')for c in causes]+[val(f'{prefix}pp|{a}|Total|Total','pp')]);return rows
+base_note='<p class="note">Estimates show 95% survey confidence intervals. Population and growth assumptions are fixed. CI bounds do not add across methods/causes. † No reliable interval from zero observed events. * IUD estimates are sparse; its AFT curve is an Other-modern proxy.</p>'
+# Canonical 2026 main sets contain gross actionable endings only.
+content('mcpr-2026-retention-scenarios','2026 planning: first-year actionable method endings',
+ '<p>The observed 2024 DHS current-user cohort is followed over the next 12 months to 2025. Current method mix remains at its survey distribution. The 2025 baseline mCPR equals the 2024 survey estimate plus the recent DHS, longer-term DHS, or FPET-informed annual change. Main tables assume every potentially actionable original-method ending is a lost modern user; switching/restarting is not deducted.</p>'+''.join(article(s)for s in specs[:8]))
+content('historical-duration-aware-planning','Historical duration-aware planning: all actionable endings treated as user losses',
+ '<p>These eight tables condition next-12-month actionable-ending probabilities on the current method and time already used. They use observed historical calendar landmarks and do not deduct switching or restarting. Duration 61+ months uses the observed 37–60-month proxy.</p>'+''.join(article(s)for s in specs[8:16]))
+content('aft-duration-aware-planning','AFT survival planning: all actionable endings treated as user losses',
+ '<p>These eight tables use six weighted cause-specific AFT models: five actionable causes and other competing endings. Current elapsed use conditions each next-12-month prediction. IUD shares the Other-modern curve. Switching/restarting is not deducted.</p>'+''.join(article(s)for s in specs[16:24]))
+# All earlier switching tables move below the main three approaches.
+div=html.Element('section',id='switching-sensitivity');div.append(html.Element('h2'));div[0].text='Appendix: Sensitivity analysis if some users who discontinue switch'
+div.append(html.fragment_fromstring('<div><p>The following historical and AFT sets count women outside modern use at year end after a potentially actionable ending. Direct switching and later restarting can therefore reduce the gross count. EC is counted as modern at year end, consistently with the mCPR definition.</p><ul><li>Switching/restarting pathways are retrospective; future behavior and intervention effects are not identified.</li><li>IUD has 23 eligible episodes and 14 current users. AFT uses an Other-modern proxy. Implant method failure has only two first-year training events.</li><li>Eight of 25 AFT method–cause pathway fractions pool across methods because fewer than 10 distinct historical episodes support the narrower cell. Repeated monthly landmarks are not independent episodes.</li><li>Historical 61+ months uses a 37–60-month proxy. AFT intervals hold selected distribution families fixed.</li><li>500 stratified PSU bootstrap replicates propagate sampling uncertainty in prevalence, method/duration mix, risks, fitted curves and pathways. A small positive weight floor preserves sparse support; deviations are corrected for its first-order attenuation. Population and growth assumptions remain fixed.</li></ul></div>'))
+main.append(div)
+for sid,title,part in [('historical-switching-sensitivity','Historical sensitivity: switching and restarting',specs[24:32]),('aft-observed-pathway-sensitivity','AFT sensitivity: switching and restarting',specs[32:40])]:
+ s=html.Element('section',id=sid);h=html.Element('h2');h.text=title;s.append(h)
+ for sp in part:s.append(html.fragment_fromstring(article(sp)))
+ main.append(s)
+# Detailed 2026 matrices stay available with intervals for every mCPR cell.
+content('mcpr-2026-method-detail','2026 method-specific user and mCPR detail',
+ '<p>Method-specific results under all three growth scenarios appear in each main approach and sensitivity set above. The usual 2026 method mix is held at the observed current-user mix.</p>'+''.join(article(s)for s in specs if s['approach']in[1,2,3]and s['kind']=='method_scenario'))
+content('actionable-cause-mcpr-ceiling','2026 percentage-point equivalents by actionable cause',
+ '<p>Every cause uses the same 2026 WRA denominator. Gross tables assume all actionable endings are losses. Sensitivity tables deduct women using modern contraception at year end.</p>'+''.join(article(s)for s in specs if s['kind']=='cause_pp'))
+# Preserve the earlier 2024-to-2025 illustration as separate diagnostics with CIs.
+legacy_intro='<p>These complementary diagnostics use the same observed 2024 current-user cohort and projected 2025 women ages 15–49 as the main tables. The probabilities and survey bootstrap are unchanged; the current-user cohort, population denominator, and growth scenarios now agree throughout.</p>'
+legacy_method=[['Method','2024 current users','First-year actionable discontinuation','Original-method endings','2025 mCPR equivalent']]
+for m in methods:legacy_method.append(['IUD*'if m=='IUD'else m,val('legacy_stock|'+m),val(f'risk|1|{m}|Total','risk'),val(f'legacy_count|1|{m}|Total'),val(f'legacy_pp|1|{m}|Total','pp')])
+legacy_sc=[['Different mCPR growth scenarios','2024 mCPR','2025 mCPR','2025 women 15–49 (fixed)','Gross equivalent (pp)','2025 mCPR if retained']]
+for j,name in enumerate(['10-year DHS trend','17-year DHS trend','FPET-informed growth'],1):legacy_sc.append([name,val('mcpr2024','pct'),val(f'legacy_base|{j}','pct'),f'{meta["wra2025"]:,.0f}',val('legacy_pp|1|Total|Total','pp'),val(f'legacy_retainedmcpr|{j}|1|Total','pct')])
+content('expected-user-calculations','Earlier 2024-to-2025 first-year illustration',legacy_intro+table(legacy_method)+table(cirows(1,True))+table(legacy_sc)+base_note)
+content('current-user-actionable-projection','Current-user actionable projection definitions',
+ '<p>The earlier 2024-to-2025 tables are in <a href="#expected-user-calculations">the earlier-horizon illustration</a>. The main 2025-to-2026 first-year set is <a href="#mcpr-2026-retention-scenarios">here</a>. Both assume every actionable original-method ending is a lost user.</p>')
+content('duration-adjusted-reason-planning','Choosing the duration-aware planning approach',
+ '<p>The main <a href="#historical-duration-aware-planning">historical</a> and <a href="#aft-duration-aware-planning">AFT</a> sets use gross actionable endings. Their <a href="#switching-sensitivity">switching sensitivities</a> are in the appendix. Earlier 2024-to-2025 diagnostics are retained below, using their own population denominator.</p>')
+# Earlier duration diagnostics reproduce the previous analyses without bare pp cells.
+legacy=['<h3>2024-to-2025 comparison of gross endings and year-end nonmodern use</h3>']
+comparison=[['Approach','Gross original-method endings','Outside modern use at year end','Gross equivalent (pp)','Year-end equivalent (pp)']]
+for a,name,net in [(1,'First-year',None),(2,'Historical',4),(3,'AFT',5)]:comparison.append([name,val(f'legacy_count|{a}|Total|Total'),'Not estimated'if net is None else val(f'legacy_count|{net}|Total|Total'),val(f'legacy_pp|{a}|Total|Total','pp'),'Not estimated'if net is None else val(f'legacy_pp|{net}|Total|Total','pp')])
+legacy.append(table(comparison))
+for a,name,net in [(2,'Historical',4),(3,'AFT',5)]:
+ rows=[['Method','2024 current users','Next-12-month actionable discontinuation','Original-method endings','Outside modern use at year end']]
+ for m in methods:rows.append(['IUD*'if m=='IUD'else m,val('legacy_stock|'+m),val(f'risk|{a}|{m}|Total','risk'),val(f'legacy_count|{a}|{m}|Total'),val(f'legacy_count|{net}|{m}|Total')])
+ legacy.append('<h3>'+name+': original endings and year-end outcomes</h3>'+table(rows))
+rows=[['Growth scenario','Usual 2025 mCPR','Historical year-end equivalent (pp)','AFT year-end equivalent (pp)']]
+for j,name in enumerate(['10-year DHS trend','17-year DHS trend','FPET-informed growth'],1):rows.append([name,val(f'legacy_base|{j}','pct'),val('legacy_pp|4|Total|Total','pp'),val('legacy_pp|5|Total|Total','pp')])
+legacy.append(table(rows))
+for a,name in [(1,'First-year gross'),(4,'Historical switching sensitivity'),(5,'AFT switching sensitivity')]:
+ legacy.append('<h3>'+name+': earlier method–cause matrix</h3>'+table(cirows(a,True)))
+ for j,scenario in enumerate(['10-year DHS trend','17-year DHS trend','FPET-informed growth'],1):
+  rows=[['Method','2024 current users','2025 usual users','Users counted if retained','Usual mCPR share','If retained mCPR share']]
+  for m in methods+['EC','Total']:
+   rows.append(['All modern'if m=='Total'else'IUD*'if m=='IUD'else m,val('legacy_stock|'+m),val(f'legacy_usualusers|{j}|{a}|{m}'),'Not estimated'if m=='EC'else val(f'legacy_count|{a}|{m}|Total'),val(f'legacy_usualmcpr|{j}|{a}|{m}','pct'),val(f'legacy_retainedmcpr|{j}|{a}|{m}','pct')])
+  legacy.append('<h4>'+name+': '+scenario+'</h4>'+table(rows))
+oldbin=copy.deepcopy(sec('duration-planning-appendix').xpath('.//table')[-1])
+content('duration-planning-appendix','Appendix: earlier duration-aware diagnostics with uncertainty',legacy_intro+''.join(legacy)+base_note+'<h3>Historical duration support</h3><p>Landmark counts repeat episodes at different months and are not independent observations. These descriptive support counts retain their original definitions.</p>')
+sec('duration-planning-appendix').append(oldbin)
+content('duration-modern-use-2026-bridge','Appendix: original-method endings and modern use at year end',
+ '<p>These two tables use observed 2024 users and the projected 2025 WRA denominator. The ending probability remains the gross actionable probability; year-end losses deduct switching and restarting.</p>'+article(specs[24])+article(specs[32]))
+rows=[['Approach','Method','Actionable cause','Original-method endings','Users counted for mCPR','mCPR equivalent (pp)']]
+for a,name in [(1,'First-year gross'),(2,'Historical gross'),(3,'AFT gross'),(4,'Historical sensitivity'),(5,'AFT sensitivity')]:
+ for m in methods:
+  for c in causes:rows.append([name,'IUD*'if m=='IUD'else m,c,val(f'count|{2 if a==4 else 3 if a==5 else a}|{m}|{c}'),val(f'count|{a}|{m}|{c}'),val(f'pp|{a}|{m}|{c}','pp')])
+content('duration-aware-cause-pp-matrices','Appendix: complete method–cause planning estimates',table(rows)+base_note)
+rows=[['Method','Cause','AFT actionable probability','AFT original-method endings','Fraction outside modern use at year end','AFT year-end losses']]
+for m in methods:
+ for c in causes:rows.append(['IUD*'if m=='IUD'else m,c,val(f'risk|3|{m}|{c}','risk'),val(f'count|3|{m}|{c}'),val(f'fraction|5|{m}|{c}','risk'),val(f'count|5|{m}|{c}')])
+content('aft-switching-sensitivity','Appendix: AFT observed-pathway fractions',
+ '<p>Eight sparse method–cause pathway fractions are pooled across methods. Fractions reflect modern-use status at year end and include later restarting. They are not causal switching probabilities.</p>'+table(rows)+base_note)
+# Broader selected-reason projections remain labelled and receive joint survey CIs.
+# Updated numerical cells are supplied by the survey-projection export.
+projection=stats/'selected_projection.json'
+if projection.exists():
+ content('current-user-reason-planning','Broader selected-reason current-user illustration',
+  '<p>This diagnostic includes endings other than wanted pregnancy or partner disapproval, including circumstances outside the actionable set. Main actionable planning tables are separate. First-year cause probabilities are applied to observed 2024 users without elapsed-duration adjustment.</p>'+table(json.loads(projection.read_text()))+base_note)
+# Refresh the historical stock-to-outcome bridge with the same corrected estimates.
+flow=sec('standardized-current-users')
+flow_figure=copy.deepcopy(flow.xpath('.//figure')[0])
+content('standardized-current-users','Current-user stock and year-end outcomes',
+ '<p>Switching/restarting sensitivity: the observed 2024 cohort is followed to 2025 using historical duration-aware actionable-ending probabilities. The flow follows only women with an actionable original-method ending. It separates those using a modern method again at year end from those outside modern use. EC counts as modern at year end.</p>'+article(specs[24]))
+flow=sec('standardized-current-users');flow.insert(2,flow_figure)
+# Keep numerical tests legible rather than rounding p values to one decimal.
+for csvpath in (stats.parent/'project/output/Supporting_data').glob('*.csv'):
+ records=list(csv.reader(csvpath.open()))
+ if not records or not any(c in records[0] for c in ['p_value','p_raw']):continue
+ headers=records[0]
+ for oldtable in list(doc.xpath('//table')):
+  if [c.text_content().strip()for c in oldtable.xpath('./thead/tr/th')]!=headers:continue
+  if len(oldtable.xpath('./tbody/tr'))!=len(records)-1:continue
+  rows=[headers]
+  for record in records[1:]:
+   row=[]
+   for key,value in zip(headers,record):
+    if key in ['p_value','p_raw','p_holm']:
+     value=('<0.001' if float(value)<.001 else f'{float(value):.3f}')
+    elif key in ['odds_ratio','ci_low','ci_high','survey_se','difference_pp','se_pp']:
+     value=f'{float(value):.2f}'
+    row.append(value)
+   rows.append(row)
+  newtable=html.fragment_fromstring(table(rows));parent=oldtable.getparent()
+  parent.replace(oldtable,newtable[0])
+
+# Move appendix sections to the end after all three gross approaches.
+append_ids=['switching-sensitivity','standardized-current-users','historical-switching-sensitivity','aft-observed-pathway-sensitivity','duration-planning-appendix','switching-2026-bridge','duration-modern-use-2026-bridge','duration-aware-cause-pp-matrices','aft-switching-sensitivity']
+for sid in append_ids:s=sec(sid);s.getparent().remove(s);main.append(s)
+# Add methods explaining full-frame inference and conditional planning uncertainty.
+methods_note='<h3>Survey-design inference audit</h3><p>All point estimates use v005/1,000,000. Inference uses all 778 PSUs and 51 strata, including 141 PSUs with no eligible modern-method episodes. Repeated episodes/months stay within the woman\'s PSU. Life-table intervals use design linearization. Adjusted probability intervals combine full-frame clustered model-score covariance with uncertainty in the empirical common-reference distribution. Pairwise tests use joint covariance, 727 design degrees of freedom, and Holm correction over all 325 province pairs separately by stage/time.</p><p>Planning intervals use 500 Rao–Wu PSU bootstrap replicates within strata, with a 0.0001 positive-weight floor to retain sparse support. Replicate deviations are rescaled by 1/(1−0.0001). Current prevalence, mix, duration, risks, AFT fitting and pathways are propagated jointly; population, growth assumptions and selected AFT families are fixed. CI bounds are not additive. No-event cells have no reliable empirical interval and are flagged.</p><p>The historical gross count is unchanged from the saved calculation. Switching sensitivities now count EC as modern at year end. AFT sensitivities pool eight sparse pathway fractions rather than assuming that unsupported method–cause cells imply no year-end loss.</p>'
+# Existing full-frame methods audit is retained without duplication.
+# Correct stale descriptions without rewriting the underlying all-cause chapters.
+
+for element in doc.iter():
+ if element.text:element.text=element.text.replace('2026','2025').replace('main projected-2025-to-2025','main observed-2024-to-2025').replace('2025-to-2025','2024-to-2025').replace('The historical gross count is unchanged from the saved calculation.','Gross and switching-sensitive probabilities are unchanged; user counts now use the observed 2024 cohort and 2025 WRA denominator.')
+ if element.tail:element.tail=element.tail.replace('2026','2025')
+text=etree.tostring(doc,encoding='unicode',method='html')
+text=text.replace('2025-to-2025','2024-to-2025').replace('using their own population denominator','using the same 2025 population denominator')
+text=text.replace('Five-year recorded reasons by modern method','Recorded reasons across the observed calendar by modern method')
+text=text.replace('two-sided normal approximations using bootstrap standard errors','two-sided t tests using survey-linearized standard errors and 727 design degrees of freedom')
+for a,b in [('survey-bootstrap confidence intervals','survey-design confidence intervals'),('design-bootstrap 95% confidence intervals','survey-design 95% confidence intervals'),('stratified-PSU bootstrap','full-frame survey linearization'),('stratified PSU bootstrap','full-frame survey linearization'),('120 survey-stratified PSU-bootstrap model refits','full-frame survey linearization'),('Survey-stratified PSU-bootstrap intervals','Full-frame survey-design intervals')]:text=text.replace(a,b)
+doc=html.document_fromstring(text)
+# Remove obsolete Source-prefixed display notes while retaining method explanations.
+for el in list(doc.xpath('//p|//figcaption|//div[@class="note"]')):
+ if re.match(r'^\s*(DHS source|Source\s*:|National row is gold)',el.text_content(),re.I):el.getparent().remove(el)
+# Make the country report standalone so moving/uploading it cannot break figures.
+# Slide-gallery images are refreshed after the final PPTX render in a separate pass.
+for im in doc.xpath('//img'):
+ src=im.get('src','')
+ if src.startswith(('http:','https:','data:')):continue
+ src=src.split('?')[0];path=freshfile.parent/src
+ if not path.exists():raise RuntimeError('Missing figure '+src)
+ im.set('src',src)
+# Comprehensive left navigation includes all section headings and table headings.
+nav=doc.find('.//aside')
+for a in list(nav.xpath('./a')):nav.remove(a)
+seen=set(doc.xpath('//@id'))
+for i,h in enumerate(doc.xpath('//main//h2|//main//h3'),1):
+ parent=h.getparent();sid=parent.get('id')if h.tag=='h2'else None
+ if not sid:
+  sid=f'analysis-heading-{i}';h.set('id',sid)
+ link=html.Element('a',href='#'+sid);link.text=h.text_content();
+ if h.tag=='h3':link.set('style','padding-left:12px;font-size:11.5px')
+ nav.append(link)
+# Planning tables use navy headers and readable multiline estimates.
+style=doc.find('.//style');style.text=(style.text or'')+'\n.planning-table table{font-size:13px}.planning-table td{white-space:normal;min-width:110px}.planning-table tbody th{background:#f1f6f8;color:#173f5b;position:static}.planning-table .note{font-size:12px}.planning-table{margin:26px 0 40px}tbody tr:last-child{font-weight:600}\n'
+assert oldids<=set(doc.xpath('//section/@id'))
+result=html.tostring(doc,encoding='unicode',doctype='<!DOCTYPE html>')
+target.write_text(result)
+print('Updated HTML with',len(doc.xpath('//section')),'sections and',len(doc.xpath('//table')),'tables.')
+)--------",
+  "303_validate_revised.py" = r"--------("""Validate the incremental report build; do not claim a fresh full rebuild."""
+from pathlib import Path
+from lxml import html,etree
+import sys,json,csv,hashlib,re
+country,base,target,stats,out=sys.argv[1:]
+base,target,stats,out=map(Path,[base,target,stats,out]);a=html.parse(str(base));b=html.parse(str(target))
+ids=lambda d:set(d.xpath('//section/@id'))
+assert ids(a)==ids(b),'Section coverage changed'
+assert a.xpath('//img/@src')==b.xpath('//img/@src'),'Unrequested figure changes'
+assert len(b.xpath('//img'))==len(a.xpath('//img'))
+assert b.xpath('//*[@id="four-reason-groups"]'),'Partner/spousal classification block missing'
+groups=b.xpath('//*[@id="four-reason-groups"]//tr')
+assert any('Partner/spousal' in r.text_content()for r in groups)
+scan=re.sub(r'data:[^;]+;base64,[A-Za-z0-9+/=]+','[embedded figure]',target.read_text())
+assert not re.search(r'/(?:Users|Volumes)/|file:/{2,}|[A-Z]:\\',scan,re.I),'Personal path in report'
+md=json.loads((stats/'revision_inputs.json').read_text())
+assert len(md['scenarios'])==3
+D={r['key']:float(r['estimate'])for r in csv.DictReader((stats/'revised_planning_intervals.csv').open())}
+methods=md['methods'];causes=md['causes'];year=2026 if country=='Ethiopia' else 2025
+for ap in range(1,6):
+    total=D[f'count|{ap}|Total|Total']
+    assert abs(total-sum(D[f'count|{ap}|{m}|{c}']for m in methods for c in causes))<1e-5
+    assert abs(D[f'pp|{ap}|Total|Total']-100*total/md['wra'+str(year)])<1e-8
+    for j in range(1,4):
+        k=f'{j}|{ap}|Total'
+        assert abs(D['retainedmcpr|'+k]-D['usualmcpr|'+k]-D[f'pp|{ap}|Total|Total'])<1e-8
+def tables(d):
+    return [[[re.sub(r'\s+','',c.text_content())for c in r.xpath('./th|./td')]for r in t.xpath('.//tr')]for t in d.xpath('//table')]
+old,new=tables(a),tables(b)
+same=sum(x==y for x,y in zip(old,new))
+warnings=[]
+def first_number(s):
+    m=re.search(r'[-−]?\d[\d,]*(?:\.\d+)?',s)
+    return float(m[0].replace(',','').replace('−','-'))if m else None
+for article in b.xpath('//article[contains(@class,"duration-slide")]'):
+    heading=article.find('h3');title=heading.text_content()if heading is not None else''
+    if not title.endswith('by method'):continue
+    for tr in article.xpath('.//table//tbody/tr'):
+        cells=[c.text_content()for c in tr]
+        if len(cells)!=7:continue
+        usual,retained,loss=[first_number(cells[i])for i in [2,4,3]]
+        if None in [usual,retained,loss]:continue
+        delta=retained-usual-loss
+        if abs(delta)>2:
+            warnings.append(dict(table=title,row=cells[0],projected_users=usual,displayed_retained_users=loss,
+                                 displayed_total=retained,displayed_count_discrepancy=delta,
+                                 action='Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled.'))
+result=dict(status='pass_with_existing_report_warnings'if warnings else'pass',country=country,reference_year=2025 if country=='Ethiopia' else 2024,outcome_year=year,
+ sections=len(ids(b)),tables=len(new),base_tables=len(old),tables_matching_input_report=same,
+ figures_preserved=len(b.xpath('//img')),incremental_build=True,full_raw_ir_to_all_chapters_verified=False,
+ planning_arithmetic_input_vectors='pass',existing_report_arithmetic_warnings=warnings,
+ base_report_sha256=hashlib.sha256(base.read_bytes()).hexdigest(),
+ output_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
+ scope='Planning arithmetic is rebuilt from supplied fitted estimates and bootstrap draws. Unchanged chapters and figures are preserved from the supplied validated HTML layout; they are not freshly recomputed by this command.')
+(out/'revised_build_validation.json').write_text(json.dumps(result,indent=2))
+print(json.dumps({k:v for k,v in result.items()if k not in ['scope','base_report_sha256','output_sha256']}))
+)--------"
+)
+# Incremental report build: recalculates revised planning from fitted numerical
+# outputs and applies the revision to an existing validated report layout.
+# Unchanged analytical chapters and figures come from that report. This is not
+# a fresh raw-IR rebuild of every chapter or an embedded snapshot replay.
+run_revised_report <- function(opt) {
+  if (!requireNamespace("jsonlite",quietly=TRUE) || !requireNamespace("digest",quietly=TRUE))
+    stop("Install jsonlite and digest.")
+  root <- opt[["project-root"]]
+  if (is.null(root)) root <- file.path("analysis_output",tolower(COUNTRY),"revised")
+  dir.create(root,recursive=TRUE,showWarnings=FALSE);root<-normalizePath(root,mustWork=TRUE)
+  script_arg<-grep("^--file=",commandArgs(),value=TRUE)
+  script_folder<-if(length(script_arg))dirname(sub("^--file=","",script_arg[1]))else"."
+  stats <- opt[["statistics-dir"]]
+  if(is.null(stats))stats<-file.path(script_folder,"revision_inputs")
+  if (is.null(stats)||!dir.exists(stats)) stop("Supply --statistics-dir with fitted point estimates and survey bootstrap draws.")
+  stats<-normalizePath(stats,mustWork=TRUE)
+  required<-c("planning_point.rds","planning_replicates.rds",if(COUNTRY=="Ethiopia")"metadata.json"else"planning_metadata.rds")
+  if(COUNTRY=="Ethiopia")required<-c(required,"planning_intervals.csv")
+  if(!all(file.exists(file.path(stats,required))))stop("The numerical input directory is incomplete.")
+  if(length(readRDS(file.path(stats,"planning_replicates.rds")))!=500L)
+    stop("The saved-report revision requires the validated 500-replicate numerical output.")
+  build<-file.path(root,"build");result<-file.path(root,"output");code<-file.path(root,"Code")
+  for(d in c(build,result,code))dir.create(d,recursive=TRUE,showWarnings=FALSE)
+  for(n in names(REVISION_HELPERS))writeLines(REVISION_HELPERS[[n]],file.path(code,n),useBytes=TRUE)
+  assumptions<-opt[["revision-inputs"]]
+  if(is.null(assumptions)) {assumptions<-file.path(build,"growth_assumptions.json");writeLines(REVISED_GROWTH_ASSUMPTIONS,assumptions,useBytes=TRUE)}
+  if(!file.exists(assumptions))stop("Revision assumptions file does not exist.")
+  schema<-file.path(build,"table_schema.json");writeLines(REVISED_TABLE_SCHEMA,schema,useBytes=TRUE)
+  python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
+  run<-function(exe,args) {
+    status<-system2(exe,shQuote(args))
+    if(!identical(status,0L))stop("Revised build failed; no checked report was overwritten.")
+  }
+  run(file.path(R.home("bin"),"Rscript"),c(file.path(code,"300_revised_planning.R"),stats,assumptions,build))
+  if(identical(opt$run,"revised-planning"))return(invisible(NULL))
+  template<-opt[["base-html"]]
+  if(is.null(template)) {
+    template<-file.path(script_folder,REPORT_BASENAME)
+  }
+  if(!file.exists(template))stop("Supply --base-html with the latest validated report layout.")
+  template<-normalizePath(template,mustWork=TRUE)
+  target<-file.path(result,REPORT_BASENAME)
+  if(identical(normalizePath(target,mustWork=FALSE),template))stop("Build output must differ from the input report.")
+  run(python,c(file.path(code,"301_revised_tables.py"),build,schema,build))
+  if(COUNTRY=="Ethiopia") {
+    run(python,c(file.path(code,"302_revised_html.py"),build,schema,template,target))
+  } else if(COUNTRY=="Nigeria") {
+    run(python,c(file.path(code,"302_revised_html.py"),template,build,file.path(build,"planning_html.json"),target))
+  } else {
+    run(python,c(file.path(code,"302_revised_html.py"),template,template,build,file.path(build,"planning_html.json"),target))
+  }
+  run(python,c(file.path(code,"303_validate_revised.py"),COUNTRY,template,target,build,result))
+  cat("Revised HTML build completed. Review output/revised_build_validation.json for its scope.\n")
+}
+
+REQUIRED_R_PACKAGES <- unique(c(REQUIRED_R_PACKAGES,"abind"))
+for (n in names(REVISION_HELPERS)) MODULES[[n]] <- list(language=if(grepl("[.]R$",n))"R"else"Python",args=character(),code=REVISION_HELPERS[[n]])
+
 if (sys.nframe() == 0L) main()

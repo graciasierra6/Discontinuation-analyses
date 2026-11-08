@@ -1,0 +1,2 @@
+# Required by the incremental HTML builders.
+lxml>=5

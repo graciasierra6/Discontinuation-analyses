@@ -1,0 +1,11 @@
+{
+  "wra2024": 34057556,
+  "wra2025": 34057556,
+  "wra2026": 35016171,
+  "psus": 797,
+  "strata": 27,
+  "replicates": 500,
+  "methods": ["Injectables", "Implants", "Pill", "IUD", "Other modern"],
+  "causes": ["Method failure", "Wanted more effective method", "Changes in menstrual bleeding", "Other side effects/health", "Access/cost/convenience"],
+  "definitions": ["Gross: every actionable original-method ending treated as year-end loss", "Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes", "AFT uncertainty conditional on selected distribution families", "Population and growth scenarios fixed"]
+}

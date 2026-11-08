@@ -1,153 +1,77 @@
-# Contraceptive Discontinuation Analyses
+# Contraceptive discontinuation analyses
 
-This repository examines modern contraceptive method use and discontinuation in
-Ethiopia, Nigeria, and the Democratic Republic of the Congo (DRC), using
-Demographic and Health Survey (DHS) individual women's recode data.
-
-The analyses describe which methods women initiate, when and why method-use
-episodes end, how patterns vary across population groups and geographic areas,
-and the implications of improved continuation for modern contraceptive
-prevalence (mCPR). Reports and presentations support family planning research
-and program planning.
-
-## Country coverage
-
-| Country | Survey | Main subnational geography |
-| --- | --- | --- |
-| Ethiopia | DHS 2024–25 | Survey regions |
-| Nigeria | DHS 2024 | Six geopolitical zones |
-| DRC | DHS 2023–24 | 26 provinces |
-
-A common analytical framework is applied across countries while retaining
-country-specific survey coding, published-table definitions, and documented
-cohort restrictions.
-
-## Analyses
-
-- Method initiation and method mix, nationally and subnationally.
-- All-cause modern-method discontinuation and its timing during the first year.
-- Reasons for discontinuation, by method, population subgroup, and geography.
-- Discontinuation due to potentially actionable causes.
-- Adjusted subgroup and subnational comparisons, including comparisons that
-  account for method mix and measured population characteristics.
-- Post-discontinuation switching, restarting, and contraceptive-use pathways.
-- Estimated users discontinuing and mCPR percentage-point scenarios under
-  alternative continuation and growth assumptions.
-
-**Potentially actionable causes** comprise method failure, wanting a more
-effective method, changes in menstrual bleeding, other side effects/health
-concerns, and access/cost/convenience. Method failure means becoming pregnant
-while using a method; it is distinct from stopping to become pregnant. This
-classification does not imply that every associated ending is preventable.
-
-## Data and methods
-
-The woman-level IR file is used to align the method/state calendar (`vcal_1`)
-with the discontinuation-reason calendar (`vcal_2`). Chronological monthly
-histories are converted into continuous method-use episodes. Regression inputs
-expand eligible episodes into observed months of method use.
-
-A woman can contribute multiple episodes. Modern-method analyses use eligible
-modern-method episodes; method-specific analyses use episodes of that method.
-Nonuse, pregnancy, birth, and termination states remain in the calendar but do
-not enter modern-method discontinuation denominators. Broader method groups
-may appear separately when replicating published DHS tables.
-
-Life tables retain delayed entry and right censoring, with other ending causes
-competing in reason-specific cumulative incidence. Weights derive from
-`v005 / 1,000,000`; survey-design fields and woman/episode links are preserved
-for inference. Uncertainty methods are specified for each analysis. Preparation
-retains the full PSU/stratum frame, including PSUs without eligible episodes.
-
-EC is excluded from ongoing-method discontinuation but remains in current mCPR
-where included in the survey's modern-method classification. Country materials
-explain additional definitions, model specifications, and small-sample flags.
-
-## User projections and mCPR
-
-The planning analyses distinguish three approaches:
-
-1. **First-year probabilities:** apply probabilities during months 1–12 after
-   initiation to the current-user stock.
-2. **Historical duration-aware probabilities:** use observed calendar experience
-   to estimate next-12-month outcomes conditional on elapsed method use.
-3. **AFT survival models:** estimate next-12-month outcomes conditional on
-   elapsed use through fitted survival distributions.
-
-A method ending is distinct from leaving modern use: a woman may switch to
-another modern method or later restart. Gross-ending scenarios and
-switching/restarting sensitivities therefore use different assumptions.
-
-```text
-mCPR difference (percentage points)
-    = 100 × additional modern users / projected women aged 15–49
-```
-
-The baseline and alternative scenario use the same target-year population.
-Population inputs, mCPR growth assumptions, and probability definitions are
-documented by country. These are conditional planning scenarios, rather than
-identified causal program effects.
+Latest saved reports, presentations, and parameterized R analysis entry points
+for Ethiopia, Nigeria, DRC, and the combined Kano–Kaduna–Lagos analysis.
 
 ## Files
 
-Each country bundle contains:
+| Analysis | Folder | Report / R entry point |
+| --- | --- | --- |
+| Ethiopia DHS 2024–25 | `Ethiopia_analysis/` | `Ethiopia_discontinuation_analysis.html` / `Ethiopia_final_html_analysis.R` |
+| Nigeria DHS 2024 | `Nigeria_analysis/` | `Nigeria_discontinuation_analysis.html` / `Nigeria_final_html_analysis.R` |
+| DRC DHS 2023–24 | `DRC_analysis/` | `DRC_discontinuation_analysis.html` / `DRC_final_html_analysis.R` |
+| Kano, Kaduna, Lagos | `Nigeria_analysis/Kano_Kaduna_Lagos/` | Combined HTML/PPTX and one `State_discontinuation_analysis.R` entry point per state |
 
-| File | Purpose |
-| --- | --- |
-| `*_discontinuation_analysis.html` | Analytical report with tables, figures, and explanations |
-| `*_final_html_analysis.R` | Numerical modules and parameterized input preparation |
-| `*.pptx` | Presentation of findings and planning scenarios |
-| `README.md` | Country-specific instructions and validation notes |
-| `assets/` | Figures required by the HTML |
-
-Keep each HTML file beside its corresponding `assets/` directory.
-
-## Running the code
-
-Use R 4.0 or later and install the required packages. `--packages` lists the
-country script's dependencies. Obtain authorized IR data through the
-[DHS Program](https://dhsprogram.com/data/Access-Instructions.cfm); restricted
-microdata and credentials are not included in this repository.
-
-Run from the directory containing the selected country script. Supply the IR
-location at runtime through `--ir-file` or `DHS_IR_FILE`. For example:
-
-```sh
-# Check that the embedded R modules parse.
-Rscript Ethiopia_final_html_analysis.R --validate
-
-# Validate and stage the supplied IR file without running the analyses.
-Rscript Ethiopia_final_html_analysis.R --validate-input --project-root=work/ethiopia --ir-file="$DHS_IR_FILE"
-
-# Reconstruct and validate calendar, episode, covariate, and month-level inputs.
-Rscript Ethiopia_final_html_analysis.R --run=prepare --project-root=work/ethiopia --ir-file="$DHS_IR_FILE"
-
-# List available numerical modules.
-Rscript Ethiopia_final_html_analysis.R --list
-```
-
-Substitute the Nigeria or DRC script and a separate working directory for those
-countries. Ethiopia and DRC accept Stata IR files; Nigeria also accepts its
-lossless IR RDS copy. Optional `--expected-ir-sha256` enforces a known checksum.
-Use a fresh `--project-root` when rebuilding. Subsequent modules run through
-`--run=MODULE_NAME` or an ordered comma-separated list, with their dependencies
-available as documented in the country code.
-
-Generated files stay under the supplied project root: `Data/` for staged
-inputs, `Data/Derived/` for prepared records, and `output/` for numerical
-results and logs. `output/validation/` records input checksums, software versions,
-derived-file checksums, and preparation summaries. Keep generated microdata,
-credentials, and machine-specific working files outside published contents.
+Each folder includes a README. The saved presentations have no presenter notes.
+No confidential IR files, fitted models, credentials, or personal input locations
+are included. Each national `revision_inputs/` contains only the aggregate
+estimates, 500 joint bootstrap draws, and metadata needed to rebuild the revision.
+IR inputs are caller-supplied parameters or environment variables; generated
+working files are excluded by `.gitignore`.
 
 ## Reproducibility status
 
-Parameterized IR import and calendar/episode preparation have been tested in
-fresh working directories for all three countries. Prepared legacy inputs were
-compared with those used by the existing analyses. Published-table checks and
-known discrepancies are documented by country.
+**National reports:** the updated R files retain the numerical source collections
+and add tested revision calculations and incremental HTML builders. Those builds
+take the validated report layout plus included aggregate point estimates and bootstrap draws;
+they do not freshly compute every unchanged chapter or figure. Raw-IR preparation
+is available separately. Full raw-IR-to-complete-formatted-report regeneration
+remains unfinished and must not be described as verified end to end.
 
-The numerical modules have separate dependencies. `--run=prepare` does not fit
-every model or regenerate the complete HTML/PPTX. A single-command rebuild of
-the formatted reports, a pinned software environment, and authenticated API
-acquisition remain future repository work. Current input preparation uses
-supplied IR files and requires no API connection.
+**Three-state report:** the three standalone R scripts were tested from the full
+2024 Nigeria IR through numerical estimates, planning and statistical figures.
+All 60 state display tables matched the combined HTML, including confidence
+intervals. The scripts export numerical tables/figures, not native PPTX slides.
+
+Revision builds matched every saved national table: Ethiopia 154, Nigeria 133,
+DRC 143. Matching saved tables is separate from statistical or arithmetic
+validation. In particular, some Ethiopia AFT method-scenario rows mix two fitted
+output versions: discrepancies are about 68 women for gross endings and 23 for
+switching sensitivity. Rounded overall pp gains remain unchanged. These existing
+report discrepancies are preserved and explicitly flagged by the new build.
+
+## Analytical definitions
+
+- Discontinuation denominators are eligible modern-method use episodes, or
+  episodes of the specified method. EC is excluded from ongoing-method ending
+  analyses but remains in current all-women mCPR.
+- All-cause results precede the focus on potentially actionable causes: method
+  failure, wanted greater effectiveness, bleeding changes, other side effects/
+  health, and access/cost/convenience. Partner/spousal disapproval is separate.
+- Main user-loss planning treats actionable original-method endings as losses;
+  switching/restarting sensitivities are separately labelled. The three risk
+  approaches are first-year probabilities, historical duration-aware estimates,
+  and AFT survival predictions.
+- Nigeria and DRC use 2024 as baseline and project 2025; Ethiopia treats the
+  2024–25 survey as the 2025 baseline and projects 2026. Added-user pp equivalents
+  use the projected outcome-year women ages 15–49 as the denominator.
+- National scenarios use recent DHS, longer-term DHS, and FPET-informed annual
+  changes. State scenarios use the two verified state DHS trends. Growth and
+  demographic assumptions are fixed, not estimated intervention effects.
+
+Country source collections contain historical variants with different cohorts,
+outcomes and specifications. Follow the folder README; do not run all modules
+indiscriminately or equate preparation/syntax checks with full report replication.
+
+## Work locally
+
+For national revision builds, install R packages `jsonlite`, `digest`, and `abind`.
+The wider analysis dependencies are listed by each script's `--packages` option.
+Install the HTML helper dependency with `python -m pip install -r requirements.txt`.
+Supply authorized IR inputs through `DHS_IR_FILE` or `--ir-file`. Country READMEs
+document `--run=prepare`, `--run=build-planning`, and `--run=build-html`, along
+with the aggregate-input requirements. Existing saved reports are not overwritten
+by those commands. No API credentials or data acquisition are bundled.
+
+This current working copy is prepared for review/upload. No remote changes have
+been pushed by preparing this folder.
