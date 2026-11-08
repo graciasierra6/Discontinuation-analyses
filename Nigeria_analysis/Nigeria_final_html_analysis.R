@@ -1,3 +1,6 @@
+# Updated report companion: revised planning and incremental HTML build.
+# --run=revised-html requires fitted statistics and the current validated report layout.
+# Raw-IR preparation remains a separate mode; this does not freshly render every chapter.
 # Parameterized IR preparation: --run=prepare; --validate-input checks inputs only.
 # Updated survey-design and planning inference. Use --run=survey-update after core inputs and derived episodes are available.
 # New planning tables are derived from output/survey_planning/planning_intervals.csv.
@@ -178,7 +181,7 @@ if __name__=='__main__':main()
 )-----"
 COUNTRY <- "Nigeria"
 REPORT_BASENAME <- "Nigeria_discontinuation_analysis.html"
-REPORT_SHA256 <- "40ca26eb5b168da1d5a2f08650a2ad15ed96732d4350d83844adc09fbc67551e"
+REPORT_SHA256 <- "dfa858a4bb20cab9391dbd4333c2b58dbfa28af99c0a06cd71a8d209fb760b4b"
 RAW_RELATIVE <- "Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds"
 CORE_MODULES <- c("01_nigeria_calendar_life_table.R")
 PLANNING_MODULES <- c("01_nigeria_calendar_life_table.R", "02_nigeria_descriptive_analyses.R", "08_nigeria_population_and_planning.R", "22_nigeria_landmark_support.R", "23_nigeria_current_user_switch_and_duration.R", "91_nigeria_aft_switching_bridge.R", "95_build_duration_planning_data.py")
@@ -314,7 +317,7 @@ parse_options <- function(args) {
     i <- i + 1L
   }
   allowed <- c('list','validate','extract','overwrite','help','packages','run',
-               'project-root','ir-file','auxiliary-dir','python','bootstrap-reps','reconcile','report-html','fresh-root','audit-output','verify-planning','expected-ir-sha256','validate-input')
+               'project-root','ir-file','auxiliary-dir','python','bootstrap-reps','reconcile','report-html','fresh-root','audit-output','verify-planning','expected-ir-sha256','validate-input','statistics-dir','base-html','revision-inputs')
   if (length(setdiff(names(out), allowed))) stop('Unrecognized option.')
   out
 }
@@ -408,6 +411,10 @@ prepare_ir <- function(root, ir_file) {
 
 main <- function() {
   opt <- parse_options(commandArgs(trailingOnly=TRUE))
+  if (identical(opt$run,"build-html")) opt$run <- "revised-html"
+  if (identical(opt$run,"build-planning")) opt$run <- "revised-planning"
+  if (isTRUE(opt$help)) cat("Build modes: --run=build-html|build-planning, --statistics-dir, --base-html, --revision-inputs. See the revised README for the build boundary.\n")
+  if (!is.null(opt$run) && opt$run %in% c("revised-html","revised-planning")) return(run_revised_report(opt))
   if (isTRUE(opt$reconcile) || isTRUE(opt[['verify-planning']])) {
     if (is.null(opt[['report-html']]) || is.null(opt[['project-root']]))
       stop('Reconciliation requires --report-html and --project-root.')
@@ -5393,4 +5400,583 @@ for (module_name in names(MODULES)) if(MODULES[[module_name]]$language=='R') {
 }
 
 # Execute only when called as the command-line entry point.
+
+# Latest revision calculations and incremental report rendering.
+REVISED_GROWTH_ASSUMPTIONS <- r"--------({
+  "scenarios": [
+    {
+      "scenario": "6-year DHS trend",
+      "annual_change_pp": 0.4318981911348668
+    },
+    {
+      "scenario": "11-year DHS trend",
+      "annual_change_pp": 0.1777353742882184
+    },
+    {
+      "scenario": "FPET-informed growth",
+      "annual_change_pp": 0.4
+    }
+  ],
+  "rates_from": {
+    "dhs2013": 11.149075984364499,
+    "dhs2018": 10.5127759547257,
+    "dhs2024": 13.104165101534901,
+    "fpet2024": 13.2,
+    "fpet2025": 13.6
+  }
+})--------"
+REVISED_TABLE_SCHEMA <- r"--------([
+  {
+    "title": "First-year: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "First-year: users by method and cause",
+    "kind": "cause",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "First-year: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 1
+  },
+  {
+    "title": "First-year: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 2
+  },
+  {
+    "title": "First-year: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: users by method and cause",
+    "kind": "cause",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 1
+  },
+  {
+    "title": "Historical duration-aware: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 2
+  },
+  {
+    "title": "Historical duration-aware: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: users by method and cause",
+    "kind": "cause",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 1
+  },
+  {
+    "title": "AFT survival: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 2
+  },
+  {
+    "title": "AFT survival: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: users by method and cause",
+    "kind": "cause",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 1
+  },
+  {
+    "title": "Historical sensitivity: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 2
+  },
+  {
+    "title": "Historical sensitivity: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 5,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: users by method and cause",
+    "kind": "cause",
+    "approach": 5,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 1
+  },
+  {
+    "title": "AFT sensitivity: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 2
+  },
+  {
+    "title": "AFT sensitivity: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 5,
+    "scenario": null
+  }
+])--------"
+REVISION_HELPERS <- list(
+  "300_revised_planning.R" = r"--------(#!/usr/bin/env Rscript
+# Usage: compute_2025.R SAVED_STATS_DIR VERIFIED_GROWTH_JSON OUTPUT_DIR
+# Reuses saved point estimates and 500 survey bootstrap draws. Models are not refitted.
+a<-commandArgs(TRUE);stopifnot(length(a)==3)
+suppressPackageStartupMessages(library(jsonlite))
+point<-readRDS(file.path(a[1],'planning_point.rds'));reps<-readRDS(file.path(a[1],'planning_replicates.rds'));meta<-readRDS(file.path(a[1],'planning_metadata.rds'))
+outdir<-a[3];dir.create(outdir,recursive=TRUE,showWarnings=FALSE)
+verified<-fromJSON(a[2]);rates<-verified$scenarios$annual_change_pp
+labels<-verified$scenarios$scenario
+meta$epsilon<-0
+metrics<-function(x){
+ counts<-x$risk
+ for(m in meta$methods)counts[,m,]<-x$risk[,m,]*x$users2024[m]
+ counts<-abind::abind(counts,counts[1,,,drop=FALSE]-counts[6,,,drop=FALSE],counts[2,,,drop=FALSE]-counts[4,,,drop=FALSE],counts[3,,,drop=FALSE]-counts[5,,,drop=FALSE],along=1)
+ y<-c(stock_no_ec=sum(x$users2024[meta$methods]),mcpr2024=x$mcpr,users2024=sum(x$users2024))
+ for(m in c(meta$methods,'EC'))y[paste('stock',m,sep='|')]<-x$users2024[m]
+ for(i in 1:11)for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
+  mi<-if(m=='Total')1:5 else match(m,meta$methods);ci<-if(ca=='Total')1:5 else match(ca,meta$causes)
+  v<-sum(counts[i,mi,ci]);stock<-if(m=='Total')sum(x$users2024[meta$methods])else x$users2024[m];key<-paste(i,m,ca,sep='|')
+  y[paste0('count|',key)]<-v;y[paste0('pp|',key)]<-100*v/meta$wra2025;y[paste0('risk|',key)]<-100*v/stock
+ }
+ for(j in 1:3){base<-x$mcpr+rates[j];y[paste0('base|',j)]<-base;y[paste0('baseusers|',j)]<-base/100*meta$wra2025
+  for(i in 1:5)for(m in c(meta$methods,'EC','Total')){
+   share<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(counts[i,,])else if(m=='EC')0 else sum(counts[i,m,]);usual<-base*share
+   key<-paste(j,i,m,sep='|');y[paste0('usualusers|',key)]<-usual/100*meta$wra2025;y[paste0('retainedusers|',key)]<-usual/100*meta$wra2025+add
+   y[paste0('usualmcpr|',key)]<-usual;y[paste0('retainedmcpr|',key)]<-usual+100*add/meta$wra2025
+  }
+ }
+ for(i in 1:5)for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
+  base<-if(i==4)2 else if(i==5)3 else i;key<-paste(i,m,ca,sep='|');den<-y[paste0('count|',base,'|',m,'|',ca)]
+  y[paste0('fraction|',key)]<-if(den>0)100*y[paste0('count|',key)]/den else 0
+ }
+ copykeys<-names(y)[grepl('^(count|pp|stock|base|usualusers|retainedusers|usualmcpr|retainedmcpr)[|]',names(y))]
+ for(k in copykeys)y[paste0('legacy_',k)]<-y[k]
+ y['legacy_stock|Total']<-sum(x$users2024)
+ y
+}
+pt<-metrics(point);ds<-vapply(reps,metrics,pt);ds<-pt+(ds-pt)/(1-meta$epsilon)
+lo<-apply(ds,1,quantile,.025);hi<-apply(ds,1,quantile,.975);lo<-pmax(0,pmin(lo,pt));hi<-pmax(hi,pt)
+pct<-grepl('^(risk|usualmcpr|retainedmcpr)[|]',names(pt));hi[pct]<-pmin(100,hi[pct])
+write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(outdir,'revised_planning_intervals.csv'),row.names=FALSE)
+write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(outdir,'planning_intervals.csv'),row.names=FALSE)
+meta$reference_year<-2024;meta$outcome_year<-2025;meta$definitions[4]<-'Observed 2024 current-user cohort; 2025 mCPR under recent DHS, longer-term DHS, or FPET-informed annual change. Growth and population assumptions are fixed.'
+write_json(meta,file.path(outdir,'metadata.json'),auto_unbox=TRUE,pretty=TRUE)
+summary<-data.frame(scenario=labels,annual_change_pp=rates,mcpr2024=point$mcpr,mcpr2025=point$mcpr+rates,users2024=sum(point$users2024),users2025=(point$mcpr+rates)/100*meta$wra2025)
+write.csv(summary,file.path(outdir,'scenario_summary.csv'),row.names=FALSE)
+jsonlite::write_json(list(scenarios=summary,reference_year=2024,outcome_year=2025,wra2024=meta$wra2024,wra2025=meta$wra2025,methods=meta$methods,causes=meta$causes,replicates=length(reps),rates_from=verified$rates_from,reference_stock=as.list(point$users2024),ending_totals=sapply(1:5,function(i)pt[paste0('count|',i,'|Total|Total')]),pp_totals=sapply(1:5,function(i)pt[paste0('pp|',i,'|Total|Total')])),file.path(outdir,'revision_inputs.json'),auto_unbox=TRUE,pretty=TRUE,digits=15)
+stopifnot(!anyNA(pt),all(pt[grepl('^(count|pp)[|]',names(pt))]>=-1e-6))
+cat('2025 mCPR gains (gross first-year / historical / AFT; switching historical / AFT):\n');print(sapply(1:5,function(i)pt[paste0('pp|',i,'|Total|Total')]))
+print(summary)
+)--------",
+  "301_revised_tables.py" = r"--------(#!/usr/bin/env python3
+"""Usage: build_tables.py REVISED_STATS_DIR ORIGINAL_SPECS_JSON OUTPUT_DIR"""
+from pathlib import Path
+import sys,csv,json,copy
+stats,oldfile,out=map(Path,sys.argv[1:]);out.mkdir(exist_ok=True,parents=True)
+meta=json.loads((stats/'revision_inputs.json').read_text());D={r['key']:{k:float(r[k]) for k in ['estimate','lower','upper']} for r in csv.DictReader((stats/'revised_planning_intervals.csv').open())}
+methods=meta['methods'];causes=meta['causes'];old=json.loads(oldfile.read_text())
+labels=[f'6-year DHS trend\n({meta["scenarios"][0]["annual_change_pp"]:+.2f} pp/year)',f'11-year DHS trend\n({meta["scenarios"][1]["annual_change_pp"]:+.2f} pp/year)',f'FPET-informed growth\n({meta["scenarios"][2]["annual_change_pp"]:+.2f} pp/year)']
+short=['6-year DHS trend','11-year DHS trend','FPET-informed growth']
+def val(key,kind='num',deck=False):
+ x=D[key];scale=1000 if deck and kind=='num' else 1;digits=(1 if deck else 0) if kind=='num' else 1 if kind=='risk' else 2
+ def f(y):return '<0.01' if kind=='pp' and 0<y<.005 else '<0.1' if kind=='num' and deck and 0<y/scale<.05 else f'{y/scale:,.{digits}f}'
+ suffix=' pp' if kind=='pp' else '%' if kind in ['risk','pct'] else ''
+ v=f(x['estimate'])+suffix
+ if x['estimate']==x['lower']==x['upper']==0:return v+'\n(CI unavailable†)'
+ if not deck and abs(x['upper']-x['lower'])>1e-10:v+='\n('+f(x['lower'])+'–'+f(x['upper'])+')'
+ return v
+def make(sp,deck):
+ s=copy.deepcopy(sp);a=s['approach'];kind=s['kind'];base=2 if a==4 else 3 if a==5 else a;label=s['title'].split(':')[0]
+ s['subtitle']='Users in thousands; point estimates' if deck else 'Numbers of women; estimates (95% survey intervals)'
+ c=lambda m,ca:val(f'count|{a}|{m}|{ca}',deck=deck)
+ pp=lambda m,ca:val(f'pp|{a}|{m}|{ca}','pp',deck)
+ stock=lambda m:val('users2024' if m=='Total' else 'stock|'+m,deck=deck)
+ name=lambda m:m
+ heads=['Method / measure','Method\nfailure','Want more\neffective','Bleeding\nchanges','Other side\neffects/health','Access/cost/\nconvenience','All actionable\ncauses']
+ if kind=='method':
+  s['table']=[['Method','2024 survey\ncurrent users','Original-method ending\nprobability' if a>3 else 'Actionable ending\nprobability','Year-end losses\nafter switching' if a>3 else 'Users ending\noriginal method','mCPR equivalent']]
+  for m in methods:s['table'].append([name(m),stock(m),val(f'risk|{base}|{m}|Total','risk',deck),c(m,'Total'),pp(m,'Total')])
+  s['table'].append(['EC',stock('EC'),'Not applied','Not estimated','Not estimated'])
+  s['table'].append(['Current-user mix\nexcluding EC',val('stock_no_ec',deck=deck),val(f'risk|{base}|Total|Total','risk',deck),c('Total','Total'),pp('Total','Total')])
+ elif kind in ['cause','cause_pp']:
+  s['table']=[heads]+[[name(m),*[c(m,ca) for ca in causes],c(m,'Total')] for m in methods]
+  s['table'].append(['Year-end losses' if a>3 else 'Users ending method',*[c('Total',ca) for ca in causes],c('Total','Total')])
+  if kind=='cause_pp':
+   pop=meta['wra2025']/1000 if deck else meta['wra2025']
+   s['table'].append(['2025 women aged\n15–49 (fixed)',*[f'{pop:,.1f}']*6]);s['table'].append(['mCPR increase (pp)',*[pp('Total',ca) for ca in causes],pp('Total','Total')])
+ elif kind=='baseline':
+  s['title']=label+': mCPR growth scenarios';s['subtitle']='2024 survey baseline and projected 2025 mCPR under three annual-change assumptions'
+  s['table']=[['Different mCPR\ngrowth scenarios','Annual change\n(pp/year)','2024 survey\nmCPR','Projected 2025\nmCPR']]+[[labels[j-1],f'{meta["scenarios"][j-1]["annual_change_pp"]:+.2f}',val('mcpr2024','pct',deck),val(f'base|{j}','pct',deck)] for j in range(1,4)]
+ elif kind=='scenario':
+  s['table']=[['Different mCPR\ngrowth scenarios','2025 users\nusual scenario','2025\nmCPR','2025 users\nif retained','mCPR\nif retained','Increase\n(pp)']]
+  for j in range(1,4):
+   k=f'{j}|{a}|Total';s['table'].append([labels[j-1],val('usualusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedusers|'+k,deck=deck),val('retainedmcpr|'+k,'pct',deck),pp('Total','Total')])
+ elif kind=='method_scenario':
+  j=s['scenario'];s['title']=label+': '+short[j-1]+' by method'
+  s['table']=[['Method','2024 survey\nusers','2025 users\nusual scenario','Losses\navoided','2025 users\nif retained','2025\nmCPR','mCPR\nif retained']]
+  for m in methods+['EC','Total']:
+   k=f'{j}|{a}|{m}';s['table'].append(['All modern' if m=='Total' else name(m),stock(m),val('usualusers|'+k,deck=deck),'Not estimated' if m=='EC' else c(m,'Total'),val('retainedusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedmcpr|'+k,'pct',deck)])
+ else:raise ValueError(kind)
+ definitions={1:'First-year: weighted actionable cumulative incidence in months 1–12 after initiation, applied to observed 2024 current users. Elapsed use is not incorporated.',2:'Historical: observed next-12-month actionable ending probability at current elapsed duration. The 61+ month group uses 37–60-month experience.',3:'AFT: seven weighted models predict next-12-month actionable endings conditional on elapsed use. Actionable and other endings compete, and five cause models allocate actionable endings.'}
+ s['note']=definitions[base]
+ s['note']+=(' Sensitivity: year-end losses deduct modern-to-modern switches and later restarters; EC counts as modern at year end.' if a>3 else ' Every actionable original-method ending is treated as a lost user. Switching/restarting is not deducted.')
+ s['note']+=' Partner/spousal disapproval is excluded. The observed 2024 cohort is fixed across scenarios. Population and growth assumptions are fixed.'
+ if not deck:s['note']+=' 95% intervals use 500 stratified PSU bootstrap draws; AFT families are fixed. CI bounds are not additive.'
+ if base==3:s['note']+=' Sparse IUD causes have only 1–11 observed training events.'
+ if a>3:s['note']+=' Sparse pathway cells use documented pooling.'
+ if kind=='method':s['note']+=' Total ending probability averages method-specific risks using the 2024 current-user mix, excluding EC.'
+ if kind=='baseline':s['note']=f'Recent annual change = (2024 DHS {meta["rates_from"]["dhs2024"]:.4f}% − 2018 DHS {meta["rates_from"]["dhs2018"]:.4f}%)/6. Longer-term change = (2024 DHS − 2013 DHS {meta["rates_from"]["dhs2013"]:.4f}%)/11. FPET-informed change = {meta["rates_from"]["fpet2025"]:.1f}% − {meta["rates_from"]["fpet2024"]:.1f}%. Each is added once to the 2024 DHS baseline. Growth assumptions are fixed.'
+
+ return s
+for deck in [True,False]:(out/('planning_slides.json' if deck else 'planning_html.json')).write_text(json.dumps([make(s,deck) for s in old],indent=2))
+print('Built 40 Nigeria tables for 2024-to-2025, including both switching sensitivity sets.')
+)--------",
+  "302_revised_html.py" = r"--------("""Update Nigeria planning chapters from an observed 2024 cohort to 2025.
+
+Usage: update_html.py SOURCE_HTML STATS_DIR HTML_SPECS OUTPUT_HTML
+"""
+from pathlib import Path
+from lxml import html
+from html import escape
+import json,csv,re,copy,sys
+source,stats,specfile,target=map(Path,sys.argv[1:]);doc=html.parse(str(source))
+meta=json.loads((stats/'revision_inputs.json').read_text());spec=json.loads(specfile.read_text())
+D={r['key']:{k:float(r[k])for k in ['estimate','lower','upper']}for r in csv.DictReader((stats/'planning_intervals.csv').open())}
+methods=meta['methods'];causes=meta['causes'];oldids=set(doc.xpath('//section/@id'))
+def sec(sid):return doc.xpath(f'//section[@id="{sid}"]')[0]
+def table(rows):
+ return '<div class="tablewrap"><table class="survey-table"><thead><tr>'+''.join('<th>'+escape(str(v)).replace('\n','<br>')+'</th>'for v in rows[0])+'</tr></thead><tbody>'+''.join('<tr>'+''.join(('<th scope="row">'if j==0 else'<td>')+escape(str(v)).replace('\n','<br>')+('</th>'if j==0 else'</td>')for j,v in enumerate(row))+'</tr>'for row in rows[1:])+'</tbody></table></div>'
+def article(s,ci=True):
+ s=copy.deepcopy(s)
+ if not ci:
+  s['table']=[[re.sub(r'\n\([^\n]*[–−][^\n]*\)|\n\(CI unavailable†\)','',v)for v in row]for row in s['table']]
+  s['subtitle']=s['subtitle'].replace('estimates (95% survey intervals)','point estimates')
+  s['note']=re.sub(r' 95% intervals use.*?CI bounds are not additive\.','',s['note'])
+ return '<article class="duration-slide"><h3>'+escape(s['title'])+'</h3><p>'+escape(s['subtitle'])+'</p>'+table(s['table'])+'<p class="note">'+escape(s['note'])+'</p></article>'
+def reset(sid,title,markup):
+ s=sec(sid);s.clear();s.set('id',sid);s.set('class','analysis-section duration-block');h=html.Element('h2');h.text=title;s.append(h)
+ for x in html.fragments_fromstring(markup):
+  if isinstance(x,str):s.text=(s.text or'')+x
+  else:s.append(x)
+ return s
+def val(key,kind='num'):
+ x=D[key];digits=0 if kind=='num'else 1 if kind=='risk'else 2
+ f=lambda v:f'{v:,.{digits}f}'
+ suffix=' pp'if kind=='pp'else'%'if kind in ['risk','pct']else''
+ return f(x['estimate'])+suffix+'\n('+f(x['lower'])+'–'+f(x['upper'])+')'
+count=lambda a,m='Total',c='Total':val(f'count|{a}|{m}|{c}')
+pp=lambda a,m='Total',c='Total':val(f'pp|{a}|{m}|{c}','pp')
+def matrix(a,as_pp=False):return table([['Method / measure',*causes,'All actionable causes']]+[[m,*[(pp(a,m,c)if as_pp else count(a,m,c))for c in causes],pp(a,m)if as_pp else count(a,m)]for m in methods+['Total']])
+reset('user-projections','First-year actionable discontinuation: 2024 users followed to 2025',article(spec[0])+article(spec[1]))
+reset('mcpr-scenarios','First-year approach: 2025 mCPR under three growth scenarios',article(spec[2])+article(spec[3])+article(spec[7]))
+reset('method-level-mcpr-scenarios','First-year approach: 2025 mCPR scenarios by method',''.join(article(s)for s in spec[4:7]))
+rows=[['Approach (no switching adjustment)','Actionable original-method endings (95% CI)','2025 mCPR increase (95% CI)']]
+for a,name in [(1,'First-year probability'),(2,'Historical duration-aware'),(3,'AFT survival')]:rows.append([name,count(a),pp(a)])
+reset('three-approach-planning','Three approaches: observed 2024 users followed to 2025',
+ '<p>All three main calculations concern potentially actionable endings of original modern methods, excluding EC and partner/spousal disapproval. The reference stock is the observed 2024 DHS all-women prevalence and method distribution multiplied by 2024 UN women aged 15–49. The historical and AFT probabilities use the observed 2024 elapsed-duration distribution. Each scenario projects usual-condition 2025 mCPR by adding one annual growth increment to the 2024 DHS baseline. Additional retained users are added to that usual-condition 2025 stock. The same observed 2024 cohort is fixed across scenarios. Every pp contribution divides the retained count by 57,393,553 projected women ages 15–49 in 2025, multiplied by 100. Main tables treat every actionable ending as a user lost and do not deduct switching or restarting. EC remains in baseline mCPR and contributes no retention increment.</p>'+table(rows)+
+ '<p class="note">Intervals use the existing 500 full-frame stratified PSU bootstrap replicates. They propagate survey sampling, prevalence, method mix, duration, historical risks, fitted AFT curves and observed pathways. Population, secular-growth assumptions and selected AFT families remain fixed. These are conditional scenarios, not estimates of intervention effectiveness.</p>')
+for sid,title,part,a in [('historical-duration-aware-planning','Historical duration-aware approach: 2025 mCPR without switching deduction',spec[8:16],2),('aft-duration-aware-planning','AFT survival approach: 2025 mCPR without switching deduction',spec[16:24],3)]:
+ reset(sid,title,''.join(article(s,False)for s in part)+'<h3>Additional detail: 2025 mCPR percentage-point equivalent by method and cause (95% CI)</h3>'+matrix(a,True))
+for sid,title,part in [('historical-switching-sensitivity','Historical switching sensitivity: 2024 users followed to 2025',spec[24:32]),('aft-switching-sensitivity','AFT switching sensitivity: 2024 users followed to 2025',spec[32:40])]:reset(sid,title,''.join(article(s)for s in part))
+# Keep the complementary pathway diagnostics, with the same rebased counts.
+rows=[['Method','Observed 2024 users','Gross actionable endings','Direct modern switches','Without direct switch']]
+for m in methods+['Total']:rows.append([m,val('stock_no_ec'if m=='Total'else'stock|'+m),count(1,m),count(6,m),count(9,m)])
+reset('switch-bridge','Sensitivity: direct switching only, 2024 to 2025','<p>Direct switching means modern use in the next recorded month. Later restarting is not deducted here. EC counts as modern at destination.</p>'+table(rows)+'<h3>Direct switches by cause (95% CI)</h3>'+matrix(6)+'<h3>2025 mCPR equivalent if endings without a direct switch were losses (95% CI)</h3>'+matrix(9,True))
+rows=[['Current method','Gross actionable endings','Direct switches','Modern at year end after ending','Outside modern use at year end']]
+for m in methods+['Total']:rows.append([m,count(2,m),count(7,m),count(10,m),count(4,m)])
+reset('duration-bridge','Sensitivity: historical duration and modern use in 2025',table(rows)+'<h3>Outside modern use at year end by cause (95% CI)</h3>'+matrix(4)+article(spec[27]))
+reset('duration-aware-cause-pp-matrices','Sensitivity: historical year-end loss by method and cause, 2025',matrix(4)+'<h3>2025 percentage-point equivalents (95% CI)</h3>'+matrix(4,True))
+rows=[['Current method','AFT actionable endings','Direct switches','Modern at year end after ending','Outside modern use at year end']]
+for m in methods+['Total']:rows.append([m,count(3,m),count(8,m),count(11,m),count(5,m)])
+reset('duration-planning-appendix','Sensitivity: AFT pathway diagnostics, 2024 to 2025','<p>Original-method ending probabilities are unchanged. Year-end modern-use status comes from observed calendar pathways, including EC. User counts now start from observed 2024 users.</p>'+table(rows)+'<h3>AFT original-method endings by cause (95% CI)</h3>'+matrix(3)+'<h3>Direct switches by cause (95% CI)</h3>'+matrix(8)+'<h3>Outside modern use at year end by cause (95% CI)</h3>'+matrix(5))
+for sid in ['switch-bridge','duration-bridge','duration-aware-cause-pp-matrices','duration-planning-appendix']:
+ sec(sid).append(html.fragment_fromstring('<p class="note">Counts use the observed 2024 current-user cohort. All 2025 pp equivalents divide by 57,393,553 projected women ages 15–49. Intervals use 500 stratified PSU bootstrap draws, conditional on fixed population and growth assumptions.</p>'))
+# Two-year reference table is replaced by a single one-year projection.
+rows=[['Year','Women aged 15–49'],['2024',f'{meta["wra2024"]:,.0f}'],['2025',f'{meta["wra2025"]:,.0f}']]
+growth=[['Year','Growth scenario','All-women mCPR (95% survey CI)','Women ages 15–49','Modern users (95% survey CI)'],['2024','Observed DHS baseline',val('mcpr2024','pct'),f'{meta["wra2024"]:,.0f}',val('users2024')]]
+for j,s in enumerate(meta['scenarios'],1):growth.append(['2025',s['scenario']+f' ({s["annual_change_pp"]:+.2f} pp/year)',val(f'base|{j}','pct'),f'{meta["wra2025"]:,.0f}',val(f'baseusers|{j}')])
+reset('population','Nigeria population and 2025 mCPR inputs','<p>All scenarios start from the 2024 DHS all-women mCPR of 13.104165%. Recent growth annualizes the 2018–2024 difference over six years. Longer-term growth annualizes the 2013–2024 difference over eleven years. FPET-informed growth applies the modeled 2024–2025 change of +0.40 pp. Each adds one annual increment to the 2024 DHS baseline. UN populations supply the 2024 current-user scale and the 2025 outcome denominator.</p>'+table(rows)+'<h3>Observed 2024 baseline and usual-condition 2025 scenarios</h3>'+table(growth)+'<p class="note">The retention calculation uses observed 2024 users, not projected 2025 users. Current method and elapsed-duration profiles remain those observed in the 2024 DHS. Those probabilities and the 2024 cohort remain fixed across scenarios. Survey intervals condition on fixed growth and population assumptions.</p>')
+# A historical illustrative pathway is not a forecast of a particular cohort.
+for p in sec('action-pathways').xpath('.//p'):
+ if '2025–26' in p.text_content():p.text=p.text_content().replace('2025–26','2024–25')
+# Complete left navigation, retaining section anchors.
+aside=doc.find('.//aside');aside.clear();strong=html.Element('strong');strong.text='Nigeria discontinuation';aside.append(strong)
+for s in doc.xpath('//main/section[@id]'):
+ h=s.find('.//h2')
+ if h is not None:
+  a=html.Element('a',href='#'+s.get('id'));a.text=h.text_content();aside.append(a)
+assert oldids==set(doc.xpath('//section/@id'))
+text=html.tostring(doc,encoding='unicode',doctype='<!doctype html>')
+visible=' '.join(doc.xpath('//body//text()[not(ancestor::script) and not(ancestor::style)]'))
+stale=re.search(r'2026|2025–26',visible)
+assert not stale,visible[max(0,stale.start()-160):stale.start()+220]if stale else''
+target.write_text(text);print('Updated all main and sensitivity planning sets; preserved',len(oldids),'sections.')
+)--------",
+  "303_validate_revised.py" = r"--------("""Validate the incremental report build; do not claim a fresh full rebuild."""
+from pathlib import Path
+from lxml import html,etree
+import sys,json,csv,hashlib,re
+country,base,target,stats,out=sys.argv[1:]
+base,target,stats,out=map(Path,[base,target,stats,out]);a=html.parse(str(base));b=html.parse(str(target))
+ids=lambda d:set(d.xpath('//section/@id'))
+assert ids(a)==ids(b),'Section coverage changed'
+assert a.xpath('//img/@src')==b.xpath('//img/@src'),'Unrequested figure changes'
+assert len(b.xpath('//img'))==len(a.xpath('//img'))
+assert b.xpath('//*[@id="four-reason-groups"]'),'Partner/spousal classification block missing'
+groups=b.xpath('//*[@id="four-reason-groups"]//tr')
+assert any('Partner/spousal' in r.text_content()for r in groups)
+scan=re.sub(r'data:[^;]+;base64,[A-Za-z0-9+/=]+','[embedded figure]',target.read_text())
+assert not re.search(r'/(?:Users|Volumes)/|file:/{2,}|[A-Z]:\\',scan,re.I),'Personal path in report'
+md=json.loads((stats/'revision_inputs.json').read_text())
+assert len(md['scenarios'])==3
+D={r['key']:float(r['estimate'])for r in csv.DictReader((stats/'revised_planning_intervals.csv').open())}
+methods=md['methods'];causes=md['causes'];year=2026 if country=='Ethiopia' else 2025
+for ap in range(1,6):
+    total=D[f'count|{ap}|Total|Total']
+    assert abs(total-sum(D[f'count|{ap}|{m}|{c}']for m in methods for c in causes))<1e-5
+    assert abs(D[f'pp|{ap}|Total|Total']-100*total/md['wra'+str(year)])<1e-8
+    for j in range(1,4):
+        k=f'{j}|{ap}|Total'
+        assert abs(D['retainedmcpr|'+k]-D['usualmcpr|'+k]-D[f'pp|{ap}|Total|Total'])<1e-8
+def tables(d):
+    return [[[re.sub(r'\s+','',c.text_content())for c in r.xpath('./th|./td')]for r in t.xpath('.//tr')]for t in d.xpath('//table')]
+old,new=tables(a),tables(b)
+same=sum(x==y for x,y in zip(old,new))
+warnings=[]
+def first_number(s):
+    m=re.search(r'[-−]?\d[\d,]*(?:\.\d+)?',s)
+    return float(m[0].replace(',','').replace('−','-'))if m else None
+for article in b.xpath('//article[contains(@class,"duration-slide")]'):
+    heading=article.find('h3');title=heading.text_content()if heading is not None else''
+    if not title.endswith('by method'):continue
+    for tr in article.xpath('.//table//tbody/tr'):
+        cells=[c.text_content()for c in tr]
+        if len(cells)!=7:continue
+        usual,retained,loss=[first_number(cells[i])for i in [2,4,3]]
+        if None in [usual,retained,loss]:continue
+        delta=retained-usual-loss
+        if abs(delta)>2:
+            warnings.append(dict(table=title,row=cells[0],projected_users=usual,displayed_retained_users=loss,
+                                 displayed_total=retained,displayed_count_discrepancy=delta,
+                                 action='Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled.'))
+result=dict(status='pass_with_existing_report_warnings'if warnings else'pass',country=country,reference_year=2025 if country=='Ethiopia' else 2024,outcome_year=year,
+ sections=len(ids(b)),tables=len(new),base_tables=len(old),tables_matching_input_report=same,
+ figures_preserved=len(b.xpath('//img')),incremental_build=True,full_raw_ir_to_all_chapters_verified=False,
+ planning_arithmetic_input_vectors='pass',existing_report_arithmetic_warnings=warnings,
+ base_report_sha256=hashlib.sha256(base.read_bytes()).hexdigest(),
+ output_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
+ scope='Planning arithmetic is rebuilt from supplied fitted estimates and bootstrap draws. Unchanged chapters and figures are preserved from the supplied validated HTML layout; they are not freshly recomputed by this command.')
+(out/'revised_build_validation.json').write_text(json.dumps(result,indent=2))
+print(json.dumps({k:v for k,v in result.items()if k not in ['scope','base_report_sha256','output_sha256']}))
+)--------"
+)
+# Incremental report build: recalculates revised planning from fitted numerical
+# outputs and applies the revision to an existing validated report layout.
+# Unchanged analytical chapters and figures come from that report. This is not
+# a fresh raw-IR rebuild of every chapter or an embedded snapshot replay.
+run_revised_report <- function(opt) {
+  if (!requireNamespace("jsonlite",quietly=TRUE) || !requireNamespace("digest",quietly=TRUE))
+    stop("Install jsonlite and digest.")
+  root <- opt[["project-root"]]
+  if (is.null(root)) root <- file.path("analysis_output",tolower(COUNTRY),"revised")
+  dir.create(root,recursive=TRUE,showWarnings=FALSE);root<-normalizePath(root,mustWork=TRUE)
+  script_arg<-grep("^--file=",commandArgs(),value=TRUE)
+  script_folder<-if(length(script_arg))dirname(sub("^--file=","",script_arg[1]))else"."
+  stats <- opt[["statistics-dir"]]
+  if(is.null(stats))stats<-file.path(script_folder,"revision_inputs")
+  if (is.null(stats)||!dir.exists(stats)) stop("Supply --statistics-dir with fitted point estimates and survey bootstrap draws.")
+  stats<-normalizePath(stats,mustWork=TRUE)
+  required<-c("planning_point.rds","planning_replicates.rds",if(COUNTRY=="Ethiopia")"metadata.json"else"planning_metadata.rds")
+  if(COUNTRY=="Ethiopia")required<-c(required,"planning_intervals.csv")
+  if(!all(file.exists(file.path(stats,required))))stop("The numerical input directory is incomplete.")
+  if(length(readRDS(file.path(stats,"planning_replicates.rds")))!=500L)
+    stop("The saved-report revision requires the validated 500-replicate numerical output.")
+  build<-file.path(root,"build");result<-file.path(root,"output");code<-file.path(root,"Code")
+  for(d in c(build,result,code))dir.create(d,recursive=TRUE,showWarnings=FALSE)
+  for(n in names(REVISION_HELPERS))writeLines(REVISION_HELPERS[[n]],file.path(code,n),useBytes=TRUE)
+  assumptions<-opt[["revision-inputs"]]
+  if(is.null(assumptions)) {assumptions<-file.path(build,"growth_assumptions.json");writeLines(REVISED_GROWTH_ASSUMPTIONS,assumptions,useBytes=TRUE)}
+  if(!file.exists(assumptions))stop("Revision assumptions file does not exist.")
+  schema<-file.path(build,"table_schema.json");writeLines(REVISED_TABLE_SCHEMA,schema,useBytes=TRUE)
+  python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
+  run<-function(exe,args) {
+    status<-system2(exe,shQuote(args))
+    if(!identical(status,0L))stop("Revised build failed; no checked report was overwritten.")
+  }
+  run(file.path(R.home("bin"),"Rscript"),c(file.path(code,"300_revised_planning.R"),stats,assumptions,build))
+  if(identical(opt$run,"revised-planning"))return(invisible(NULL))
+  template<-opt[["base-html"]]
+  if(is.null(template)) {
+    template<-file.path(script_folder,REPORT_BASENAME)
+  }
+  if(!file.exists(template))stop("Supply --base-html with the latest validated report layout.")
+  template<-normalizePath(template,mustWork=TRUE)
+  target<-file.path(result,REPORT_BASENAME)
+  if(identical(normalizePath(target,mustWork=FALSE),template))stop("Build output must differ from the input report.")
+  run(python,c(file.path(code,"301_revised_tables.py"),build,schema,build))
+  if(COUNTRY=="Ethiopia") {
+    run(python,c(file.path(code,"302_revised_html.py"),build,schema,template,target))
+  } else if(COUNTRY=="Nigeria") {
+    run(python,c(file.path(code,"302_revised_html.py"),template,build,file.path(build,"planning_html.json"),target))
+  } else {
+    run(python,c(file.path(code,"302_revised_html.py"),template,template,build,file.path(build,"planning_html.json"),target))
+  }
+  run(python,c(file.path(code,"303_validate_revised.py"),COUNTRY,template,target,build,result))
+  cat("Revised HTML build completed. Review output/revised_build_validation.json for its scope.\n")
+}
+
+REQUIRED_R_PACKAGES <- unique(c(REQUIRED_R_PACKAGES,"abind"))
+for (n in names(REVISION_HELPERS)) MODULES[[n]] <- list(language=if(grepl("[.]R$",n))"R"else"Python",args=character(),code=REVISION_HELPERS[[n]])
+
 if (sys.nframe() == 0L) main()
