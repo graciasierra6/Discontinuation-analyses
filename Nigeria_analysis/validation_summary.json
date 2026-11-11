@@ -1,0 +1,31 @@
+{
+  "status": "pass",
+  "planning_cell_and_identity_checks": 5137,
+  "pptx_planning_tables": 48,
+  "html_planning_articles": 49,
+  "existing_html_tables_unchanged": 133,
+  "all_previous_pptx_table_cells_unchanged": true,
+  "new_slides": [
+    91,
+    98
+  ],
+  "slides": 98,
+  "replicates": 500,
+  "reference_year": 2024,
+  "outcome_year": 2025,
+  "baseline_wra": 55819549.5,
+  "outcome_wra": 57393553,
+  "notes": 0,
+  "new_model_users": 666978.783357688,
+  "new_model_pp": {
+    "estimate": 1.16211446842764,
+    "lower": 1.05914777767235,
+    "upper": 1.25924137958386
+  },
+  "scope": "Planning data, numerical identities and displayed cells checked. Earlier analytical chapters and figures retained. Conditional estimates do not guarantee future behavior or causal intervention effects.",
+  "last_updated": "2026-11-10",
+  "existing_numerical_metrics_unchanged": 3025,
+  "raw_probability_reproduction": "point and all 500 replicates match all eight existing components exactly",
+  "r_rebuild": "all 141 HTML tables, planning explanations and 21 figures match",
+  "fresh_point_fit": "reproduces all nine risk and count components exactly"
+}

@@ -1,0 +1,14 @@
+{
+  "wra2024": 55819549.5,
+  "wra2025": 57393553,
+  "wra2026": 59000784.5,
+  "psus": 1380,
+  "strata": 74,
+  "replicates": 500,
+  "methods": ["Injectables", "Implants", "Pill", "IUD", "Other modern"],
+  "causes": ["Method failure", "Wanted more effective method", "Changes in menstrual bleeding", "Other side effects/health", "Access/cost/convenience"],
+  "definitions": ["Gross: every actionable original-method ending treated as year-end loss", "Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes", "AFT uncertainty conditional on selected distribution families", "Observed 2024 current-user cohort; 2025 mCPR under recent DHS, longer-term DHS, or FPET-informed annual change. Growth and population assumptions are fixed.", "All raw counts and stocks use the observed 2024 current-user cohort; outcome pp use 2025 WRA.", "Modeled transition sensitivity: original AFT endings with categorical immediate state and AFT-based subsequent transitions."],
+  "reference_year": 2024,
+  "outcome_year": 2025,
+  "epsilon": 0
+}

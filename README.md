@@ -1,77 +1,99 @@
 # Contraceptive discontinuation analyses
 
-Latest saved reports, presentations, and parameterized R analysis entry points
-for Ethiopia, Nigeria, DRC, and the combined Kano–Kaduna–Lagos analysis.
+DHS-based analyses for Ethiopia, Nigeria and DRC, with a combined report for
+Kano, Kaduna and Lagos. Updated November 10, 2026.
 
-## Files
+| Analysis | Folder | HTML report | Presentation |
+| --- | --- | --- | --- |
+| Ethiopia DHS 2024–25 | `Ethiopia_analysis/` | `Ethiopia_discontinuation_analysis.html` | `ethiopia_presentation.pptx` — 107 slides |
+| Nigeria DHS 2024 | `Nigeria_analysis/` | `Nigeria_discontinuation_analysis.html` | `Nigeria_discontinuation.pptx` — 98 slides |
+| DRC DHS 2023–24 | `DRC_analysis/` | `DRC_discontinuation_analysis.html` | `DRC_discontinuation.pptx` — 79 slides |
+| Kano, Kaduna, Lagos | `Nigeria_analysis/Kano_Kaduna_Lagos/` | `Kano_Kaduna_Lagos_discontinuation_analysis.html` | `Kano_Kaduna_Lagos_discontinuation.pptx` |
 
-| Analysis | Folder | Report / R entry point |
-| --- | --- | --- |
-| Ethiopia DHS 2024–25 | `Ethiopia_analysis/` | `Ethiopia_discontinuation_analysis.html` / `Ethiopia_final_html_analysis.R` |
-| Nigeria DHS 2024 | `Nigeria_analysis/` | `Nigeria_discontinuation_analysis.html` / `Nigeria_final_html_analysis.R` |
-| DRC DHS 2023–24 | `DRC_analysis/` | `DRC_discontinuation_analysis.html` / `DRC_final_html_analysis.R` |
-| Kano, Kaduna, Lagos | `Nigeria_analysis/Kano_Kaduna_Lagos/` | Combined HTML/PPTX and one `State_discontinuation_analysis.R` entry point per state |
+Country folders contain an R entry point, a README and aggregate rebuild inputs.
+The three-state folder contains one R entry point per state. Presentations have
+no presenter notes. Restricted DHS microdata and individual-level fitted objects
+are not included.
 
-Each folder includes a README. The saved presentations have no presenter notes.
-No confidential IR files, fitted models, credentials, or personal input locations
-are included. Each national `revision_inputs/` contains only the aggregate
-estimates, 500 joint bootstrap draws, and metadata needed to rebuild the revision.
-IR inputs are caller-supplied parameters or environment variables; generated
-working files are excluded by `.gitignore`.
+## Rebuild and validate
 
-## Reproducibility status
+Install R packages `jsonlite`, `digest` and `abind`, and Python 3 with `lxml`:
 
-**National reports:** the updated R files retain the numerical source collections
-and add tested revision calculations and incremental HTML builders. Those builds
-take the validated report layout plus included aggregate point estimates and bootstrap draws;
-they do not freshly compute every unchanged chapter or figure. Raw-IR preparation
-is available separately. Full raw-IR-to-complete-formatted-report regeneration
-remains unfinished and must not be described as verified end to end.
+```sh
+python3 -m pip install -r requirements.txt
+Rscript build_reports.R --output-dir=work/build
+python3 validate_repository.py --build-dir=work/build
+```
 
-**Three-state report:** the three standalone R scripts were tested from the full
-2024 Nigeria IR through numerical estimates, planning and statistical figures.
-All 60 state display tables matched the combined HTML, including confidence
-intervals. The scripts export numerical tables/figures, not native PPTX slides.
+Run these commands from the repository root. The build runs all three national
+entry points and writes to `work/build/<Country>_analysis/output/`. It leaves the
+saved reports untouched. Select a country with `--country=Nigeria` (or Ethiopia,
+DRC), and select Python with `--python=python3`. The validator checks release checksums, repository contents, saved document
+structure, aggregate planning inputs and rebuilt HTML tables/figures. Use
+`--skip-hashes` while intentionally editing a release. After rebuilding and
+checking changes, `python3 validate_repository.py --build-dir=work/build --refresh-manifest` refreshes release checksums and the root validation summary. Use `--help` for options. `validation_summary.json` records the
+latest release checks and their scope.
 
-Revision builds matched every saved national table: Ethiopia 154, Nigeria 133,
-DRC 143. Matching saved tables is separate from statistical or arithmetic
-validation. In particular, some Ethiopia AFT method-scenario rows mix two fitted
-output versions: discrepancies are about 68 women for gross endings and 23 for
-switching sensitivity. Rounded overall pp gains remain unchanged. These existing
-report discrepancies are preserved and explicitly flagged by the new build.
+**Rebuild boundary:** national R scripts recompute the 48 principal and sensitivity
+planning tables from included aggregate estimates and 500 joint survey-bootstrap
+draws. They retain other analytical chapters and figures from the supplied HTML
+layout. This is not a verified single-command rebuild of the entire report from
+raw IR. The saved PPTX files are not generated by the R entry points. The latest
+incremental builds reproduce all 162 Ethiopia, 141 Nigeria and 199 DRC HTML tables.
 
-## Analytical definitions
+## Authorized input data
 
-- Discontinuation denominators are eligible modern-method use episodes, or
-  episodes of the specified method. EC is excluded from ongoing-method ending
-  analyses but remains in current all-women mCPR.
-- All-cause results precede the focus on potentially actionable causes: method
-  failure, wanted greater effectiveness, bleeding changes, other side effects/
-  health, and access/cost/convenience. Partner/spousal disapproval is separate.
-- Main user-loss planning treats actionable original-method endings as losses;
-  switching/restarting sensitivities are separately labelled. The three risk
-  approaches are first-year probabilities, historical duration-aware estimates,
-  and AFT survival predictions.
-- Nigeria and DRC use 2024 as baseline and project 2025; Ethiopia treats the
-  2024–25 survey as the 2025 baseline and projects 2026. Added-user pp equivalents
-  use the projected outcome-year women ages 15–49 as the denominator.
-- National scenarios use recent DHS, longer-term DHS, and FPET-informed annual
-  changes. State scenarios use the two verified state DHS trends. Growth and
-  demographic assumptions are fixed, not estimated intervention effects.
+Raw-IR preparation is separate. Supply an authorized country IR through a
+command-line parameter or environment variable:
 
-Country source collections contain historical variants with different cohorts,
-outcomes and specifications. Follow the folder README; do not run all modules
-indiscriminately or equate preparation/syntax checks with full report replication.
+```sh
+Rscript Nigeria_analysis/Nigeria_final_html_analysis.R --run=prepare --project-root=work/nigeria --ir-file="$DHS_IR_FILE"
+```
 
-## Work locally
+Use the corresponding entry point for Ethiopia or DRC. `--list`, `--packages`
+and each country README document preparation and numerical stages. Calendar
+preparation aligns monthly method/reason records, constructs episodes and retains
+weights, strata, PSUs, woman links, delayed entry and censoring. Running preparation
+alone does not fit every downstream model. Paths are parameters or project-relative;
+credentials, private input locations and microdata stay outside the repository.
+[DHS data access](https://dhsprogram.com/data/Access-Instructions.cfm) governs use
+of the underlying IR files.
 
-For national revision builds, install R packages `jsonlite`, `digest`, and `abind`.
-The wider analysis dependencies are listed by each script's `--packages` option.
-Install the HTML helper dependency with `python -m pip install -r requirements.txt`.
-Supply authorized IR inputs through `DHS_IR_FILE` or `--ir-file`. Country READMEs
-document `--run=prepare`, `--run=build-planning`, and `--run=build-html`, along
-with the aggregate-input requirements. Existing saved reports are not overwritten
-by those commands. No API credentials or data acquisition are bundled.
+## Definitions and planning assumptions
 
-This current working copy is prepared for review/upload. No remote changes have
-been pushed by preparing this folder.
+- Modern-method discontinuation excludes EC; all-women mCPR and sensitivity
+  endpoint modern use include EC. Method-specific denominators use that method's
+  eligible episodes. Initiation-mix and published-DHS comparison tables may also
+  show EC and non-modern methods, as labelled.
+- Potentially actionable causes are method failure, wanting a more effective
+  method, bleeding changes, other side effects/health, and access/cost/convenience.
+  Partner/spousal disapproval is separate and excluded. Other endings remain
+  competing events.
+- Main planning counts every actionable original-method ending as a lost user.
+  First-year planning is exploratory and ignores elapsed use. Historical and AFT
+  approaches condition next-12-month endings on method and elapsed use.
+- Three national sensitivities deduct endpoint modern use: observed historical
+  histories; AFT endings with observed histories; and AFT endings with a separate
+  immediate-state model and AFT-based later transitions. A restart only reduces
+  a loss if modern use persists to the common 12-month endpoint.
+- Ethiopia uses a 2025 baseline and 2026 outcome. Nigeria and DRC use 2024 and
+  2025. Additional mCPR pp = retained users / projected outcome-year women aged
+  15–49 × 100, using the [UN WPP 2024](https://population.un.org/wpp/) population
+  extract. The observed reference cohort is fixed across growth scenarios.
+- National secular-growth scenarios use recent DHS, longer-term DHS and an
+  FPET-informed increment. The increment is applied to a DHS baseline; it is not
+  an official FPET forecast. State scenarios use the two verified DHS trends.
+
+Joint survey resampling uses the full PSU/stratum frame. Intervals condition on
+fixed population, growth and selected curve families; their endpoints are not
+additive. Sparse cells, proxy curves, historical transportability and model
+calibration limit interpretation. DRC's new post-ending model overpredicts
+month-12 modern use by 5.4 pp in held-out PSUs and remains a sensitivity estimate.
+Country READMEs document additional restrictions and the validation boundary.
+
+## Kano, Kaduna and Lagos
+
+The state scripts reproduce numerical tables and statistical figures from a
+caller-supplied full Nigeria 2024 IR. The previous reconstruction matched all 60
+state display tables. They export state results, not the combined HTML or PPTX.
+Follow the three-state README for shared-cache and reconciliation commands.

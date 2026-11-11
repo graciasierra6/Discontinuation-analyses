@@ -1,0 +1,30 @@
+{
+  "status": "pass",
+  "slides": 79,
+  "new_sensitivity_slides": [
+    72,
+    79
+  ],
+  "planning_tables_checked": 48,
+  "html_tables": 199,
+  "unchanged_analytical_images": 49,
+  "html_rebuild_tables_identical": true,
+  "first_30_slides_byte_identical": true,
+  "existing_40_planning_table_values_identical": true,
+  "all_existing_3025_estimates_and_intervals_identical": true,
+  "numerical_checks": 5485,
+  "notes": 0,
+  "shareable_content_scan": "pass",
+  "transition_calibration_limitation": "Month-12 modern use overpredicted by 5.37 pp in held-out PSUs. New model is sensitivity only.",
+  "full_raw_ir_to_all_chapters_verified": false,
+  "last_updated": "2026-11-10",
+  "reference_year": 2024,
+  "outcome_year": 2025,
+  "baseline_wra": 24386254.5,
+  "outcome_wra": 25246885,
+  "replicates": 500,
+  "full_survey_frame_psus": 778,
+  "full_survey_frame_strata": 51,
+  "raw_probability_reproduction": "Existing eight components match the point fit and all 500 replicates exactly.",
+  "scope": "Planning values, joint survey resampling, displayed cells and numerical identities checked. Earlier analytical chapters preserved; a complete fresh raw-IR-to-report rebuild is not verified."
+}

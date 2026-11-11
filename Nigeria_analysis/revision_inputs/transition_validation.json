@@ -1,0 +1,67 @@
+{
+  "selected_families": [
+    "lognormal",
+    "loglogistic",
+    "weibull"
+  ],
+  "episodes": 1933,
+  "women": 1609,
+  "transitions": 18751,
+  "held_out": [
+    {
+      "horizon": 1,
+      "observations": 1933,
+      "observed_modern": 0.0933762257696584,
+      "predicted_modern": 0.0938459786737331,
+      "brier": 0.0772240912305221,
+      "difference_pp": 0.0469752904074736
+    },
+    {
+      "horizon": 3,
+      "observations": 1864,
+      "observed_modern": 0.177950342401111,
+      "predicted_modern": 0.169492069011439,
+      "brier": 0.130520268414737,
+      "difference_pp": -0.845827338967209
+    },
+    {
+      "horizon": 6,
+      "observations": 1738,
+      "observed_modern": 0.196809925168145,
+      "predicted_modern": 0.198644830395114,
+      "brier": 0.140363649718401,
+      "difference_pp": 0.183490522696911
+    },
+    {
+      "horizon": 12,
+      "observations": 1506,
+      "observed_modern": 0.222580735600674,
+      "predicted_modern": 0.236129796324707,
+      "brier": 0.159909694755951,
+      "difference_pp": 1.35490607240327
+    }
+  ],
+  "fit_diagnostics": [
+    {
+      "state": "Modern",
+      "family": "lognormal",
+      "boundary": "FALSE",
+      "convergence": "0",
+      "max_gradient_error": "1.81558129018836e-07"
+    },
+    {
+      "state": "Nonmodern",
+      "family": "loglogistic",
+      "boundary": "FALSE",
+      "convergence": "0",
+      "max_gradient_error": "1.15562762929193e-06"
+    },
+    {
+      "state": "Pregnancy-related",
+      "family": "weibull",
+      "boundary": "FALSE",
+      "convergence": "0",
+      "max_gradient_error": "2.31058744881805e-06"
+    }
+  ]
+}

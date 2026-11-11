@@ -1,230 +1,227 @@
 {
-  "updated": "2026-11-08",
-  "remote_pushed": false,
+  "schema_version": 2,
+  "updated": "2026-11-10",
   "national_builds": {
     "Ethiopia": {
-      "status": "pass_with_existing_report_warnings",
-      "country": "Ethiopia",
-      "reference_year": 2025,
-      "outcome_year": 2026,
-      "sections": 45,
-      "tables": 154,
-      "base_tables": 154,
-      "tables_matching_input_report": 154,
-      "figures_preserved": 71,
-      "incremental_build": true,
-      "full_raw_ir_to_all_chapters_verified": false,
-      "planning_arithmetic_input_vectors": "pass",
-      "existing_report_arithmetic_warnings": [
-        {
-          "table": "AFT survival: 6-year DHS trend by method",
-          "row": "Other modern",
-          "projected_users": 191819.0,
-          "displayed_retained_users": 25828.0,
-          "displayed_total": 217580.0,
-          "displayed_count_discrepancy": -67.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT survival: 6-year DHS trend by method",
-          "row": "All modern",
-          "projected_users": 7645245.0,
-          "displayed_retained_users": 986507.0,
-          "displayed_total": 8631685.0,
-          "displayed_count_discrepancy": -67.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT survival: 9-year DHS trend by method",
-          "row": "Other modern",
-          "projected_users": 197565.0,
-          "displayed_retained_users": 25828.0,
-          "displayed_total": 223325.0,
-          "displayed_count_discrepancy": -68.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT survival: 9-year DHS trend by method",
-          "row": "All modern",
-          "projected_users": 7874238.0,
-          "displayed_retained_users": 986507.0,
-          "displayed_total": 8860677.0,
-          "displayed_count_discrepancy": -68.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT survival: FPET-informed growth by method",
-          "row": "Other modern",
-          "projected_users": 205834.0,
-          "displayed_retained_users": 25828.0,
-          "displayed_total": 231595.0,
-          "displayed_count_discrepancy": -67.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT survival: FPET-informed growth by method",
-          "row": "All modern",
-          "projected_users": 8203830.0,
-          "displayed_retained_users": 986507.0,
-          "displayed_total": 9190269.0,
-          "displayed_count_discrepancy": -68.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT sensitivity: 6-year DHS trend by method",
-          "row": "Other modern",
-          "projected_users": 191819.0,
-          "displayed_retained_users": 9254.0,
-          "displayed_total": 201050.0,
-          "displayed_count_discrepancy": -23.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT sensitivity: 6-year DHS trend by method",
-          "row": "All modern",
-          "projected_users": 7645245.0,
-          "displayed_retained_users": 627840.0,
-          "displayed_total": 8273062.0,
-          "displayed_count_discrepancy": -23.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT sensitivity: 9-year DHS trend by method",
-          "row": "Other modern",
-          "projected_users": 197565.0,
-          "displayed_retained_users": 9254.0,
-          "displayed_total": 206796.0,
-          "displayed_count_discrepancy": -23.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT sensitivity: 9-year DHS trend by method",
-          "row": "All modern",
-          "projected_users": 7874238.0,
-          "displayed_retained_users": 627840.0,
-          "displayed_total": 8502055.0,
-          "displayed_count_discrepancy": -23.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT sensitivity: FPET-informed growth by method",
-          "row": "Other modern",
-          "projected_users": 205834.0,
-          "displayed_retained_users": 9254.0,
-          "displayed_total": 215065.0,
-          "displayed_count_discrepancy": -23.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        },
-        {
-          "table": "AFT sensitivity: FPET-informed growth by method",
-          "row": "All modern",
-          "projected_users": 8203830.0,
-          "displayed_retained_users": 627840.0,
-          "displayed_total": 8831647.0,
-          "displayed_count_discrepancy": -23.0,
-          "action": "Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled."
-        }
+      "status": "pass",
+      "planning_cell_and_identity_checks": 5667,
+      "native_planning_tables": 59,
+      "html_planning_tables": 48,
+      "slides": 107,
+      "new_sensitivity_slides": [
+        88,
+        95
       ],
-      "base_report_sha256": "4512542014dafde37ea3dea8cc92c0d2fc3c20b6a8d62ef64612cb97310f099c",
-      "output_sha256": "4c668a21fc4ae47dbafe6b1eaa82f9f8ed18700dff933772d2d49a223b193355",
-      "scope": "Planning arithmetic is rebuilt from supplied fitted estimates and bootstrap draws. Unchanged chapters and figures are preserved from the supplied validated HTML layout; they are not freshly recomputed by this command."
+      "survey_replicates": 500,
+      "outcome_wra_year": 2026,
+      "outcome_wra": 35016171,
+      "notes": 0,
+      "private_path_scan": "pass",
+      "unmodified_first_slides": 46,
+      "unchanged_chart_workbooks": "pass",
+      "scope": "Planning-table numerical definitions, joint survey resampling, displayed cells and arithmetic audited. Unchanged earlier analytical chapters were retained; future behavior and causal intervention effects are not validated by arithmetic checks.",
+      "incremental_r_rebuild": "all 162 HTML tables and all figures match",
+      "last_updated": "2026-11-10",
+      "original_analytical_versions": "2026-11-07",
+      "raw_ir_to_entire_report_rebuild_verified": false,
+      "plain_language_update": {
+        "planning_slide_explanations": 59,
+        "html_planning_articles": 51,
+        "all_numerical_tables_unchanged": true,
+        "r_build_explanations_match": true
+      }
     },
     "Nigeria": {
       "status": "pass",
-      "country": "Nigeria",
+      "planning_cell_and_identity_checks": 5137,
+      "pptx_planning_tables": 48,
+      "html_planning_articles": 49,
+      "existing_html_tables_unchanged": 133,
+      "all_previous_pptx_table_cells_unchanged": true,
+      "new_slides": [
+        91,
+        98
+      ],
+      "slides": 98,
+      "replicates": 500,
       "reference_year": 2024,
       "outcome_year": 2025,
-      "sections": 58,
-      "tables": 133,
-      "base_tables": 133,
-      "tables_matching_input_report": 133,
-      "figures_preserved": 21,
-      "incremental_build": true,
-      "full_raw_ir_to_all_chapters_verified": false,
-      "planning_arithmetic_input_vectors": "pass",
-      "existing_report_arithmetic_warnings": [],
-      "base_report_sha256": "dfa858a4bb20cab9391dbd4333c2b58dbfa28af99c0a06cd71a8d209fb760b4b",
-      "output_sha256": "dfa858a4bb20cab9391dbd4333c2b58dbfa28af99c0a06cd71a8d209fb760b4b",
-      "scope": "Planning arithmetic is rebuilt from supplied fitted estimates and bootstrap draws. Unchanged chapters and figures are preserved from the supplied validated HTML layout; they are not freshly recomputed by this command."
+      "baseline_wra": 55819549.5,
+      "outcome_wra": 57393553,
+      "notes": 0,
+      "new_model_users": 666978.783357688,
+      "new_model_pp": {
+        "estimate": 1.16211446842764,
+        "lower": 1.05914777767235,
+        "upper": 1.25924137958386
+      },
+      "scope": "Planning data, numerical identities and displayed cells checked. Earlier analytical chapters and figures retained. Conditional estimates do not guarantee future behavior or causal intervention effects.",
+      "last_updated": "2026-11-10",
+      "existing_numerical_metrics_unchanged": 3025,
+      "raw_probability_reproduction": "point and all 500 replicates match all eight existing components exactly",
+      "r_rebuild": "all 141 HTML tables, planning explanations and 21 figures match",
+      "fresh_point_fit": "reproduces all nine risk and count components exactly"
     },
     "DRC": {
       "status": "pass",
-      "country": "DRC",
+      "slides": 79,
+      "new_sensitivity_slides": [
+        72,
+        79
+      ],
+      "planning_tables_checked": 48,
+      "html_tables": 199,
+      "unchanged_analytical_images": 49,
+      "html_rebuild_tables_identical": true,
+      "first_30_slides_byte_identical": true,
+      "existing_40_planning_table_values_identical": true,
+      "all_existing_3025_estimates_and_intervals_identical": true,
+      "numerical_checks": 5485,
+      "notes": 0,
+      "shareable_content_scan": "pass",
+      "transition_calibration_limitation": "Month-12 modern use overpredicted by 5.37 pp in held-out PSUs. New model is sensitivity only.",
+      "full_raw_ir_to_all_chapters_verified": false,
+      "last_updated": "2026-11-10",
       "reference_year": 2024,
       "outcome_year": 2025,
-      "sections": 45,
-      "tables": 143,
-      "base_tables": 143,
-      "tables_matching_input_report": 143,
-      "figures_preserved": 120,
-      "incremental_build": true,
-      "full_raw_ir_to_all_chapters_verified": false,
-      "planning_arithmetic_input_vectors": "pass",
-      "existing_report_arithmetic_warnings": [],
-      "base_report_sha256": "1f871b9d7c937713cc95311ef4b57601647ca57463b91e3f02ce7405de69e1ca",
-      "output_sha256": "67f14583ce118aabe3818afc9fe248f7036f24872320bb024ce61326f9e2d5a0",
-      "scope": "Planning arithmetic is rebuilt from supplied fitted estimates and bootstrap draws. Unchanged chapters and figures are preserved from the supplied validated HTML layout; they are not freshly recomputed by this command."
+      "baseline_wra": 24386254.5,
+      "outcome_wra": 25246885,
+      "replicates": 500,
+      "full_survey_frame_psus": 778,
+      "full_survey_frame_strata": 51,
+      "raw_probability_reproduction": "Existing eight components match the point fit and all 500 replicates exactly.",
+      "scope": "Planning values, joint survey resampling, displayed cells and numerical identities checked. Earlier analytical chapters preserved; a complete fresh raw-IR-to-report rebuild is not verified."
     }
   },
+  "reproducibility": {
+    "national_reports": "Incremental planning rebuild from included aggregate point estimates and 500 joint survey-bootstrap replicates; unchanged chapters and figures retained from the supplied HTML.",
+    "native_presentations": "Saved deliverables; not generated by the R entry points.",
+    "verified_national_html_tables": {
+      "Ethiopia": 162,
+      "Nigeria": 141,
+      "DRC": 199
+    },
+    "full_raw_ir_to_complete_national_reports_verified": false
+  },
   "three_state_analysis": {
-    "Kano": {
-      "html_tables_matched": 20,
-      "descriptive_numeric_match": true,
-      "planning_numeric_match": true,
-      "monthly_timing_match": true,
-      "replicates": 999
+    "latest_numerical_verification": "2026-11-08",
+    "raw_ir_reconstruction_rerun_in_this_release": false,
+    "validated_state_display_tables": 60,
+    "combined_report_tables": 61,
+    "states": {
+      "Kano": {
+        "html_tables_matched": 20,
+        "descriptive_numeric_match": true,
+        "planning_numeric_match": true,
+        "monthly_timing_match": true,
+        "replicates": 999
+      },
+      "Kaduna": {
+        "html_tables_matched": 20,
+        "descriptive_numeric_match": true,
+        "planning_numeric_match": true,
+        "monthly_timing_match": true,
+        "replicates": 999
+      },
+      "Lagos": {
+        "html_tables_matched": 20,
+        "descriptive_numeric_match": true,
+        "planning_numeric_match": true,
+        "monthly_timing_match": true,
+        "replicates": 999
+      }
     },
-    "Kaduna": {
-      "html_tables_matched": 20,
-      "descriptive_numeric_match": true,
-      "planning_numeric_match": true,
-      "monthly_timing_match": true,
-      "replicates": 999
-    },
-    "Lagos": {
-      "html_tables_matched": 20,
-      "descriptive_numeric_match": true,
-      "planning_numeric_match": true,
-      "monthly_timing_match": true,
-      "replicates": 999
-    }
+    "scope": "Existing combined report, presentation and three state R scripts retained; their structural and content checks rerun for this release."
   },
   "privacy_scan": "pass",
   "presenter_notes": 0,
   "raw_ir_included": false,
   "aggregate_revision_inputs_included": true,
+  "model_limitations": [
+    "Population and secular-growth assumptions are fixed.",
+    "AFT intervals condition on selected curve families.",
+    "DRC IUD uses Other-modern curves because a separate fit is unsupported.",
+    "DRC modeled switching overpredicts month-12 modern use by 5.37 pp in held-out PSUs and remains a sensitivity."
+  ],
   "file_sha256": {
-    "requirements.txt": "328f6d23a6ce9b9f4baec367b6d117197c33d161da29c8468b621e78e635724f",
-    "README.md": "abcb2d8f23660da150c3c2c07f58b8f99adb3942a09f4116f3b7132ae9206122",
-    ".gitignore": "0575542fe43fe2f5dd9fdea692bcfefb6d7551992d4d58d6026c03063016a494",
-    "Nigeria_analysis/Nigeria_discontinuation.pptx": "06f359cde63adda2d4cba3513dad8ad79f375c2054a1d2966e40b7b01e929fe0",
-    "Nigeria_analysis/README.md": "cb7b1c7c6c80b85f6cd99212bac420ab3f91adef7bca91c0b861e49d5df722a6",
-    "Nigeria_analysis/Nigeria_final_html_analysis.R": "4e1b4f6c8cae5f865af3c02497dbc1ba195d6bea17d11c5f1c9156c6e24f8218",
-    "Nigeria_analysis/Nigeria_discontinuation_analysis.html": "dfa858a4bb20cab9391dbd4333c2b58dbfa28af99c0a06cd71a8d209fb760b4b",
-    "Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation.pptx": "4c6c234d3b5bd45ef78ebc450538629768dcf493e80d49ce86300d75553eaa02",
+    ".gitignore": "2949bcf928a69c970e9b549b43f21c4456995580139b96e50c9ae59ca93d0e1b",
+    "DRC_analysis/DRC_discontinuation.pptx": "0c7e36d26efc4adb2a70e877b30a849b9982b458c8cf1a781573d27e6dcab255",
+    "DRC_analysis/DRC_discontinuation_analysis.html": "f43a8598c324e0907afabd81160fe5faa58e6597f6531e378b1b02c42d75e6d5",
+    "DRC_analysis/DRC_final_html_analysis.R": "b51ed8ab8f1ecf2f5cd3d73cd96105684c6b61254aebc3dd3ee5093d5c919327",
+    "DRC_analysis/README.md": "614bb16c7a274807e6ef1d816d7c7c60c684a3ca2e681249cc06b88003fb8516",
+    "DRC_analysis/revision_inputs/planning_metadata.rds": "8ec5d4f5f0776e5abd7c970c2cb22bab287674cf8d037976445af950d6ea1ac2",
+    "DRC_analysis/revision_inputs/planning_point.rds": "7d1b7b648aac39580fab9a55c1f290805936940e91e028c5ee3060ed72e4b977",
+    "DRC_analysis/revision_inputs/planning_replicates.rds": "7ec0aea217ad3c396007f8342cac4cc70c8204f558059c4fc628ea8c89fe71ab",
+    "DRC_analysis/revision_inputs/transition_validation.json": "eb24bdeae2a5ad4edcc70c3d753b093dc7e977c81712407f97cf40ae69637d87",
+    "DRC_analysis/validation_summary.json": "f2eaf0456a4d26b2e1176d5e52e8d70b5cf88b70c056648226e8a269652ec5dc",
+    "Ethiopia_analysis/Ethiopia_discontinuation_analysis.html": "d81c35debef4510be4fe53de4b3062993df9f87bcaa51c4caa18932d52c6d828",
+    "Ethiopia_analysis/Ethiopia_final_html_analysis.R": "d519218dacbe247e384fddbd56c550c2ac792754aaa48333169ae04c6deec186",
+    "Ethiopia_analysis/README.md": "0fd0c2e76c946874c359ea83743853f8aefd3a4c0e839b50513ad168f0f311ad",
+    "Ethiopia_analysis/ethiopia_presentation.pptx": "cf1322d8afbe9faeb3d1b84211bdf58b5e5378f6784947d62b6a9ad256a6070c",
+    "Ethiopia_analysis/revision_inputs/metadata.json": "3294bf227a200522c73c061e3235241d84043e268c42cb4663892d7ec5b52adc",
+    "Ethiopia_analysis/revision_inputs/planning_intervals.csv": "a92ae57e9ff9605ae85358cedfad8bfade89797fbe4ab3d1a7480577e3d6ef24",
+    "Ethiopia_analysis/revision_inputs/planning_metadata.rds": "0d76d38db66d180ac31f51a42ef833f491b149734ca1059e7bdc293816d73ca9",
+    "Ethiopia_analysis/revision_inputs/planning_point.rds": "1888f18d8602a62c7128f7b7ac807b8623ba1786a9988c4f11046fc065a51565",
+    "Ethiopia_analysis/revision_inputs/planning_replicates.rds": "ce28babdb8a3bf821eec7d45bfcb73e14c6dad5e9a53bed67910f779eac5f24b",
+    "Ethiopia_analysis/validation_summary.json": "7f21546080f9981997c6c14588468cd3f1b9476a3b3d22a3119100f38f7354b8",
     "Nigeria_analysis/Kano_Kaduna_Lagos/Kaduna_discontinuation_analysis.R": "a7197a91293f3af67343b497e7088e8846bc364ba00ba505ccf47c7d83fe6285",
+    "Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation.pptx": "4c6c234d3b5bd45ef78ebc450538629768dcf493e80d49ce86300d75553eaa02",
+    "Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation_analysis.html": "104fc5dd138d663f62ea3e11e6ff8d53eaf4961de1b63ffab2586dc1b5c5acbe",
+    "Nigeria_analysis/Kano_Kaduna_Lagos/Kano_discontinuation_analysis.R": "96d34fc9c2a5df49bfd6ca00f0918621638f39ad0ffdb50d4f79ed66e7063084",
     "Nigeria_analysis/Kano_Kaduna_Lagos/Lagos_discontinuation_analysis.R": "fedcbf013b093d8d629ce04eb516be7574603ed4cf00746eca1c21e1b4c8c65e",
     "Nigeria_analysis/Kano_Kaduna_Lagos/README.md": "fe28275567b6fadc2e1037545584cc3e8edc5d4df521f472e63a38b24c95234d",
-    "Nigeria_analysis/Kano_Kaduna_Lagos/Kano_discontinuation_analysis.R": "96d34fc9c2a5df49bfd6ca00f0918621638f39ad0ffdb50d4f79ed66e7063084",
-    "Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation_analysis.html": "104fc5dd138d663f62ea3e11e6ff8d53eaf4961de1b63ffab2586dc1b5c5acbe",
-    "Nigeria_analysis/revision_inputs/planning_metadata.rds": "76eaa7b10b683fe4cae8314567c73622c6de2718b16ffeb615d58ab04aa63042",
-    "Nigeria_analysis/revision_inputs/planning_replicates.rds": "12ccee33194d2eb84f4b5e4259d08d9e32adaf221b878394b8da584b065d3ffb",
-    "Nigeria_analysis/revision_inputs/planning_point.rds": "d5ee53c4b3188440519e0e5b68d17c380efbc4029b3595c147938905f14f7bc6",
-    "Ethiopia_analysis/ethiopia_presentation.pptx": "61ca294ee900148cb8dfbada0a6dd2b296968889e4778736ab2c253c6a8aee5c",
-    "Ethiopia_analysis/Ethiopia_final_html_analysis.R": "0a2672ec3c9fbb61d568843d906bd62574d4232ebe64c84f4aa5a1a3013455d3",
-    "Ethiopia_analysis/README.md": "f9cb1d3d8beddd7b25e9501d4ba39e40d34c4f6c22689c79a313b773327b4dbf",
-    "Ethiopia_analysis/Ethiopia_discontinuation_analysis.html": "4512542014dafde37ea3dea8cc92c0d2fc3c20b6a8d62ef64612cb97310f099c",
-    "Ethiopia_analysis/revision_inputs/metadata.json": "3294bf227a200522c73c061e3235241d84043e268c42cb4663892d7ec5b52adc",
-    "Ethiopia_analysis/revision_inputs/planning_intervals.csv": "231338552d030c4b17a16ed45cb7553a93ae1bb0dcdf3568d86280c1f66e8818",
-    "Ethiopia_analysis/revision_inputs/planning_replicates.rds": "ee30593cd84e695a8df310237172ac02c626028257a7ca3dfa802a63b96b0431",
-    "Ethiopia_analysis/revision_inputs/planning_point.rds": "4c71c1bcf1bc60e6519ad5dd07d514a56ef39ed66d94ec8bf6764cf05606c17c",
-    "DRC_analysis/DRC_discontinuation.pptx": "71bf863e1e5de97b214251b1abcd9daa7b3a63807d0fb57fbf8a5a36fa206b99",
-    "DRC_analysis/DRC_discontinuation_analysis.html": "1f871b9d7c937713cc95311ef4b57601647ca57463b91e3f02ce7405de69e1ca",
-    "DRC_analysis/README.md": "e1a10dd98c5ff0a87352ca2f1c5bc70b4790db5b49661a6fbfd4b380d272d2f7",
-    "DRC_analysis/DRC_final_html_analysis.R": "bddb8ea947c6f048ae5fe4b8221acc55622f890f76d137c9de4968099015220d",
-    "DRC_analysis/revision_inputs/planning_metadata.rds": "9d84f98d3356cdfdb5f72e2bc68253791f72261f0c2868e2108d37c3c10b0230",
-    "DRC_analysis/revision_inputs/planning_replicates.rds": "51900501ad23191326321f0f8ad2f9a581cdbcde65e2d1037169c52b3d1dc11f",
-    "DRC_analysis/revision_inputs/planning_point.rds": "b4277566ee54701158bcd9e477b3ea248c2a7256115d39eb8727220729c640fd"
+    "Nigeria_analysis/Nigeria_discontinuation.pptx": "d9f81bcf756ec7f157f1a0b1577965e746fa54ad46b5890503b540ada74d9b80",
+    "Nigeria_analysis/Nigeria_discontinuation_analysis.html": "41912e0833cdc045880295d9486ccff2632e46e5a354d61401a2f1282050887e",
+    "Nigeria_analysis/Nigeria_final_html_analysis.R": "b88e8eaa3bd2bbd007dba961381f1850e6774cb59dd84ecf6a5c21b49c435075",
+    "Nigeria_analysis/README.md": "f68c3df1aeb7adb44fe99c7c6a370d0bc7685aa04aad16cbec9c2053be4b9829",
+    "Nigeria_analysis/revision_inputs/metadata.json": "98bf2e1316c6354d5540816ea6c413b9160eb9bbc40b6094e277dc4a501b6cfd",
+    "Nigeria_analysis/revision_inputs/planning_intervals.csv": "ab41ed8bd0c1857470ae6e5ec7df87a19d93970510e487da5945fe013925564a",
+    "Nigeria_analysis/revision_inputs/planning_metadata.rds": "716b2f56ce1ef709abd07ff1369654c7c313be3b8b7604501f657bf20a1f937d",
+    "Nigeria_analysis/revision_inputs/planning_point.rds": "f6c2201c34734797026f1f3d399f9a1a7610e49952b153191808e9d29225d2aa",
+    "Nigeria_analysis/revision_inputs/planning_replicates.rds": "45faf16912f1a1c27dca4165e19251fea1d3949e78a49e8763df2ccf7468baa5",
+    "Nigeria_analysis/revision_inputs/transition_validation.json": "98e7e68a3ab8234b5efaf5d1d71d6c856824cba561e5f3646777acc6a7f99b5e",
+    "Nigeria_analysis/validation_summary.json": "ca3030748784f37af383da30503fd13d1a82aa2f639d9868e005cd20ff37d2c2",
+    "README.md": "82ec01f2e48d02665d97e7506ad2f737b133804e63f06d08a4ac778c37aac0b8",
+    "build_reports.R": "879e5e540b69c901b94bc19d906ff86a81715728026ce11e2de678a88206b49d",
+    "requirements.txt": "328f6d23a6ce9b9f4baec367b6d117197c33d161da29c8468b621e78e635724f",
+    "validate_repository.py": "91bdc68e328e4ae0047d14596b4b481fd3a50ec77992c87cc9fcf94cccb98143"
   },
-  "canonical_filenames": true
+  "latest_repository_checks": {
+    "status": "pass",
+    "countries": {
+      "Ethiopia": {
+        "slides": 107,
+        "html_tables": 162,
+        "reference_year": 2025,
+        "outcome_year": 2026,
+        "presenter_notes": 0,
+        "incremental_html_rebuild": "tables, figures, sections and planning explanations match"
+      },
+      "Nigeria": {
+        "slides": 98,
+        "html_tables": 141,
+        "reference_year": 2024,
+        "outcome_year": 2025,
+        "presenter_notes": 0,
+        "incremental_html_rebuild": "tables, figures, sections and planning explanations match"
+      },
+      "DRC": {
+        "slides": 79,
+        "html_tables": 199,
+        "reference_year": 2024,
+        "outcome_year": 2025,
+        "presenter_notes": 0,
+        "incremental_html_rebuild": "tables, figures, sections and planning explanations match"
+      }
+    },
+    "three_state_display_tables": 60,
+    "three_state_html_tables": 61,
+    "three_state_slides": 71,
+    "aggregate_and_r_module_checks": "pass",
+    "shared_file_checks": "pass",
+    "extra_forbidden_text_check": true,
+    "file_count": 42,
+    "full_raw_ir_to_entire_report_verified": false,
+    "scope": "Shared-file structure and content checks, aggregate planning identities, and optionally incremental HTML equality. No fresh statistical validation of unchanged chapters or forecast transportability."
+  }
 }

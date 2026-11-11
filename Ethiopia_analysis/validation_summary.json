@@ -1,0 +1,29 @@
+{
+  "status": "pass",
+  "planning_cell_and_identity_checks": 5667,
+  "native_planning_tables": 59,
+  "html_planning_tables": 48,
+  "slides": 107,
+  "new_sensitivity_slides": [
+    88,
+    95
+  ],
+  "survey_replicates": 500,
+  "outcome_wra_year": 2026,
+  "outcome_wra": 35016171,
+  "notes": 0,
+  "private_path_scan": "pass",
+  "unmodified_first_slides": 46,
+  "unchanged_chart_workbooks": "pass",
+  "scope": "Planning-table numerical definitions, joint survey resampling, displayed cells and arithmetic audited. Unchanged earlier analytical chapters were retained; future behavior and causal intervention effects are not validated by arithmetic checks.",
+  "incremental_r_rebuild": "all 162 HTML tables and all figures match",
+  "last_updated": "2026-11-10",
+  "original_analytical_versions": "2026-11-07",
+  "raw_ir_to_entire_report_rebuild_verified": false,
+  "plain_language_update": {
+    "planning_slide_explanations": 59,
+    "html_planning_articles": 51,
+    "all_numerical_tables_unchanged": true,
+    "r_build_explanations_match": true
+  }
+}

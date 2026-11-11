@@ -1,0 +1,74 @@
+{
+  "selected_families": [
+    "lognormal",
+    "loglogistic",
+    "lognormal"
+  ],
+  "episodes": 987,
+  "women": 833,
+  "transitions": 9459,
+  "iud_proxy": "Other modern in original ending and post-ending transition models",
+  "held_out": [
+    {
+      "horizon": 1,
+      "observations": 987,
+      "observed_modern": 0.0738350618217463,
+      "predicted_modern": 0.0751404623666176,
+      "brier": 0.0678400983528187,
+      "difference_pp": 0.130540054487131
+    },
+    {
+      "horizon": 3,
+      "observations": 938,
+      "observed_modern": 0.17899146821843,
+      "predicted_modern": 0.160346872437196,
+      "brier": 0.138652980476305,
+      "difference_pp": -1.86445957812338
+    },
+    {
+      "horizon": 6,
+      "observations": 883,
+      "observed_modern": 0.155889034948165,
+      "predicted_modern": 0.176603364566652,
+      "brier": 0.132538119415907,
+      "difference_pp": 2.07143296184864
+    },
+    {
+      "horizon": 12,
+      "observations": 763,
+      "observed_modern": 0.183840088363781,
+      "predicted_modern": 0.237578292180746,
+      "brier": 0.155823321901691,
+      "difference_pp": 5.37382038169658
+    }
+  ],
+  "fit_diagnostics": [
+    {
+      "state": "Modern",
+      "family": "lognormal",
+      "boundary": "FALSE",
+      "convergence": "0",
+      "max_gradient_error": "8.43440211843911e-08"
+    },
+    {
+      "state": "Nonmodern",
+      "family": "loglogistic",
+      "boundary": "FALSE",
+      "convergence": "0",
+      "max_gradient_error": "4.88134284014341e-07"
+    },
+    {
+      "state": "Pregnancy-related",
+      "family": "lognormal",
+      "boundary": "FALSE",
+      "convergence": "0",
+      "max_gradient_error": "6.35583512931465e-07"
+    }
+  ],
+  "limitations": [
+    "IUD uses Other-modern ending and post-ending curves.",
+    "Pregnancy-related post-ending transitions pool prior methods and causes.",
+    "Fits at parameter bounds are excluded from family selection.",
+    "Held-out month-12 modern use is overpredicted by 5.37 percentage points; modeled transitions are a sensitivity only."
+  ]
+}

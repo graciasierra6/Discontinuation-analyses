@@ -182,7 +182,7 @@ if __name__=='__main__':main()
 )-----"
 COUNTRY <- "Ethiopia"
 REPORT_BASENAME <- "Ethiopia_discontinuation_analysis.html"
-REPORT_SHA256 <- "4512542014dafde37ea3dea8cc92c0d2fc3c20b6a8d62ef64612cb97310f099c"
+REPORT_SHA256 <- "d81c35debef4510be4fe53de4b3062993df9f87bcaa51c4caa18932d52c6d828"
 RAW_RELATIVE <- "Data/ETIR8AFL.dta"
 CORE_MODULES <- c("ethiopia_modern_method_discontinuation.R")
 PLANNING_MODULES <- c("ethiopia_modern_method_discontinuation.R", "202_ethiopia_planning_from_ir.R", "171_aft_switching_bridge.R", "179_duration_planning_table_arithmetic.py")
@@ -15949,7 +15949,7 @@ e_all$method_group<-ifelse(e_all$method_code==3,'Injectables',ifelse(e_all$metho
 cal<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'))
 sup<-file.path(root,'output/Supporting_data')
 script_file<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
-signature<-unname(tools::md5sum(c(script_file,file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'),file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'),file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'),file.path(sup,'ethiopia_planning_population.csv'),file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'),file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))))
+signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'),file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'),file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'),file.path(sup,'ethiopia_planning_population.csv'),file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'),file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))))
 cache_signature<-file.path(out,'cache_signature.rds')
 if(file.exists(cache_signature)){if(!identical(signature,readRDS(cache_signature)))stop('Inputs or code changed. Use a fresh output directory for bootstrap results.')}else{
  if(length(list.files(file.path(out,'replicates'))))stop('Unversioned bootstrap cache: use a fresh output directory.')
@@ -17275,4 +17275,630 @@ run_revised_report <- function(opt) {
 REQUIRED_R_PACKAGES <- unique(c(REQUIRED_R_PACKAGES,"abind"))
 for (n in names(REVISION_HELPERS)) MODULES[[n]] <- list(language=if(grepl("[.]R$",n))"R"else"Python",args=character(),code=REVISION_HELPERS[[n]])
 
+
+# Reconciled planning update: fixed aggregate inputs and retained analytical layout.
+LEADERSHIP_HELPERS <- list(
+  "planning_audit.R" = r"---------(#!/usr/bin/env Rscript
+# Survey-design inference for Ethiopia planning scenarios. All inputs are parameters.
+# Positive PSU multiplier bootstrap within strata: normalized Gamma shape
+# (n-2)/n has mean 1, variance 1 and covariance -1/(n-1), matching
+# Rao-Wu rescaled PSU weights. Positive multipliers retain sparse landmark
+# denominators rather than discarding non-estimable zero-weight replicates.
+# Fixed population and growth assumptions; uncertainty includes IR sampling,
+# current-use composition, empirical risks, fitted AFT parameters and pathways.
+# AFT intervals condition on the previously selected distribution families.
+args <- commandArgs(trailingOnly=TRUE)
+stopifnot(length(args)>=2)
+root<-normalizePath(args[1]); out<-args[2];dir.create(out,recursive=TRUE,showWarnings=FALSE)
+B<-if(length(args)>=3)as.integer(args[3])else 500L
+cores<-if(length(args)>=4)as.integer(args[4])else 4L
+suppressPackageStartupMessages(library(survival))
+ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'))
+e_all<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'))
+e<-e_all[e_all$method_code!=16L,]
+e$method_group<-ifelse(e$method_code==3,'Injectables',ifelse(e$method_code==11,'Implants',ifelse(e$method_code==1,'Pill',ifelse(e$method_code==2,'IUD','Other modern'))))
+e_all$method_group<-ifelse(e_all$method_code==3,'Injectables',ifelse(e_all$method_code==11,'Implants',ifelse(e_all$method_code==1,'Pill',ifelse(e_all$method_code==2,'IUD','Other modern'))))
+cal<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'))
+sup<-file.path(root,'output/Supporting_data')
+script_file<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'),file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'),file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'),file.path(sup,'ethiopia_planning_population.csv'),file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'),file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))))
+cache_signature<-file.path(out,'cache_signature.rds')
+if(file.exists(cache_signature)){if(!identical(signature,readRDS(cache_signature)))stop('Inputs or code changed. Use a fresh output directory for bootstrap results.')}else{
+ if(length(list.files(file.path(out,'replicates'))))stop('Unversioned bootstrap cache: use a fresh output directory.')
+ saveRDS(signature,cache_signature)
+}
+
+pop<-read.csv(file.path(sup,'ethiopia_planning_population.csv'))
+w25<-pop$women_15_49[pop$year==2025];w26<-pop$women_15_49[pop$year==2026]
+w24<-pop$women_15_49[pop$year==2024]
+methods<-c('Injectables','Implants','Pill','IUD','Other modern')
+causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
+codes<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L)); action<-unlist(codes)
+modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,17L,18L)
+endpoint_modern<-c(modern,14L,16L)
+method_group<-function(x)ifelse(x==3,'Injectables',ifelse(x==11,'Implants',ifelse(x==1,'Pill',ifelse(x==2,'IUD','Other modern'))))
+cause_group<-function(x){z<-rep(NA_integer_,length(x));for(j in 1:5)z[x %in% codes[[j]]]<-j;z}
+wt<-as.numeric(ir$v005)/1e6;psu<-as.numeric(ir$v021);stratum<-as.numeric(ir$v022)
+frame<-unique(data.frame(psu,stratum)); stopifnot(!anyDuplicated(frame$psu))
+strata<-split(seq_len(nrow(frame)),frame$stratum);stopifnot(all(lengths(strata)>1))
+psu_index<-match(psu,frame$psu)
+u<-as.numeric(ir$v313)==3;umethod<-method_group(as.numeric(ir$v312));umethod[as.numeric(ir$v312)==16]<-'EC'
+uindex<-which(u & as.numeric(ir$v312) %in% c(modern,14L))
+current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=as.numeric(ir$v337[uindex]),wt=wt[uindex])
+stopifnot(all(is.finite(current$elapsed)),all(current$elapsed>=0))
+bins<-c(-1,3,6,12,24,36,48,60,Inf);blabel<-c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
+current$bin<-as.integer(cut(current$elapsed,bins))
+# Reconstruct historical landmarks with an explicit year-end modern-use definition.
+bywoman<-split(seq_len(nrow(cal)),cal$woman_row)
+spells<-cal[cal$method_code %in% modern & cal$start>cal$calendar_start,]
+records<-vector('list',nrow(spells))
+for(i in seq_len(nrow(spells))){a<-spells[i,];last<-min(a$end,a$interview-15L);if(last<a$start)next
+ t<-seq.int(a$start,last);future<-t+12L;timeline<-cal[bywoman[[as.character(a$woman_row)]],]
+ code<-timeline$method_code[findInterval(future,timeline$start)]
+ ended<-a$end<future & a$reason_code %in% action
+ records[[i]]<-data.frame(woman=a$woman_row,episode=i,method=method_group(a$method_code),elapsed=t-a$start,wt=a$wt,
+ cause=ifelse(ended,cause_group(a$reason_code),NA_integer_),net=ended & !code %in% endpoint_modern,
+ net_legacy=ended & !code %in% modern, direct=ended & timeline$method_code[findInterval(a$end+1L,timeline$start)] %in% endpoint_modern)
+}
+land<-do.call(rbind,records);land$bin<-as.integer(cut(land$elapsed,bins))
+# 61+ months has no direct complete-follow-up support; preserve documented proxy.
+ci_index<-lapply(methods,function(m)which(current$method==m));names(ci_index)<-methods
+ai_index<-lapply(methods,function(m)which(current$method==m & as.numeric(ir$v312[current$woman]) %in% modern));names(ai_index)<-methods
+land_index<-lapply(methods,function(m)lapply(1:8,function(b)which(land$method==m & land$bin %in% if(b==8)c(6,7)else b)));names(land_index)<-methods
+# Fit data and fixed selected families (model-selection uncertainty is not included).
+af<-e_all[e_all$entry==0 & e_all$exposure>0 & e_all$method_code %in% modern,];af$method<-factor(af$method_group,levels=methods)
+af$action_event<-as.integer(af$discontinued & af$reason_code %in% action)
+af$other_event<-as.integer(af$discontinued & !af$reason_code %in% action)
+for(j in 1:5)af[[paste0('cause',j)]]<-as.integer(af$discontinued & af$reason_code %in% codes[[j]])
+fam<-read.csv(file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'));cfam<-read.csv(file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))
+dists<-c(fam$distribution[fam$selected_actionable],fam$distribution[fam$selected_other],cfam$distribution[match(causes,cfam$cause)])
+events<-c('action_event','other_event',paste0('cause',1:5));stopifnot(length(dists)==7,!anyNA(dists))
+maxage<-max(current$elapsed)+12L;time<-0:maxage
+cumhaz<-function(t,mu,sc,dist){
+ if(dist=='weibull')return((t/exp(mu))^(1/sc))
+ if(dist=='exponential')return(t/exp(mu))
+ if(dist=='loglogistic')return(log1p(exp((log(t)-mu)/sc)))
+ if(dist=='lognormal')return(-pnorm((log(t)-mu)/sc,lower.tail=FALSE,log.p=TRUE))
+ stop('Unknown family')}
+transition_index<-list();support<-list()
+for(m in methods)for(b in 1:8)for(j in 1:5){
+ z<-which(land$method==m & land$bin %in% (if(b==8)c(6,7)else b) & land$cause==j)
+ # Use unique episodes, not repeated landmarks, to assess support.
+ n<-length(unique(land$episode[z]));level<-'method × cause × duration'
+ if(n<10){z<-which(land$method==m & land$cause==j);n<-length(unique(land$episode[z]));level<-'method × cause'}
+ if(n<10){z<-which(land$cause==j);n<-length(unique(land$episode[z]));level<-'cause pooled over methods'}
+ stopifnot(n>0);key<-paste(m,b,j,sep='|');transition_index[[key]]<-z
+ support[[key]]<-data.frame(method=m,duration_bin=blabel[b],cause=causes[j],unique_episodes=n,unique_women=length(unique(land$woman[z])),landmarks=length(z),pooling=level)
+}
+write.csv(do.call(rbind,support),file.path(out,'switching_support.csv'),row.names=FALSE)
+source(file.path(dirname(script_file),'transition_model.R'))
+stopifnot(nrow(e)==8682L)
+point_transitions<-fit_models(initial,follow,'selected',.1)
+selected_transition_families<-vapply(point_transitions$transitions,`[[`,'','family')
+jsonlite::write_json(list(selected_families=selected_transition_families,episodes=nrow(initial),women=length(unique(initial$woman)),transitions=nrow(follow)),file.path(out,'transition_fit_metadata.json'),auto_unbox=TRUE,pretty=TRUE)
+# Prediction grid is fixed by recorded current-user durations and possible future ending months.
+pred_grid<-unique(data.frame(method=rep(methods,each=60*5),cause=rep(rep(causes,each=60),5),end_duration=rep(1:60,25)))
+pred_grid<-normalize_features(pred_grid);pred_grid$gid<-seq_len(nrow(pred_grid))
+measure<-function(mult,replicate=0L){
+ iw<-wt*mult[psu_index];ew<-e$wt*mult[psu_index[e$woman_row]];lw<-land$wt*mult[psu_index[land$woman]];cw<-current$wt*mult[psu_index[current$woman]]
+ mcpr<-100*sum(iw[u])/sum(iw);mix<-round(100*vapply(c(methods,'EC'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0),4)/100
+ stock<-w25*mcpr/100*mix
+ # Main gross estimates, year-end switching sensitivities, and direct-switch diagnostics.
+ result<-array(0,c(9,5,5),dimnames=list(c('First-year gross','Historical gross','AFT gross','Historical switching','AFT switching','First-year direct switches','Historical direct switches','AFT direct switches','AFT modeled transitions'),methods,causes))
+ risk<-result
+ for(m in methods){d<-which(e$method_group==m);surv<-1;v<-numeric(5)
+  for(t in 1:12){at<-d[e$entry[d]<t & e$exposure[d]>=t];den<-sum(ew[at]);if(den<=0)next
+   end<-at[e$discontinued[at] & e$exposure[at]==t];h<-vapply(codes,function(cc)sum(ew[end[e$reason_code[end] %in% cc]])/den,0.0)
+   v<-v+surv*h;surv<-surv*(1-sum(ew[end])/den)}
+  risk[1,m,]<-v
+  ends<-d[e$discontinued[d] & e$exposure[d]<=12 & e$reason_code[d] %in% action]
+  denend<-sum(ew[ends]);target<-if(denend>0)sum(v)*sum(ew[ends][e$next_code[ends] %in% endpoint_modern])/denend else 0
+  raw<-vapply(1:5,function(j){ii<-ends[e$reason_code[ends] %in% codes[[j]]];den<-sum(ew[ii]);if(den>0)v[j]*sum(ew[ii][e$next_code[ii] %in% endpoint_modern])/den else 0},0)
+  risk[6,m,]<-if(sum(raw)>0)raw*target/sum(raw) else raw
+  ix<-ci_index[[m]];cwtotal<-sum(cw[ix]);for(b in 1:8){share<-sum(cw[ix[current$bin[ix]==b]])/cwtotal;if(share==0)next
+   z<-land_index[[m]][[b]];den<-sum(lw[z]);if(den<=0)stop('Empty landmark cell')
+   for(j in 1:5){risk[2,m,j]<-risk[2,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j])/den
+    risk[4,m,j]<-risk[4,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j & land$net[z]])/den
+    risk[7,m,j]<-risk[7,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j & land$direct[z]])/den}}
+ }
+ aw<-af$wt*mult[psu_index[af$woman_row]]
+ fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(survreg(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
+ new_initial<-data.table::copy(initial);new_follow<-data.table::copy(follow)
+ new_initial$wt<-new_initial$wt*mult[match(new_initial$psu,frame$psu)];new_follow$wt<-new_follow$wt*mult[match(new_follow$psu,frame$psu)]
+ tm<-if(replicate==0L)point_transitions else list(initial=fit_initial(new_initial),transitions=setNames(lapply(states,function(s)fit_transition(new_follow[new_follow$current_state==s,],s,selected_transition_families[s],.1,start=point_transitions$transitions[[s]]$par)),states))
+ epred<-as.data.frame(endpoint_prob(tm,pred_grid,12L))
+ lookup<-merge(as.data.frame(pred_grid)[,c('gid','method','cause','end_duration')],epred,by='gid')
+ lookup$key<-paste(lookup$method,lookup$cause,lookup$end_duration,lookup$horizon,sep='|')
+ for(m in methods){nd<-data.frame(method=factor(m,levels=methods));hh<-sapply(seq_along(fits),function(j){f<-fits[[j]];if(!m %in% attr(f,'active_methods'))return(rep(0,length(time)-1));mu<-as.numeric(predict(f,newdata=nd,type='lp'));diff(cumhaz(time,mu,f$scale,dists[j]))})
+  ix<-ci_index[[m]];den<-sum(cw[ix]);for(age in unique(current$elapsed[ix])){z<-ix[current$elapsed[ix]==age];share<-sum(cw[z])/den;if(share==0)next
+   h<-hh[age+1:12,,drop=FALSE];total<-h[,1]+h[,2];s<-c(1,exp(-cumsum(total)))[1:12];monthly<-s*(-expm1(-total))*ifelse(total>0,h[,1]/total,0)
+   hcause<-pmax(h[,3:7,drop=FALSE],0);cs<-hcause/pmax(rowSums(hcause),1e-300);if(any(!is.finite(cs)))stop('Invalid cause split')
+   v<-colSums(monthly*cs);risk[3,m,]<-risk[3,m,]+share*v
+   for(j in 1:5){keys<-paste(m,causes[j],pmin(60,pmax(1,age+1:12)),13L-(1:12),sep='|');pm<-lookup$p_modern[match(keys,lookup$key)];stopifnot(!anyNA(pm));risk[9,m,j]<-risk[9,m,j]+share*sum(monthly*cs[,j]*(1-pm))}
+   b<-as.integer(cut(age,bins));for(j in 1:5){q<-transition_index[[paste(m,b,j,sep='|')]];fraction<-sum(lw[q]*land$net[q])/sum(lw[q]);risk[5,m,j]<-risk[5,m,j]+share*v[j]*fraction;risk[8,m,j]<-risk[8,m,j]+share*v[j]*sum(lw[q]*land$direct[q])/sum(lw[q])}}
+ }
+ for(m in methods)result[,m,]<-risk[,m,]*stock[m]
+ stopifnot(all(is.finite(result)),all(result>=0),all(apply(risk,c(1,2),sum)<=1+1e-8))
+ list(counts=result,risk=risk,mcpr=mcpr,mix=mix,stock=stock,users2024=w24*mcpr/100*mix)
+}
+point<-measure(rep(1,nrow(frame)));saveRDS(point,file.path(out,'planning_point.rds'))
+# Preserve and verify gross estimands before running resampling.
+href<-read.csv(file.path(sup,'ethiopia_duration_aware_current_user_bridge.csv'));aref<-read.csv(file.path(sup,'ethiopia_aft_switching_by_method.csv'))
+stopifnot(max(abs(rowSums(point$counts[2,,])-href$projected_actionable_original_method_endings[match(methods,href$method)]))<.1,
+ max(abs(rowSums(point$counts[3,,])-aref$model_original_method_endings[match(methods,aref$method)])/pmax(1,aref$model_original_method_endings[match(methods,aref$method)]))<.02)
+# The current-user duration mixture includes all recorded modern methods
+# except EC, including the single other-modern code-14 current user.
+saveRDS(point_transitions,file.path(out,'transition_point_fits.rds'))
+cat('Point totals:',apply(point$counts,1,sum),'\n');flush.console()
+checkpoint<-file.path(out,'replicates');dir.create(checkpoint,showWarnings=FALSE)
+one<-function(b){dest<-file.path(checkpoint,sprintf('rep_%04d.rds',b));if(file.exists(dest))return(readRDS(dest));set.seed(20261105L+b)
+ mult<-numeric(nrow(frame));for(ids in strata){n<-length(ids);g<-rgamma(n,shape=(n-2)/n);mult[ids]<-n*g/sum(g)}
+ v<-tryCatch(measure(mult,b),error=function(e)list(error=conditionMessage(e)));saveRDS(v,dest);v}
+if(B>0){draws<-parallel::mclapply(seq_len(B),one,mc.cores=cores,mc.preschedule=FALSE);valid<-!vapply(draws,function(x)!is.null(x$error),FALSE)
+ cat('Valid',sum(valid),'of',B,'\n');stopifnot(mean(valid)>=.95);saveRDS(draws,file.path(out,'planning_replicates.rds'))}
+saveRDS(list(wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(strata),replicates=B,methods=methods,causes=causes,definitions=c('Gross: every actionable original-method ending treated as year-end loss','Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes','AFT uncertainty conditional on selected distribution families','Population and growth scenarios fixed')),file.path(out,'planning_metadata.rds'))
+)---------",
+  "transition_model.R" = r"---------(suppressPackageStartupMessages({library(data.table);library(nnet);library(splines)})
+setDTthreads(1)
+states <- c('Modern','Nonmodern','Pregnancy-related')
+state <- function(z) ifelse(z %in% endpoint_modern,states[1],ifelse(z %in% 81:83,states[3],states[2]))
+normalize_features <- function(d) {
+ d$method <- factor(d$method,levels=methods);d$cause <- factor(d$cause,levels=causes)
+ d$end_duration <- pmin(60,pmax(1,d$end_duration));d$duration_log <- log1p(d$end_duration)
+ d
+}
+wt <- as.numeric(ir$v005)/1e6
+cal<-as.data.table(cal)
+setorder(cal,woman_row,start)
+bywoman <- split(seq_len(nrow(cal)),cal$woman_row)
+endings <- cal[method_code %in% modern & start>calendar_start & reason_code %in% action & end<=interview-4 & end>=interview-62]
+initial <- vector('list',nrow(endings)); follow <- vector('list',nrow(endings)); histories <- vector('list',nrow(endings))
+for(i in seq_len(nrow(endings))) {
+ ev <- endings[i]; tl <- cal[bywoman[[as.character(ev$woman_row)]]]
+ h <- min(12L,as.integer(ev$interview-3-ev$end));stopifnot(h>=1L)
+ times <- ev$end+seq_len(h);ix<-findInterval(times,tl$start)
+ stopifnot(all(ix>0),all(tl$end[ix]>=times))
+ st <- state(tl$method_code[ix]);run <- sequence(rle(st)$lengths)
+ base <- data.table(episode=i,woman=ev$woman_row,psu=as.integer(ir$v021[ev$woman_row]),stratum=as.integer(ir$v022[ev$woman_row]),
+                    method=method_group(ev$method_code),cause=causes[cause_group(ev$reason_code)],end_duration=ev$duration,wt=ev$wt)
+ initial[[i]] <- cbind(base,data.table(next_state=st[1]))
+ histories[[i]] <- cbind(base,data.table(horizon=seq_len(h),observed_state=st))
+ if(h>1)follow[[i]] <- cbind(base,data.table(current_state=st[-h],state_duration=run[-h],post_month=seq_len(h-1L),next_state=st[-1]))
+}
+initial <- normalize_features(rbindlist(initial));follow <- normalize_features(rbindlist(follow));histories <- normalize_features(rbindlist(histories))
+initial$next_state <- factor(initial$next_state,levels=states);follow$next_state <- factor(follow$next_state,levels=states)
+cat('SUPPORT',nrow(initial),'original endings;',uniqueN(initial$woman),'women;',nrow(follow),'post-ending transitions\n');flush.console()
+write.csv(initial[,.(episodes=.N,women=uniqueN(woman)),by=.(method,cause)],file.path(out,'support_by_method_cause.csv'),row.names=FALSE)
+write.csv(follow[,.(transitions=.N,episodes=uniqueN(episode)),by=.(current_state,next_state)],file.path(out,'transition_support.csv'),row.names=FALSE)
+write.csv(histories[,.(episodes=.N,women=uniqueN(woman),weighted_modern=sum(wt*(observed_state=='Modern'))/sum(wt)),by=horizon],file.path(out,'observed_post_ending_status.csv'),row.names=FALSE)
+
+# Positive waiting times use AFT-derived, clock-reset competing hazards.
+# Immediate post-ending status has a separate categorical distribution because
+# direct switches have no non-use waiting time.
+fit_initial <- function(d,decay=.1) {
+ d$fw<-d$wt/mean(d$wt)
+ f<-multinom(next_state~method+cause+ns(duration_log,df=2),data=d,weights=fw,
+             decay=decay,maxit=1000,MaxNWts=5000,trace=FALSE,abstol=1e-8,reltol=1e-9)
+ stopifnot(f$convergence==0);f
+}
+initial_probs <- function(f,d) {
+ p<-predict(f,newdata=d,type='probs');if(is.null(dim(p)))p<-matrix(p,nrow=nrow(d),byrow=TRUE)
+ if(is.null(colnames(p)))colnames(p)<-f$lev
+ ans<-matrix(0,nrow(d),length(states),dimnames=list(NULL,states));ans[,colnames(p)]<-p;ans
+}
+design <- function(d) {
+ d<-normalize_features(as.data.frame(d))
+ if(!'entry_month'%in%names(d))d$entry_month<-d$post_month-d$state_duration+1
+ d$entry_log<-log1p(pmax(1,d$entry_month))
+ model.matrix(~method+cause+duration_log+entry_log,data=d)
+}
+
+# H and analytic derivatives under lognormal, Weibull, or log-logistic AFT.
+H_derivatives <- function(t,mu,log_scale,family) {
+ sc<-exp(log_scale);H<-dm<-ds<-numeric(length(mu));ok<-t>0
+ z<-(log(t[ok])-mu[ok])/sc
+ if(family=='lognormal') {
+  logQ<-pnorm(z,lower.tail=FALSE,log.p=TRUE);m<-exp(dnorm(z,log=TRUE)-logQ)
+  H[ok]<- -logQ;dm[ok]<- -m/sc;ds[ok]<- -m*z
+ }else if(family=='weibull') {
+  hz<-exp(pmin(z,650));H[ok]<-hz;dm[ok]<- -hz/sc;ds[ok]<- -hz*z
+ }else if(family=='loglogistic') {
+  H[ok]<-pmax(z,0)+log1p(exp(-abs(z)));dm[ok]<- -plogis(z)/sc;ds[ok]<- -plogis(z)*z
+ }else stop('Unknown AFT transition family')
+ list(H=H,mu=dm,scale=ds)
+}
+increment <- function(t,mu,ls,family) {
+ hi<-H_derivatives(t,mu,ls,family);lo<-H_derivatives(t-1,mu,ls,family)
+ list(h=pmax(hi$H-lo$H,1e-14),mu=hi$mu-lo$mu,scale=hi$scale-lo$scale)
+}
+fit_transition <- function(d,from,family='lognormal',ridge=.1,start=NULL,check_gradient=FALSE) {
+ X<-design(d);p<-ncol(X);dest<-setdiff(states,from)
+ y<-match(as.character(d$next_state),dest);y[is.na(y)]<-0L
+ w<-d$wt/mean(d$wt);duration<-as.numeric(d$state_duration)
+ objective<-function(par,gradient=FALSE) {
+  b1<-par[seq_len(p)];ls1<-par[p+1L];b2<-par[p+1L+seq_len(p)];ls2<-par[2L*(p+1L)]
+  d1<-increment(duration,as.numeric(X%*%b1),ls1,family)
+  d2<-increment(duration,as.numeric(X%*%b2),ls2,family)
+  ht<-d1$h+d2$h;stay<-y==0L;exit<-!stay
+  lp<- -ht
+  if(any(exit))lp[exit]<-log(-expm1(-ht[exit]))+log(ifelse(y[exit]==1L,d1$h[exit],d2$h[exit]))-log(ht[exit])
+  penalized<-c(2:p,(p+1L)+(2:p))
+  scale_indices<-c(p+1L,2L*(p+1L))
+  if(!gradient)return(-sum(w*lp)+ridge/2*sum(par[penalized]^2)+.001/2*sum(par[scale_indices]^2))
+  common<-numeric(length(ht));small<-ht<1e-5
+  common[small]<- -.5+ht[small]/12-ht[small]^3/720
+  common[!small]<-1/expm1(pmin(ht[!small],700))-1/ht[!small]
+  g1<-ifelse(stay,-1,common+as.numeric(y==1L)/d1$h)
+  g2<-ifelse(stay,-1,common+as.numeric(y==2L)/d2$h)
+  g<- -c(as.numeric(crossprod(X,w*g1*d1$mu)),sum(w*g1*d1$scale),
+            as.numeric(crossprod(X,w*g2*d2$mu)),sum(w*g2*d2$scale))
+  g[penalized]<-g[penalized]+ridge*par[penalized]
+  g[scale_indices]<-g[scale_indices]+.001*par[scale_indices]
+  g
+ }
+ par<-numeric(2L*(p+1L))
+ for(j in 1:2) {
+  rate<-max(.002,sum(w*(y==j))/sum(w));h<- -log1p(-min(.8,rate))
+  mu<-if(family=='lognormal')-qnorm(-expm1(-h))else if(family=='weibull')-log(h)else -log(expm1(h))
+  par[(j-1L)*(p+1L)+1L]<-mu
+ }
+ lower<-rep(-25,length(par));upper<-rep(25,length(par))
+ lower[c(p+1L,2L*(p+1L))]<- -2.5;upper[c(p+1L,2L*(p+1L))]<-2.5
+ if(!is.null(start))par<-start
+ fit<-optim(par,objective,function(p)objective(p,TRUE),method='L-BFGS-B',lower=lower,upper=upper,
+             control=list(maxit=2000,factr=1e6,pgtol=1e-5))
+ stopifnot(fit$convergence==0,all(is.finite(fit$par)))
+ # Numerical gradient check at the optimum prevents silent score errors.
+ delta<-1e-5
+ numerical<-if(check_gradient)vapply(seq_along(fit$par),function(i){hi<-lo<-fit$par;hi[i]<-hi[i]+delta;lo[i]<-lo[i]-delta;(objective(hi)-objective(lo))/(2*delta)},0.0)else objective(fit$par,TRUE)
+ analytic<-objective(fit$par,TRUE)
+ stopifnot(max(abs(analytic-numerical))<.02)
+ penalty_indices<-c(2:p,(p+1L)+(2:p));scale_indices<-c(p+1L,2L*(p+1L))
+ unpenalized_nll<-fit$value-ridge/2*sum(fit$par[penalty_indices]^2)-.001/2*sum(fit$par[scale_indices]^2)
+ list(par=fit$par,p=p,columns=colnames(X),dest=dest,from=from,family=family,
+      pseudo_aic=2*unpenalized_nll+2*length(fit$par),
+      objective=fit$value,max_gradient_error=max(abs(analytic-numerical)),convergence=fit$convergence,
+      boundary=any(abs(fit$par-lower)<1e-4|abs(fit$par-upper)<1e-4))
+}
+fit_models <- function(init,trans,family='lognormal',ridge=.1) {
+ transitions<-setNames(lapply(states,function(s) {
+  families<-if(family=='selected')c('lognormal','weibull','loglogistic')else family
+  ff<-lapply(families,function(f)fit_transition(trans[trans$current_state==s,],s,f,ridge))
+  ff[[which.min(vapply(ff,`[[`,0.0,'pseudo_aic'))]]
+ }),states)
+ list(initial=fit_initial(init),transitions=transitions,family=family,ridge=ridge)
+}
+transition_probs <- function(fit,d) {
+ X<-design(d);stopifnot(identical(colnames(X),fit$columns));p<-fit$p;par<-fit$par
+ h1<-increment(d$state_duration,as.numeric(X%*%par[seq_len(p)]),par[p+1L],fit$family)$h
+ h2<-increment(d$state_duration,as.numeric(X%*%par[p+1L+seq_len(p)]),par[2L*(p+1L)],fit$family)$h
+ total<-h1+h2;ans<-matrix(0,nrow(d),3,dimnames=list(NULL,states))
+ ans[,fit$from]<-exp(-total);ans[,fit$dest[1]]<- -expm1(-total)*h1/total;ans[,fit$dest[2]]<- -expm1(-total)*h2/total
+ stopifnot(all(is.finite(ans)),max(abs(rowSums(ans)-1))<1e-8);ans
+}
+endpoint_prob <- function(models,gr,max_horizon=13L) {
+ p0<-initial_probs(models$initial,gr)
+ nodes<-rbindlist(lapply(seq_along(states),function(s)data.table(gid=gr$gid,current_state=states[s],state_duration=1L,prob=p0[,s])))
+ outputs<-list(data.table(gid=gr$gid,horizon=1L,p_modern=p0[,'Modern']))
+ for(k in 2:max_horizon) {
+  chunks<-vector('list',length(states))
+  for(s in seq_along(states)) {
+   x<-nodes[current_state==states[s]];if(!nrow(x))next
+   nd<-as.data.frame(cbind(gr[x$gid,,drop=FALSE],state_duration=x$state_duration,post_month=k-1L))
+   pp<-transition_probs(models$transitions[[s]],nd)
+   chunks[[s]]<-rbindlist(lapply(seq_along(states),function(z)data.table(gid=x$gid,current_state=states[z],state_duration=if(z==s)x$state_duration+1L else 1L,prob=x$prob*pp[,z])))
+  }
+  nodes<-rbindlist(chunks)[,.(prob=sum(prob)),by=.(gid,current_state,state_duration)]
+  stopifnot(max(abs(nodes[,.(prob=sum(prob)),by=gid]$prob-1))<1e-8)
+  outputs[[k]]<-nodes[current_state=='Modern',.(p_modern=sum(prob)),by=gid][,horizon:=k]
+ }
+ rbindlist(outputs,use.names=TRUE)
+}
+)---------",
+  "summarize_planning.R" = r"---------(a<-commandArgs(TRUE);stopifnot(length(a)==1);o<-a[1];p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
+metrics<-function(x){
+ x$counts<-abind::abind(x$counts[1:8,,,drop=FALSE],x$counts[1,,,drop=FALSE]-x$counts[6,,,drop=FALSE],x$counts[2,,,drop=FALSE]-x$counts[4,,,drop=FALSE],x$counts[3,,,drop=FALSE]-x$counts[5,,,drop=FALSE],x$counts[9,,,drop=FALSE],x$counts[3,,,drop=FALSE]-x$counts[9,,,drop=FALSE],along=1)
+ y<-c(stock_no_ec=sum(x$stock[meta$methods]),mcpr2024=x$mcpr,mcpr2025=x$mcpr,users2025=sum(x$stock),users2024=sum(x$users2024))
+ for(m in c(meta$methods,'EC'))y[paste('stock',m,sep='|')]<-x$stock[m]
+ for(i in 1:13)for(m in c(meta$methods,'Total'))for(c in c(meta$causes,'Total')){
+  mi<-if(m=='Total')1:5 else match(m,meta$methods);ci<-if(c=='Total')1:5 else match(c,meta$causes)
+  v<-sum(x$counts[i,mi,ci]);s<-if(m=='Total')sum(x$stock[meta$methods])else x$stock[m]
+  key<-paste(i,m,c,sep='|');y[paste0('count|',key)]<-v;y[paste0('pp|',key)]<-100*v/meta$wra2026;y[paste0('risk|',key)]<-100*v/s
+ }
+ base<-x$mcpr+c((22.7286887783964-28.1)/6,(22.7286887783964-24.9)/9,.7)
+ for(j in 1:3){y[paste0('base|',j)]<-base[j];y[paste0('baseusers|',j)]<-base[j]/100*meta$wra2026
+  for(i in 1:13)for(m in c(meta$methods,'EC','Total')){
+   mix<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(x$counts[i,,])else if(m=='EC')0 else sum(x$counts[i,m,]);b<-base[j]*mix;key<-paste(j,i,m,sep='|')
+   y[paste0('usualusers|',key)]<-b/100*meta$wra2026;y[paste0('retainedusers|',key)]<-b/100*meta$wra2026+add
+   y[paste0('usualmcpr|',key)]<-b;y[paste0('retainedmcpr|',key)]<-b+100*add/meta$wra2026
+  }
+ }
+ y
+}
+stopifnot(all(vapply(d,function(v)is.null(v$error),FALSE)))
+extra<-read.csv(file.path(o,'planning_intervals.csv'));extra<-extra[grepl('^(pooled_|duration61[|])',extra$key),]
+pt<-metrics(p);ds<-vapply(d,metrics,pt);lo<-apply(ds,1,quantile,.025);hi<-apply(ds,1,quantile,.975)
+write.csv(rbind(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),extra),file.path(o,'planning_intervals.csv'),row.names=FALSE)
+jsonlite::write_json(meta,file.path(o,'metadata.json'),auto_unbox=TRUE,pretty=TRUE)
+cat('95% intervals for',length(pt),'metrics from',ncol(ds),'valid replicates\n')
+)---------",
+  "build_tables.py" = r"---------(import csv,json,sys
+from pathlib import Path
+root=Path(sys.argv[1]);out=Path(sys.argv[2]);out.mkdir(exist_ok=True,parents=True)
+d={r['key']:{k:float(r[k]) for k in ['estimate','lower','upper']} for r in csv.DictReader((root/'planning_intervals.csv').open())}
+meta=json.loads((root/'metadata.json').read_text());methods=meta['methods'];causes=meta['causes'];wra=meta['wra2026']
+short=['Method\nfailure','Want more\neffective','Bleeding\nchanges','Other side\neffects/health','Access/cost/\nconvenience']; scen=['6-year DHS trend\n(−0.90 pp/year)','9-year DHS trend\n(−0.24 pp/year)','FPET-informed growth\n(+0.70 pp/year)']
+notes={1:'First-year: survey-weighted cumulative incidence of an actionable ending during months 1–12 after initiation, applied to current users; elapsed use is not incorporated.',2:'Historical: weighted next-12-month actionable-ending probability at the current method and elapsed duration, from past calendar landmarks; the survey duration mix is held fixed. 61+ months uses the observed 37–60-month proxy.',3:'AFT: method-only survival models estimate next-12-month actionable-ending probability conditional on elapsed use; other endings compete, and cause-specific models allocate actionable endings.'}
+ci_note='95% CIs: 500 positive-multiplier PSU bootstrap replicates within all 27 survey strata, jointly re-estimating user mix, discontinuation and pathways. Population, growth rates and AFT families are fixed. CI bounds do not add. † No reliable CI with zero events.'
+def val(key,kind='num',deck=False):
+ x=d[key]; scale=1000 if kind=='num' and deck else 1; digits=1 if kind in ['risk','num'] and (kind=='risk' or deck) else 0 if kind=='num' else 2
+ def f(v):return ('<0.01' if kind=='pp' and 0<v<0.005 else '<0.1' if kind=='num' and deck and 0<v/scale<0.05 else f'{v/scale:,.{digits}f}')
+ suffix=' pp' if kind=='pp' else '%' if kind in ['risk','pct'] else ''
+ v=f(x['estimate'])+suffix
+ if abs(x['upper']-x['lower'])<1e-9:return v+'\n(CI unavailable†)' if kind in ['num','risk','pp'] and x['estimate']==0 else v+'\n(fixed)' if kind=='pct' else v
+ return v+'\n('+f(x['lower'])+'–'+f(x['upper'])+')'
+def metric(kind,a,m='Total',c='Total'):return f'{kind}|{a}|{m}|{c}'
+def count(a,m='Total',c='Total',deck=False):return val(metric('count',a,m,c),deck=deck)
+def pp(a,m='Total',c='Total',deck=False):return val(metric('pp',a,m,c),'pp',deck)
+def stock(m,deck):return val('users2025' if m=='Total' else f'stock|{m}',deck=deck)
+def spec(a,kind,deck=True,j=None):
+ base=2 if a==4 else 3 if a in [5,12] else a; sensitivity=a>=4;label={1:'First-year',2:'Historical duration-aware',3:'AFT survival',4:'Historical sensitivity',5:'AFT + historical pathways',12:'AFT + modeled transitions'}[a]
+ note=notes[base]+' '+('Year-end losses also incorporate observed switching/restarting, including EC as modern use at year end. ' if sensitivity else 'Every actionable ending is assumed to be a user lost; switching/restarting is not deducted. ')+ci_note
+ if a==12: note='AFT original-method ending probabilities condition on method and elapsed use; other endings compete. Immediate post-ending status is categorical. AFT-based subsequent transitions estimate modern use at the common next-12-month endpoint. Endings followed by modern use at that endpoint are deducted. '+ci_note
+ unit='Users in thousands; estimates (95% CI)' if deck else 'Users as counts; estimates (95% CI)'
+ title=label;subtitle=unit
+ if kind=='method':
+  table=[['Method','2025 current\nusers','Original-method ending\nprobability' if sensitivity else 'Actionable ending\nprobability','Year-end losses\nafter switching' if sensitivity else 'Users ending\noriginal method','mCPR equivalent']]
+  for m in methods:table.append([m,stock(m,deck),val(metric('risk',base,m),'risk',deck),count(a,m,deck=deck),pp(a,m,deck=deck)])
+  table.append(['EC',stock('EC',deck),'Not applied','Not estimated','Not estimated'])
+  total_stock=sum(d[f'stock|{m}']['estimate'] for m in methods)
+  table.append(['Current-user mix\nexcluding EC',val('stock_no_ec',deck=deck),val(metric('risk',base),'risk',deck),count(a,deck=deck),pp(a,deck=deck)])
+  title+=': actionable discontinuation and mCPR'
+  note+=' Total probability is weighted by current-user method mix.'
+  if base==1: note+=' The pooled episode life-table probability is 17.0%, with a different method mix.'
+ elif kind in ['cause','cause_pp']:
+  table=[['Method / measure']+short+['All actionable\ncauses']]
+  for m in methods:table.append([m]+[count(a,m,c,deck) for c in causes]+[count(a,m,deck=deck)])
+  table.append(['Year-end losses' if sensitivity else 'Users ending method']+[count(a,c=c,deck=deck) for c in causes]+[count(a,deck=deck)])
+  if kind=='cause_pp':
+   table.append(['2026 women aged\n15–49 (fixed)']+[f'{wra/(1000 if deck else 1):,.{1 if deck else 0}f}']*6)
+   table.append(['mCPR increase (pp)']+[pp(a,c=c) for c in causes]+[pp(a)])
+  title+=': '+('mCPR equivalent by cause' if kind=='cause_pp' else 'users by method and cause')
+ elif kind=='baseline':
+  title+=': mCPR growth scenarios';table=[['Different mCPR\ngrowth scenarios','2025 survey\nmCPR','Illustrative 2026\nmCPR']]
+  for j in range(1,4):table.append([scen[j-1],val('mcpr2025','pct'),val(f'base|{j}','pct')])
+  subtitle='Same baseline assumptions for all discontinuation approaches'
+  note='The 2024–25 DHS is treated as the 2025 baseline. Annual changes are (2025−2019)/6, (2025−2016)/9 and a +0.70 pp FPET-informed increment. The last is anchored to DHS and is not an official FPET forecast. Population and growth rates are fixed across discontinuation approaches. '+ci_note
+ elif kind=='scenario':
+  title+=': mCPR if actionable losses are avoided';table=[['Different mCPR\ngrowth scenarios','2026 users\nusual scenario','2026\nmCPR','2026 users\nif retained','mCPR\nif retained','Increase\n(pp)']]
+  for j in range(1,4):
+   k=f'{j}|{a}|Total';table.append([scen[j-1],val('usualusers|'+k,deck=deck),val('usualmcpr|'+k,'pct'),val('retainedusers|'+k,deck=deck),val('retainedmcpr|'+k,'pct'),pp(a)])
+ elif kind=='method_scenario':
+  title+=': '+['6-year DHS trend','9-year DHS trend','FPET-informed growth'][j-1]+' by method';table=[['Method','2025 current\nusers','2026 users\nusual scenario','Losses\navoided','2026 users\nif retained','2026\nmCPR','mCPR\nif retained']]
+  for m in methods+['EC','Total']:
+   k=f'{j}|{a}|{m}';table.append(['All modern' if m=='Total' else m,stock(m,deck),val('usualusers|'+k,deck=deck),'—' if m=='EC' else count(a,m,deck=deck),val('retainedusers|'+k,deck=deck),val('usualmcpr|'+k,'pct'),val('retainedmcpr|'+k,'pct')])
+  note+=' Method mix in the usual 2026 scenario is held at the current distribution.'
+ if base==3: note+=' Rare cause estimates are imprecise: IUD failure (1 event), other-modern bleeding (2), implant failure (5). AFT intervals condition on selected families.'
+ return dict(title=title,subtitle=subtitle,table=table,note=note,approach=a,kind=kind,scenario=j)
+sequence=[]
+for a in [1,2,3,4,5,12]:
+ for kind,j in [('method',None),('cause',None),('baseline',None),('scenario',None),('method_scenario',1),('method_scenario',2),('method_scenario',3),('cause_pp',None)]:sequence.append((a,kind,j))
+for deck in [True,False]:
+ ss=[spec(a,k,deck,j) for a,k,j in sequence]
+ (out/('planning_slides.json' if deck else 'planning_html.json')).write_text(json.dumps(ss,indent=2))
+print('Built 48 planning tables across three main approaches and three switching sensitivities.')
+)---------",
+  "update_html.py" = r"---------("""Refresh all planning tables while preserving other analytical chapters and figures."""
+import sys,json,csv,re,copy
+from pathlib import Path
+from lxml import html,etree
+from html import escape
+source,stats,specfile,target=map(Path,sys.argv[1:])
+original=source.read_text();doc=html.document_fromstring(original);oldids=set(doc.xpath('//@id'));main=doc.find('.//main')
+spec=json.loads(specfile.read_text());D={r['key']:{k:float(r[k])for k in ['estimate','lower','upper']}for r in csv.DictReader((stats/'planning_intervals.csv').open())}
+methods=['Injectables','Implants','Pill','IUD','Other modern'];causes=['Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience']
+# Existing generated appendix sections are replaced idempotently.
+for el in doc.xpath('//*[@id="planning-validation"]|//p[contains(@class,"earlier-planning-notice")]'):el.getparent().remove(el)
+for sid in ['three-approach-planning','switching-sensitivity','historical-switching-sensitivity','aft-observed-pathway-sensitivity','aft-modeled-transition-sensitivity']:
+ for el in doc.xpath(f'//section[@id="{sid}"]'):el.getparent().remove(el)
+def section(sid):return doc.xpath(f'//section[@id="{sid}"]')[0]
+def table(rows):
+ return '<div class="table-wrap analysis-table"><table class="survey-table"><thead><tr>'+''.join('<th>'+escape(str(c)).replace('\n','<br>')+'</th>'for c in rows[0])+'</tr></thead><tbody>'+''.join('<tr>'+''.join(('<th scope="row">'if j==0 else'<td>')+escape(str(c)).replace('\n','<br>')+('</th>'if j==0 else'</td>')for j,c in enumerate(r))+'</tr>'for r in rows[1:])+'</tbody></table></div>'
+def article(s):return '<article class="duration-slide"><h3>'+escape(s['title'])+'</h3><p>'+escape(s['subtitle'])+'</p>'+table(s['table'])+'<p class="note">'+escape(s['note'])+'</p></article>'
+# Planning formatting and helpers. These use one common numerical source for
+# every deck/report cell; confidence bounds are not summed across components.
+style=html.Element('style');style.text='.survey-table{font:15px/1.4 Arial,sans-serif;min-width:930px}.survey-table th,.survey-table td{white-space:normal;padding:12px 10px;text-align:right;border:1px solid #d7e2e7}.survey-table thead th{background:#153f5b;color:white;text-align:center}.survey-table th:first-child{text-align:left}.survey-table tbody tr:last-child{background:#e6f0f2;font-weight:bold}.survey-table tbody tr:nth-child(even){background:#f2f6f7}.duration-slide{margin:25px 0 38px}.sensitivity-heading{background:#153f5b;color:white;padding:24px}.sensitivity-heading h2{color:white}.legacy-anchor{display:block;scroll-margin-top:20px}'
+doc.find('head').append(style)
+def reset(sid,title,content):
+ s=section(sid);anchors=s.xpath('.//@id');s.clear();s.set('id',sid);s.set('class','duration-block');h=html.Element('h2');h.text=title;s.append(h)
+ for x in html.fragments_fromstring(content):
+  if isinstance(x,str):continue
+  s.append(x)
+ existing=set(s.xpath('.//@id'))
+ for key in anchors:
+  if key==sid or key in existing:continue
+  a=html.Element('span',id=key);a.set('class','legacy-anchor');s.insert(1,a);existing.add(key)
+ return s
+def val(key,kind='num'):
+ r=D[key];digits=0 if kind=='num' else 1 if kind=='risk' else 2
+ def fmt(v):return '<0.01' if kind=='pp' and 0<v<.005 else f'{v:,.{digits}f}'
+ suffix=' pp' if kind=='pp' else '%' if kind in ('risk','pct') else '';v=fmt(r['estimate'])+suffix
+ if r['estimate']==r['lower']==r['upper']==0:return v+'\n(CI unavailable†)'
+ return v+'\n('+fmt(r['lower'])+'–'+fmt(r['upper'])+')'
+def count(a,m='Total',c='Total'):return val(f'count|{a}|{m}|{c}')
+def pp(a,m='Total',c='Total'):return val(f'pp|{a}|{m}|{c}','pp')
+def stock(m='Total'):return val('users2025' if m=='Total' else f'stock|{m}')
+def cause(a,as_pp=False):
+ rows=[['Method / measure']+causes+['All actionable causes']]
+ for m in methods+['Total']:rows.append([m]+[(pp(a,m,c) if as_pp else count(a,m,c)) for c in causes]+[(pp(a,m) if as_pp else count(a,m))])
+ return table(rows)
+rows=[['Actionable cause','Pooled 12-month episode probability (95% CI)','Share of actionable probability (95% CI)']]
+for c in causes:rows.append([c,val('pooled_firstyear|'+c,'risk'),val('pooled_share|'+c,'risk')])
+rows.append(['All actionable causes',val('pooled_firstyear|Total','risk'),'100.0%'])
+pool=table(rows)+'<p class="note">The pooled probability is estimated from eligible modern-method episode risk sets. The total probability in the current-user table instead averages method-specific risks using the current-user method mix. These are different weighting populations.</p>'
+rows=[['Method']+causes+['All actionable causes']]
+for m in methods+['Total']:rows.append([m]+[val(f'risk|1|{m}|{c}','risk') for c in causes]+[val(f'risk|1|{m}|Total','risk')])
+reset('current-user-actionable-projection','First-year actionable discontinuation: every ending treated as a lost user',article(spec[0])+article(spec[1])+'<h3>Method-specific actionable probabilities by cause (95% CI)</h3>'+table(rows)+'<h3>National pooled episode probability by cause</h3>'+pool)
+reset('mcpr-2026-retention-scenarios','First-year approach: three illustrative mCPR growth scenarios',article(spec[2])+article(spec[3]))
+reset('mcpr-2026-method-detail','First-year approach: projected users and mCPR by method',''.join(article(s) for s in spec[4:7]))
+reset('actionable-cause-mcpr-ceiling','First-year approach: mCPR percentage-point equivalent by cause',article(spec[7]))
+reset('historical-duration-aware-planning','Historical duration-aware approach: every actionable ending treated as a lost user',''.join(article(s) for s in spec[8:16]))
+reset('aft-duration-aware-planning','AFT survival approach: every actionable ending treated as a lost user',''.join(article(s) for s in spec[16:24]))
+# Put the three gross approaches together, followed by a clearly labeled appendix.
+summary=html.Element('section',id='three-approach-planning');h=html.Element('h2');h.text='Three planning approaches: every actionable ending treated as a lost user';summary.append(h)
+rows=[['Approach','Probability used','Users ending original method (95% CI)','mCPR pp equivalent (95% CI)']]
+for a,name,basis in [(1,'First-year','Months 1–12 from initiation; elapsed current use is ignored'),(2,'Historical duration-aware','Next 12 months, using historical method-and-duration landmarks'),(3,'AFT survival','Next 12 months, conditional on elapsed use, from fitted survival curves')]:rows.append([name,basis,count(a),pp(a)])
+for x in html.fragments_fromstring('<p>These main scenarios assume every potentially actionable original-method discontinuation is a lost modern user. Current users are estimated from the 2024–25 all-women survey prevalence and method mix, applied to 34,057,556 women aged 15–49 in 2025. Each 2026 scenario uses 35,016,171 women aged 15–49. mCPR increase in pp = users retained ÷ 35,016,171 × 100. EC remains in baseline mCPR but has no ongoing-method discontinuation probability. Switching and restarting are considered in the appendix.</p>'+table(rows)):
+ if not isinstance(x,str):summary.append(x)
+main.append(summary)
+for sid in ['current-user-actionable-projection','mcpr-2026-retention-scenarios','mcpr-2026-method-detail','actionable-cause-mcpr-ceiling','historical-duration-aware-planning','aft-duration-aware-planning']:
+ s=section(sid);s.getparent().remove(s);main.append(s)
+sens=html.fragment_fromstring('<section id="switching-sensitivity" class="sensitivity-heading"><h2>Appendix: Sensitivity analysis if some users who discontinue switch</h2><p>These tables deduct women using a modern method at year end after an actionable ending, including direct switchers and later restarters. The original-ending AFT model does not estimate switching. The additional AFT transition sensitivity explicitly models subsequent aggregate modern use, non-use/traditional use, and pregnancy-related states.</p><ul><li>Small samples: 126 of 200 method × cause × duration pathway cells require pooling; 48 pool across methods by cause. Fewer than 10 distinct episodes triggers pooling. Repeated calendar landmarks are not independent episodes.</li><li>Rare training events include IUD failure (1), other-modern bleeding (2) and implant failure (5). Individual cause estimates and pooled switching fractions require caution. Zero-event cells have no reliable bootstrap interval and are flagged †.</li><li>Historical 61+ months uses 37–60-month experience. AFT extrapolates selected survival curves; its predictor is method, while elapsed use sets the survival clock. Both assume historical patterns are informative about future users.</li><li>Year-end modern use includes EC, consistently with the mCPR definition. The original-method discontinuation cohort excludes EC. The sensitivity adjustment differs slightly from earlier tables because it now includes EC at the endpoint and assesses support using distinct episodes.</li><li>Intervals condition on fixed population and growth inputs and selected AFT distributions. They do not include model-selection uncertainty, recall error, future changes in services or intervention effectiveness. A method ending is not necessarily a lasting exit from modern use.</li></ul></section>');main.append(sens)
+for sid,title,ss in [('historical-switching-sensitivity','Appendix: historical duration-aware switching sensitivity',spec[24:32]),('aft-observed-pathway-sensitivity','Appendix: AFT plus observed-pathway switching sensitivity',spec[32:40])]:
+ s=html.Element('section',id=sid);h=html.Element('h2');h.text=title;s.append(h)
+ for x in ss:s.append(html.fragment_fromstring(article(x)))
+ main.append(s)
+reset('duration-planning-appendix','Appendix: additional duration and switching diagnostics','<p>The earlier companion analyses below use the same updated survey estimates and confidence intervals.</p>')
+rows=[['Method','2025 current users','Gross actionable endings','Direct modern switches','Without a direct modern switch']]
+for m in methods+['Total']:rows.append([m,val('stock_no_ec') if m=='Total' else stock(m),count(1,m),count(6,m),count(9,m)])
+reset('switching-2026-bridge','Appendix: direct switching after first-year actionable endings',table(rows)+'<h3>Direct switches by cause (95% CI)</h3>'+cause(6)+'<h3>mCPR pp if every ending without a direct switch were a loss (95% CI)</h3>'+cause(9,True))
+rows=[['Current method','Gross actionable endings','Direct modern switches','Modern at year end after ending','Outside modern use at year end']]
+for m in methods+['Total']:rows.append([m,count(2,m),count(7,m),count(10,m),count(4,m)])
+reset('duration-modern-use-2026-bridge','Appendix: historical elapsed duration and year-end modern use',table(rows)+'<h3>Year-end losses by cause (95% CI)</h3>'+cause(4)+article(spec[27]))
+reset('duration-aware-cause-pp-matrices','Appendix: historical year-end loss by method and cause',cause(4)+'<h3>Percentage-point equivalents (95% CI)</h3>'+cause(4,True))
+rows=[['Current method','AFT actionable endings','Direct modern switches','Modern at year end after ending','Outside modern use at year end']]
+for m in methods+['Total']:rows.append([m,count(3,m),count(8,m),count(11,m),count(5,m)])
+reset('aft-switching-sensitivity','Appendix: AFT pathway diagnostics',table(rows)+'<h3>Direct modern switches by cause (95% CI)</h3>'+cause(8)+'<h3>Outside modern use at year end by cause (95% CI)</h3>'+cause(5)+article(spec[39]))
+for sid in ['duration-planning-appendix','switching-2026-bridge','duration-modern-use-2026-bridge','duration-aware-cause-pp-matrices','aft-switching-sensitivity']:
+ s=section(sid);s.getparent().remove(s);main.append(s);s.append(html.fragment_fromstring('<p class="note">Counts and pp equivalents use the same survey weights, current-user stocks, and fixed 2026 denominator as the main tables. † No reliable interval can be estimated from zero observed events. These are sensitivity calculations under historical behavior, not estimates of program effectiveness.</p>'))
+
+s=html.Element('section',id='aft-modeled-transition-sensitivity');h=html.Element('h2');h.text='Appendix: AFT discontinuation plus modeled switching/restarting';s.append(h)
+intro=html.Element('p');intro.text='The initial post-ending state is modeled categorically, allowing immediate modern switching without a positive waiting time. Subsequent state changes use AFT-based competing transition hazards with a clock reset at each aggregate-state entry. Prediction integrates the timing of the original actionable ending with the remaining time to the common next-12-month endpoint. All destination modern methods, including EC, are pooled. Partner/spousal disapproval is excluded from the original actionable events.';s.append(intro)
+for item in spec[40:48]:s.append(html.fragment_fromstring(article(item)))
+ref=section('aft-observed-pathway-sensitivity');ref.addnext(s)
+
+# Replace the combined legacy diagnostic from the same revised numerical vectors.
+rows=[['2026 baseline','Usual mCPR','First-year actionable endings','Without direct modern switch','Outside modern use at year end','mCPR increase (pp)']]
+labels=['6-year DHS trend (−0.90 pp/year)','9-year DHS trend (−0.24 pp/year)','FPET-informed growth (+0.70 pp/year)']
+for j,label in enumerate(labels,1):rows.append([label,val(f'base|{j}','pct'),count(1),count(9),count(4),pp(4)])
+sec=section('duration-modern-use-2026-bridge');el=html.fragment_fromstring('<article class="duration-slide"><h3>Sensitivity: how the year-end mCPR equivalent changes</h3>'+table(rows)+'<p class="note">The same current-user cohort is retained across growth scenarios. Counts use 35,016,171 women aged 15–49 in 2026. The endpoint is 12 months from the prediction starting point, not 12 months after each ending.</p></article>');sec.insert(1,el)
+# Explain the reconciled planning scope and model uncertainty without changing the other chapters.
+audit=html.fragment_fromstring('<div id="planning-validation"><h3>Planning-table reconciliation</h3><p>Updated November 10, 2026. All method-by-cause counts, row and column totals, current-user stocks, growth-scenario additions and percentage-point conversions are generated from one set of numerical estimates. First-year planning uses all 8,682 eligible non-EC modern-method episodes, including eligible delayed entry, instead of restricting national estimates to regression complete cases. Historical and AFT calculations retain their documented duration-specific samples. The AFT current-user duration mix consistently includes the recorded other-modern code 14 user.</p><p>Uncertainty uses 500 joint positive-multiplier PSU replicates over the full 797-PSU, 27-stratum survey frame. Each replicate re-estimates baseline prevalence and method/duration composition, original-ending probabilities, and the corresponding historical or modeled post-ending pathways. New transition-model intervals condition on families selected at the point fit. Distribution selection, population, growth rates, future transportability and the assumption that avoided endings remain modern users are not fully represented by the intervals. Sparse IUD and other-modern causes remain especially uncertain.</p><p>Post-ending model checks used held-out PSUs. Among 1,479 histories with 12 months of post-ending observation, predicted modern use was 40.05% versus 40.18% observed. This checks aggregate calibration; it does not establish accurate predictions in every method-by-cause subgroup or causal intervention effects.</p></div>')
+section('methods').append(audit)
+# Earlier exploratory blocks remain available but are not the current actionable planning estimands.
+for sid in ['current-user-reason-planning','duration-adjusted-reason-planning','standardized-current-users']:
+ sec=section(sid);notice=html.fragment_fromstring('<p class="note earlier-planning-notice"><strong>Earlier exploratory analysis:</strong> this block uses a different reason scope or duration grouping. The reconciled potentially actionable planning tables are in <a href="#three-approach-planning">Three planning approaches</a>, with their switching sensitivities in the appendix.</p>');sec.insert(1,notice)
+ if sid=='standardized-current-users':
+  for p in sec.xpath('./p'):
+   if p.text and 'This is the principal current-user estimand.' in p.text:p.text=p.text.replace('This is the principal current-user estimand.','This earlier all-cause current-user pathway exploration is distinct from the potentially actionable planning estimands below.')
+# Rebuild navigation so titles agree with the revised table headings.
+aside=doc.xpath('//aside[@id="site-toc"]')[0];aside.clear();aside.set('id','site-toc');h=html.Element('strong');h.text='Ethiopia discontinuation';aside.append(h);nav=html.Element('nav',{'class':'toc'});aside.append(nav)
+allids=set(doc.xpath('//@id'));seen=set()
+for i,h in enumerate(doc.xpath('//main//h2|//main//h3|//main//h4')):
+ if not h.get('id'):
+  key='updated-heading-'+str(i+1)
+  while key in allids:key+='-x'
+  h.set('id',key);allids.add(key)
+ key=h.get('id')
+ if key in seen:continue
+ seen.add(key);a=html.Element('a',href='#'+key);a.set('class','toc-level-'+h.tag);a.text=' '.join(h.itertext());nav.append(a)
+# Preserve existing external deep links if a heading was replaced.
+now=set(doc.xpath('//@id'))
+for key in oldids-now:
+ if key=='site-toc':continue
+ a=html.Element('span',id=key);a.set('class','legacy-anchor');section('methods').append(a)
+text=html.tostring(doc,encoding='unicode',method='html',doctype='<!DOCTYPE html>')
+scan=re.sub(r'data:[^;]+;base64,[A-Za-z0-9+/=]+','[embedded asset]',text)
+assert not re.search(r'file:/{2,}',scan,re.I)
+assert doc.xpath('//img/@src')==html.fromstring(original).xpath('//img/@src')
+assert len(doc.xpath('//@id'))==len(set(doc.xpath('//@id'))),'Duplicate identifiers'
+target.write_text(text)
+print('Planning tables refreshed; new sensitivity contains eight tables; all figures retained.')
+)---------"
+)
+
+run_revised_report <- function(opt) {
+ script_arg<-grep("^--file=",commandArgs(),value=TRUE)
+ script_folder<-if(length(script_arg))dirname(sub("^--file=","",script_arg[1]))else"."
+ root<-if(!is.null(opt[["project-root"]]))opt[["project-root"]]else file.path("analysis_output","ethiopia","updated")
+ for(n in c("build","output","Code"))dir.create(file.path(root,n),recursive=TRUE,showWarnings=FALSE)
+ stats<-if(!is.null(opt[["statistics-dir"]]))opt[["statistics-dir"]]else file.path(script_folder,"revision_inputs")
+ required<-c("planning_point.rds","planning_replicates.rds","planning_metadata.rds","planning_intervals.csv")
+ if(!all(file.exists(file.path(stats,required))))stop("The fitted aggregate input directory is incomplete.")
+ if(dim(readRDS(file.path(stats,"planning_point.rds"))$counts)[1]!=9L)stop("Use the reconciled nine-component numerical inputs, including modeled transitions.")
+ if(length(readRDS(file.path(stats,"planning_replicates.rds")))!=500L)stop("The saved-report build requires all 500 joint replicates.")
+ build<-file.path(root,"build");code<-file.path(root,"Code")
+ for(n in required)file.copy(file.path(stats,n),file.path(build,n),overwrite=TRUE)
+ for(n in names(LEADERSHIP_HELPERS))writeLines(LEADERSHIP_HELPERS[[n]],file.path(code,n),useBytes=TRUE)
+ python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
+ run<-function(exe,a){status<-system2(exe,shQuote(a));if(status!=0L)stop("Updated report build failed.")}
+ run(file.path(R.home("bin"),"Rscript"),c(file.path(code,"summarize_planning.R"),build))
+ run(python,c(file.path(code,"build_tables.py"),build,build))
+ if(identical(opt$run,"revised-planning"))return(invisible(NULL))
+ base<-if(!is.null(opt[["base-html"]]))opt[["base-html"]]else file.path(script_folder,REPORT_BASENAME)
+ if(!file.exists(base))stop("Supply the validated base HTML layout.")
+ target<-file.path(root,"output",REPORT_BASENAME)
+ if(identical(normalizePath(base),normalizePath(target,mustWork=FALSE)))stop("Output must differ from the input report.")
+ run(python,c(file.path(code,"update_html.py"),base,build,file.path(build,"planning_html.json"),target))
+ cat("Rebuilt all 48 principal and sensitivity planning tables from joint fitted aggregate draws; other chapters and figures retained.\n")
+}
+for(n in names(LEADERSHIP_HELPERS))MODULES[[n]]<-list(language=if(grepl("[.]R$",n))"R"else"Python",args=character(),code=LEADERSHIP_HELPERS[[n]])
+
+# Final presentation-language pass. Numerical tables stay unchanged.
+PLANNING_LANGUAGE_HELPER <- r"------------("""Apply plain-language planning explanations without changing table cells."""
+import sys,json,re
+from pathlib import Path
+from lxml import html
+CHANGES=json.loads(r'''[{"old_title": "First-year: actionable discontinuation and mCPR", "title": "Exploratory: users who may discontinue for actionable reasons", "subtitle": "Exploratory estimate. Ignores time already using the method. Number of users (95% CI)", "note": "Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded. The total averages method-specific probabilities using current-user mix. The pooled episode estimate is 17.0%. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "First-year: users by method and cause", "title": "Exploratory: actionable discontinuation by method and cause", "subtitle": "Exploratory estimate. Ignores time already using the method. Number of users (95% CI)", "note": "Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "First-year: mCPR growth scenarios", "title": "Exploratory: assumptions for 2026 mCPR", "subtitle": "2025 survey baseline and a one-year projection to 2026", "note": "Starts from the 2024–25 DHS all-women mCPR, treated as the 2025 baseline. Annual changes are (2025−2019)/6 for the recent DHS trend and (2025−2016)/9 for the longer trend. The FPET-informed scenario adds 0.70 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2026. The same user cohort and growth assumptions apply across approaches. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "First-year: mCPR if actionable losses are avoided", "title": "Exploratory: 2026 mCPR if actionable discontinuation is averted", "subtitle": "Exploratory estimate. Ignores time already using the method. Number of users (95% CI)", "note": "Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "First-year: 6-year DHS trend by method", "title": "Exploratory: users and mCPR under 6-year DHS trend", "subtitle": "Exploratory estimate. Ignores time already using the method. Number of users (95% CI)", "note": "Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "First-year: 9-year DHS trend by method", "title": "Exploratory: users and mCPR under 9-year DHS trend", "subtitle": "Exploratory estimate. Ignores time already using the method. Number of users (95% CI)", "note": "Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "First-year: FPET-informed growth by method", "title": "Exploratory: users and mCPR under FPET-informed growth", "subtitle": "Exploratory estimate. Ignores time already using the method. Number of users (95% CI)", "note": "Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "First-year: mCPR equivalent by cause", "title": "Exploratory: mCPR contribution by actionable cause", "subtitle": "Exploratory estimate. Ignores time already using the method. Number of users (95% CI)", "note": "Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: actionable discontinuation and mCPR", "title": "Historical: users who may discontinue for actionable reasons", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: users by method and cause", "title": "Historical: actionable discontinuation by method and cause", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: mCPR growth scenarios", "title": "Historical: assumptions for 2026 mCPR", "subtitle": "2025 survey baseline and a one-year projection to 2026", "note": "Starts from the 2024–25 DHS all-women mCPR, treated as the 2025 baseline. Annual changes are (2025−2019)/6 for the recent DHS trend and (2025−2016)/9 for the longer trend. The FPET-informed scenario adds 0.70 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2026. The same user cohort and growth assumptions apply across approaches. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: mCPR if actionable losses are avoided", "title": "Historical: 2026 mCPR if actionable discontinuation is averted", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: 6-year DHS trend by method", "title": "Historical: users and mCPR under 6-year DHS trend", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: 9-year DHS trend by method", "title": "Historical: users and mCPR under 9-year DHS trend", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: FPET-informed growth by method", "title": "Historical: users and mCPR under FPET-informed growth", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical duration-aware: mCPR equivalent by cause", "title": "Historical: mCPR contribution by actionable cause", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "AFT survival: actionable discontinuation and mCPR", "title": "AFT: users who may discontinue for actionable reasons", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: users by method and cause", "title": "AFT: actionable discontinuation by method and cause", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: mCPR growth scenarios", "title": "AFT: assumptions for 2026 mCPR", "subtitle": "2025 survey baseline and a one-year projection to 2026", "note": "Starts from the 2024–25 DHS all-women mCPR, treated as the 2025 baseline. Annual changes are (2025−2019)/6 for the recent DHS trend and (2025−2016)/9 for the longer trend. The FPET-informed scenario adds 0.70 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2026. The same user cohort and growth assumptions apply across approaches. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: mCPR if actionable losses are avoided", "title": "AFT: 2026 mCPR if actionable discontinuation is averted", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: 6-year DHS trend by method", "title": "AFT: users and mCPR under 6-year DHS trend", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: 9-year DHS trend by method", "title": "AFT: users and mCPR under 9-year DHS trend", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: FPET-informed growth by method", "title": "AFT: users and mCPR under FPET-informed growth", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: mCPR equivalent by cause", "title": "AFT: mCPR contribution by actionable cause", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "Historical sensitivity: actionable discontinuation and mCPR", "title": "Historical switching: users outside modern use at 12 months", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. The probability column describes the original method ending. The loss count also deducts modern use at the endpoint. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: users by method and cause", "title": "Historical switching: year-end losses by method and cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: mCPR growth scenarios", "title": "Historical switching: assumptions for 2026 mCPR", "subtitle": "2025 survey baseline and a one-year projection to 2026", "note": "Starts from the 2024–25 DHS all-women mCPR, treated as the 2025 baseline. Annual changes are (2025−2019)/6 for the recent DHS trend and (2025−2016)/9 for the longer trend. The FPET-informed scenario adds 0.70 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2026. The same user cohort and growth assumptions apply across approaches. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: mCPR if actionable losses are avoided", "title": "Historical switching: 2026 mCPR if year-end losses are avoided", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: 6-year DHS trend by method", "title": "Historical switching: users and mCPR under 6-year DHS trend", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: 9-year DHS trend by method", "title": "Historical switching: users and mCPR under 9-year DHS trend", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: FPET-informed growth by method", "title": "Historical switching: users and mCPR under FPET-informed growth", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: mCPR equivalent by cause", "title": "Historical switching: mCPR contribution by actionable cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "AFT + historical pathways: actionable discontinuation and mCPR", "title": "AFT observed switching: users outside modern use at 12 months", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. The probability column describes the original method ending. The loss count also deducts modern use at the endpoint. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + historical pathways: users by method and cause", "title": "AFT observed switching: year-end losses by method and cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + historical pathways: mCPR growth scenarios", "title": "AFT observed switching: assumptions for 2026 mCPR", "subtitle": "2025 survey baseline and a one-year projection to 2026", "note": "Starts from the 2024–25 DHS all-women mCPR, treated as the 2025 baseline. Annual changes are (2025−2019)/6 for the recent DHS trend and (2025−2016)/9 for the longer trend. The FPET-informed scenario adds 0.70 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2026. The same user cohort and growth assumptions apply across approaches. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + historical pathways: mCPR if actionable losses are avoided", "title": "AFT observed switching: 2026 mCPR if year-end losses are avoided", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + historical pathways: 6-year DHS trend by method", "title": "AFT observed switching: users and mCPR under 6-year DHS trend", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + historical pathways: 9-year DHS trend by method", "title": "AFT observed switching: users and mCPR under 9-year DHS trend", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + historical pathways: FPET-informed growth by method", "title": "AFT observed switching: users and mCPR under FPET-informed growth", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + historical pathways: mCPR equivalent by cause", "title": "AFT observed switching: mCPR contribution by actionable cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: actionable discontinuation and mCPR", "title": "AFT modeled switching: users outside modern use at 12 months", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. The probability column describes the original method ending. The loss count also deducts modern use at the endpoint. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: users by method and cause", "title": "AFT modeled switching: year-end losses by method and cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: mCPR growth scenarios", "title": "AFT modeled switching: assumptions for 2026 mCPR", "subtitle": "2025 survey baseline and a one-year projection to 2026", "note": "Starts from the 2024–25 DHS all-women mCPR, treated as the 2025 baseline. Annual changes are (2025−2019)/6 for the recent DHS trend and (2025−2016)/9 for the longer trend. The FPET-informed scenario adds 0.70 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2026. The same user cohort and growth assumptions apply across approaches. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: mCPR if actionable losses are avoided", "title": "AFT modeled switching: 2026 mCPR if year-end losses are avoided", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: 6-year DHS trend by method", "title": "AFT modeled switching: users and mCPR under 6-year DHS trend", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: 9-year DHS trend by method", "title": "AFT modeled switching: users and mCPR under 9-year DHS trend", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: FPET-informed growth by method", "title": "AFT modeled switching: users and mCPR under FPET-informed growth", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. The usual scenario keeps the current method mix. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT + modeled transitions: mCPR equivalent by cause", "title": "AFT modeled switching: mCPR contribution by actionable cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "Historical sensitivity: original endings and year-end use", "title": "Historical sensitivity: original endings and year-end modern use", "subtitle": "Historical estimates after allowing for switching and restarting. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. Direct switches mean modern use in the next recorded calendar month. Some women stop again before the endpoint. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: users by method and cause", "title": "Historical switching: year-end losses by method and cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Sensitivity: how the year-end mCPR equivalent changes", "title": "How switching changes the estimated losses and mCPR contribution", "subtitle": "First-year endings compared with historical estimates of year-end loss. Number of users (95% CI)", "note": "The first two count columns use first-year probabilities. The year-end count uses historical duration estimates and includes later restarting. The counts describe different assumptions and should not be added. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Limitations of duration-aware estimates", "title": "Limits of the duration and switching estimates", "subtitle": "Small samples and assumptions behind these scenarios", "note": "All estimates concern potentially actionable endings of modern methods, excluding EC. Main tables count every ending as a lost modern user. Sensitivity tables deduct women using a modern method at the end of the next 12 months."}, {"old_title": "Historical sensitivity: mCPR equivalent by cause", "title": "Historical switching: mCPR contribution by actionable cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "Historical sensitivity: mCPR pp by method and cause", "title": "Historical sensitivity: mCPR contributions by method and cause", "subtitle": "Women outside modern use at the 12-month endpoint. Percentage points (95% CI)", "note": "Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "AFT survival: actionable discontinuation and mCPR", "title": "AFT: users who may discontinue for actionable reasons", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT survival: mCPR equivalent by cause", "title": "AFT: mCPR contribution by actionable cause", "subtitle": "Next 12 months, accounting for time already using the method. Number of users (95% CI)", "note": "Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}, {"old_title": "AFT sensitivity: original endings and year-end use", "title": "AFT sensitivity: original endings and year-end modern use", "subtitle": "AFT endings with observed switching and restarting. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. Direct switches mean modern use in the next recorded month. The year-end modern-use column includes both switching and later restarting. These columns should not be added. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "AFT sensitivity: immediate modern switches by cause", "title": "AFT sensitivity: immediate modern switches by actionable cause", "subtitle": "Modern use in the next calendar month after stopping the original method. Number of users (95% CI)", "note": "AFT estimates the original actionable endings. Observed calendar histories estimate the share followed by modern use in the next month. Some switchers stop again before the 12-month endpoint. These immediate switches are different from the women still using a modern method at that endpoint. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI."}, {"old_title": "AFT + historical pathways: mCPR equivalent by cause", "title": "AFT observed switching: mCPR contribution by actionable cause", "subtitle": "Deducts women using any modern method at the 12-month endpoint. Number of users (95% CI)", "note": "AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. Counts deduct women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled. mCPR contribution (pp) = users retained ÷ 35,016,171 women aged 15–49 in 2026 × 100. 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI. AFT intervals hold the selected curve families fixed. Some method/cause estimates rely on very few events."}]''')
+source,target=map(Path,sys.argv[1:]);doc=html.parse(str(source))
+lookup={k:c for c in CHANGES for k in [c['old_title'],c['title']]}
+count=0
+for article in doc.xpath('//article[contains(@class,"duration-slide")]'):
+ h=article.find('h3')
+ if h is None:continue
+ c=lookup.get(h.text_content())
+ if c is None:continue
+ h.text=c['title'];ps=article.xpath('./p[not(contains(@class,"note"))]')
+ if ps:ps[0].text=c['subtitle']
+ for note in article.xpath('./p[contains(@class,"note")]'):
+  for child in list(note):note.remove(child)
+  note.text=c['note']
+ count+=1
+section_titles={
+'current-user-actionable-projection':'Exploratory estimate using first-year probabilities',
+'historical-duration-aware-planning':'Next-year losses using historical duration probabilities',
+'aft-duration-aware-planning':'Next-year losses using AFT duration probabilities',
+'historical-switching-sensitivity':'Historical sensitivity allowing for switching and restarting',
+'aft-observed-pathway-sensitivity':'AFT sensitivity using observed switching and restarting',
+'aft-modeled-transition-sensitivity':'AFT sensitivity using modeled switching and restarting',
+'switching-sensitivity':'Sensitivity analyses allowing for switching and restarting'}
+for sid,title in section_titles.items():
+ for h in doc.xpath(f'//section[@id="{sid}"]/h2'):h.text=title
+# The first-year limitation is visible before the first table as well as in each footnote.
+for sec in doc.xpath('//section[@id="current-user-actionable-projection"]'):
+ for old in sec.xpath('./p[@class="probability-explanation"]'):sec.remove(old)
+ p=html.Element('p',{'class':'probability-explanation'});b=html.Element('strong');b.text='Basic exploratory calculation. ';p.append(b);b.tail='Applies each method’s first-year probability to current users regardless of how long they have already used it. It assumes every actionable ending is a lost modern user.';sec.insert(1,p)
+# Navigation keeps the existing anchors and uses the updated headings.
+for a in doc.xpath('//aside[@id="site-toc"]//a[starts-with(@href,"#")]'):
+ targets=doc.xpath('//*[@id=$key]',key=a.get('href')[1:])
+ if targets and targets[0].tag in ['h2','h3','h4']:a.text=targets[0].text_content()
+text=html.tostring(doc,encoding='unicode',doctype='<!DOCTYPE html>')
+assert len(doc.xpath('//@id'))==len(set(doc.xpath('//@id')))
+target.write_text(text)
+print('Clarified explanations for',count,'planning tables. Table cells unchanged.')
+)------------"
+
+run_planning_before_language <- run_revised_report
+run_revised_report <- function(opt) {
+ run_planning_before_language(opt)
+ if(identical(opt$run,"revised-planning"))return(invisible(NULL))
+ root<-if(!is.null(opt[["project-root"]]))opt[["project-root"]]else file.path("analysis_output","ethiopia","updated")
+ helper<-file.path(root,"Code","plain_language_html.py");writeLines(PLANNING_LANGUAGE_HELPER,helper,useBytes=TRUE)
+ target<-file.path(root,"output",REPORT_BASENAME);draft<-file.path(root,"build","report_wording.html")
+ python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
+ status<-system2(python,shQuote(c(helper,target,draft)))
+ if(status!=0L)stop("Planning-language update failed.")
+ if(!file.copy(draft,target,overwrite=TRUE))stop("Could not save the updated report.")
+ invisible(NULL)
+}
 if (sys.nframe() == 0L) main()

@@ -32,7 +32,7 @@ episodes and model inputs. It does not fit every downstream model. The original
 stages remain available through `--list` and `--run=MODULE_NAME`.
 
 The revised HTML command uses the included aggregate `revision_inputs/` by
-default. It contains `planning_point.rds`, `planning_replicates.rds` and `planning_metadata.rds`. The saved-report build expects 500 survey bootstrap
+default. It contains `planning_point.rds`, `planning_replicates.rds` `planning_metadata.rds` and `transition_validation.json`. The saved-report build expects 500 survey bootstrap
 replicates. It recomputes the revised planning summaries from those draws; these
 are frozen analytical inputs, not a fresh fit to an IR supplied at render time.
 
@@ -67,3 +67,50 @@ delayed entry and censoring. Individual numerical modules document their survey
 inference methods and model-specific restrictions. Archived alternative models
 are retained for provenance; running every module blindly is not a validated
 replacement for the documented analysis sequence.
+
+
+## November 10 planning update
+
+The saved presentation now includes a third switching sensitivity. AFT models
+estimate original actionable endings. A categorical model estimates the immediate
+post-ending state, and AFT-based competing transition hazards track later modern
+use, non-use/traditional use and pregnancy-related states. The final measure is
+modern use at the common next-12-month endpoint. It includes restarting and later
+stopping again. Destination modern methods are pooled, including EC at the endpoint.
+
+The 48 main and sensitivity planning tables use observed 2024 current users and
+projected 2025 WRA. The growth assumptions remain the 2018–2024 DHS trend,
+2013–2024 DHS trend, and a +0.40 pp FPET-informed increment. The same reference
+cohort is held fixed across scenarios. First-year tables are exploratory and ignore
+time already using the method. Historical and AFT tables account for elapsed use.
+
+The numerical audit reconstructed the existing probabilities from the authorized
+IR and derived calendar files. All eight previously saved risk components match
+at the point fit and in every one of the 500 joint survey-bootstrap replicates.
+All 1,380 PSUs in 74 strata participate, including PSUs without eligible episodes.
+Every woman's linked records share her PSU weight. The new pathway models are
+refitted jointly with the original ending models and current-user composition.
+The selected transition families remain fixed within the uncertainty calculation.
+
+The post-ending model uses 1,933 actionable endings from 1,609 women. Held-out
+PSU checks compare predicted with observed modern use after endings. At 12 months,
+prediction is 23.6% versus 22.3% observed among 1,506 histories with follow-up.
+This check has a post-ending clock. Planning integrates each possible ending time
+with the time remaining to the common endpoint 12 months from baseline.
+
+Existing planning values and growth scenarios remain unchanged. The new approach
+adds eight tables, with point estimates in the PPTX and survey intervals in HTML,
+following the existing presentation format. Sparse method/cause cells remain
+uncertain. Model selection, population assumptions, future behavior and the effect
+of any specific intervention are not fully captured by the intervals.
+
+The incremental R build now requires nine risk components and 500 valid joint
+draws. `transition_validation.json` contains aggregate support, fit checks and
+held-out calibration summaries. No individual transition records or fitted model
+objects are bundled. The extracted `310_nigeria_planning_audit.R` and
+`transition_model.R` contain the additional numerical implementation. Run the audit
+with caller-supplied prepared project and output directories, followed optionally
+by the replicate count and number of worker processes. It requires the prepared
+IR/calendar/episode inputs and the selected original-ending family summaries.
+This does not replace the wider preparation sequence or establish a fresh rebuild
+of every report chapter from an IR file.
