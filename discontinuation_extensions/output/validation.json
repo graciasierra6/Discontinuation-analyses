@@ -1,0 +1,24 @@
+{
+  "status": "pass",
+  "target": "all",
+  "comparison": "Regenerated aggregate calculations versus the checked report baseline; independent life-table checks also run in the R modules.",
+  "modules_checked": 26,
+  "numeric_values_checked": 23332,
+  "maximum_absolute_difference": 0,
+  "reports": [
+    {
+      "name": "Discontinuation_and_switching_extensions.html",
+      "embedded_image_instances": 27,
+      "anchors_valid": true,
+      "self_contained": true
+    },
+    {
+      "name": "Modern_method_discontinuation_maps.html",
+      "embedded_image_instances": 0,
+      "anchors_valid": true,
+      "self_contained": true
+    }
+  ],
+  "restricted_microdata_exported": false,
+  "errors": []
+}

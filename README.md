@@ -15,6 +15,23 @@ The three-state folder contains one R entry point per state. Presentations have
 no presenter notes. Restricted DHS microdata and individual-level fitted objects
 are not included.
 
+## Discontinuation and switching extensions
+
+The independent [`discontinuation_extensions/`](discontinuation_extensions/)
+module rebuilds the separate three-country extensions report and interactive
+maps from caller-supplied DHS IR files. It includes national reason-specific
+risk and timing, actionable-ending alluvials, subsequent use by reason,
+interruption duration summaries, first modern destinations, and the separate
+partner/spousal-disapproval analysis.
+
+Its R entry point, bundled renderers, public boundary assets, input instructions
+and validation results are documented in the
+[module README](discontinuation_extensions/README.md). The two reports are
+[`Discontinuation_and_switching_extensions.html`](discontinuation_extensions/output/Discontinuation_and_switching_extensions.html)
+and [`Modern_method_discontinuation_maps.html`](discontinuation_extensions/output/Modern_method_discontinuation_maps.html).
+This module is separate from the national report rebuild described below and
+leaves existing country HTMLs and presentations unchanged.
+
 ## Rebuild and validate
 
 Install R packages `jsonlite`, `digest` and `abind`, and Python 3 with `lxml`:

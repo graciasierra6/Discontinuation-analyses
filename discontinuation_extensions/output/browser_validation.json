@@ -1,0 +1,82 @@
+{
+  "status": "pass",
+  "map_area_outcome_checks": 178,
+  "map_views": [
+    {
+      "country": "Ethiopia",
+      "view": "overview",
+      "outcome": "All reasons",
+      "areas": 14
+    },
+    {
+      "country": "Ethiopia",
+      "view": "overview",
+      "outcome": "Potentially actionable",
+      "areas": 14
+    },
+    {
+      "country": "Nigeria",
+      "view": "overview",
+      "outcome": "All reasons",
+      "areas": 6
+    },
+    {
+      "country": "Nigeria",
+      "view": "overview",
+      "outcome": "Potentially actionable",
+      "areas": 6
+    },
+    {
+      "country": "Nigeria",
+      "view": "detail",
+      "outcome": "All reasons",
+      "areas": 37
+    },
+    {
+      "country": "Nigeria",
+      "view": "detail",
+      "outcome": "Potentially actionable",
+      "areas": 37
+    },
+    {
+      "country": "DRC",
+      "view": "overview",
+      "outcome": "All reasons",
+      "areas": 6
+    },
+    {
+      "country": "DRC",
+      "view": "overview",
+      "outcome": "Potentially actionable",
+      "areas": 6
+    },
+    {
+      "country": "DRC",
+      "view": "detail",
+      "outcome": "All reasons",
+      "areas": 26
+    },
+    {
+      "country": "DRC",
+      "view": "detail",
+      "outcome": "Potentially actionable",
+      "areas": 26
+    }
+  ],
+  "hover_popups": true,
+  "ranked_reasons": true,
+  "top_three_highlighted": true,
+  "reason_shares_sum_100": true,
+  "report_embedded_images": 27,
+  "country_pairs": [
+    "ethiopia",
+    "nigeria",
+    "drc"
+  ],
+  "larger_views": true,
+  "country_tabs": true,
+  "broken_anchors": 0,
+  "mobile_overflow": false,
+  "print_figures": 3,
+  "javascript_errors": []
+}

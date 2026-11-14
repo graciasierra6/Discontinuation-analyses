@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Modern-method discontinuation maps</title><style>__STYLE__</style></head>
+<body>
+<div id="reason-tooltip" class="hovercard" role="tooltip" hidden></div>
+<aside><h2>Discontinuation maps</h2><div class="countries" aria-label="Country">
+<button class="country" data-country="Ethiopia" aria-pressed="true">Ethiopia</button>
+<button class="country" data-country="Nigeria" aria-pressed="false">Nigeria</button>
+<button class="country" data-country="DRC" aria-pressed="false">DRC</button>
+</div><p class="side-note">Modern-method episodes only<br>EC excluded<br>Unadjusted first-year probabilities</p></aside>
+<main>
+<h1>Where are modern-method discontinuation probabilities highest?</h1>
+<p class="intro">Use the overview for regional patterns and the optional detail view for states or provinces. Gold outlines identify the three highest point estimates. Rankings do not establish statistically significant differences.</p>
+<div class="controls"><label>Geographic view<select id="geography"></select></label><label>Reasons for discontinuation<select id="outcome"><option value="All reasons">All reasons</option><option value="Potentially actionable">Potentially actionable causes</option></select></label><div class="national" id="national" aria-live="polite"></div></div>
+<div id="viewnote" class="view-note"></div>
+<div class="layout">
+<section class="panel"><h2 id="maptitle"></h2><p class="note" id="mapscope">12-month modern-method discontinuation · EC excluded · Unadjusted probability</p><div class="mapwrap" id="mapwrap"></div>
+<div class="legend"><div class="gradient"></div><div class="ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div></div>
+<div class="keys"><span><i class="goldkey"></i>Highest three point estimates</span><span><i class="hatchkey"></i>Below 125 exposures</span><span><i class="dotkey"></i>125–249 exposures</span></div>
+<p class="note">Exposure categories refer to unweighted episodes at risk in month 1. Hover for reason-specific probabilities; click or tap to retain details. Areas below 125 are shown only for exploratory viewing, with warnings.</p></section>
+<section class="panel"><h2>Highest point estimates</h2><div class="rank" id="rank"></div><div class="selected-box" id="detail" aria-live="polite"></div></section>
+</div>
+<section class="panel reason-panel"><h2 id="reason-title">Selected area: reasons for discontinuation</h2><div class="reason-columns"><div><h3>12-month discontinuation probabilities</h3><p class="note">Probability that a modern-method episode ends for each reported reason within its first year. Changing monthly risk sets and competing endings are accounted for.</p><div class="reason-scroll" id="probability-analysis"></div></div><div><h3>Reason shares among observed discontinuations</h3><p class="note" id="share-denominator"></p><div class="reason-scroll" id="share-analysis"></div><p class="note">Shares add to 100% before rounding. They describe observed endings and can rank reasons differently from the life-table probabilities.</p></div></div></section>
+<section class="panel table-panel"><h2 id="tabletitle">All areas</h2><div class="table-wrap"><table class="rates"><thead><tr><th>Area</th><th>12-month probability</th><th>95% CI</th><th>Eligible episodes</th><th>Month-1 exposures</th><th>Target endings</th><th>Exposure category</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+<section class="panel methods"><h2>Definitions and interpretation</h2><ul>
+<li>All views use eligible modern-method episodes and exclude EC. The observation window is 3–62 months before interview, retaining eligible delayed entry. Geography reflects residence at interview, which may differ from where method use occurred.</li>
+<li>All reasons includes every observed original-method ending. Potentially actionable causes are method failure, wanting a more effective method, bleeding changes, other side effects/health concerns, and access/cost/convenience. Partner/spousal disapproval remains separate and is excluded from the actionable outcome. All excluded endings remain competing events.</li>
+<li>Probability estimates use weighted competing-risk life tables. Geographic overview estimates are recalculated from pooled episodes, not averages of state/province percentages. National point estimates and episode/event totals reconcile across geographic views; calculations were independently checked against weighted Aalen–Johansen estimates.</li>
+<li>Reason shares use weighted observed first-year endings in the same eligible cohort. In the all-reason view, the denominator includes every reported reason, including unknown/missing. In the actionable view, it includes only actionable endings. These shares are not life-table probabilities or percentages of women.</li>
+<li>Percentile 95% confidence intervals use 1,999 full-frame stratified Rao–Wu n−1 PSU-bootstrap replicates, preserving repeated episodes within women. Small positive multipliers preserve sparse risk-set support; replicate deviations are corrected for smoothing. No empirical interval is shown with zero observed target events. Confidence-interval endpoints do not add.</li>
+<li>DHS reporting conventions use first-month unweighted exposure: below 125, estimates are normally not shown; 125–249, estimates are parenthesized; 250+, no qualification from this particular rule. The optional exploratory detail maps retain below-125 estimates with explicit warnings. Reaching 250 does not guarantee precision, particularly for rare reasons.</li>
+<li>Separate event-count cautions identify fewer than 30 target endings; fewer than 5 receive stronger warnings. A small month-12 risk set is also noted. These additional cautions are descriptive screening rules, not DHS reporting thresholds or formal power calculations.</li>
+<li>Ethiopia retains 14 regions/administrations. Nigeria defaults to six geopolitical zones, with 36 states plus FCT available as detail. DRC defaults to six broad geographic groups listed by the Interior Ministry, with 26 provinces available as detail. DRC groupings are geographic, not current administrative provinces; their membership is displayed for each group.</li>
+<li>Estimates retain actual differences in method mix and population composition. No pairwise tests or causal comparisons are implied by map shading, ordering, or bolded reasons. Bold identifies the top three positive displayed estimates.</li>
+</ul><p>Methods: <a href="https://www.dhsprogram.com/pubs/pdf/DHSG1/Guide_to_DHS_Statistics_DHS-8.pdf">DHS Guide to Statistics</a>. DRC geographic groupings: <a href="https://interieur.gouv.cd/ministere/territoires">Interior Ministry</a>. Boundaries: UN OCHA/HDX COD-AB for <a href="https://data.humdata.org/dataset/cod-ab-eth">Ethiopia</a>, <a href="https://data.humdata.org/dataset/cod-ab-nga">Nigeria</a> and <a href="https://data.humdata.org/dataset/cod-ab-cod">DRC</a>.</p></section>
+</main><script>__SCRIPT__</script></body></html>
