@@ -1,6 +1,6 @@
 # Updated report companion: three switching sensitivities and incremental HTML build.
-# --run=revised-html requires fitted statistics and the current validated report layout.
-# Raw-IR preparation remains a separate mode; this does not freshly render every chapter.
+# Optional legacy --run=revised-html refreshes a supplied report from fitted statistics.
+# --run=prepare reconstructs the calendar; full report builds use the root build pipeline.
 # Corrected DHS Table 7.14 five-year reason window; first-year rates unchanged.
 # Updated full-frame inference and five planning sets with 95% intervals.
 # --run=survey-update rebuilds active numerical outputs from a supplied IR file.
@@ -157,11 +157,10 @@ def main():
     ids=Counter(doc.xpath('//@id'))
     issues=[]
     if a.country=='DRC':
-        issues += [dict(section='method-duration-class-discontinuation',issue='Original grouping uses Pill/Injectables only for short acting; condoms are omitted relative to Ethiopia.',status='definition_discrepancy'),
-                   dict(section='selected-reason-risk-strata',issue='Original DRC bands are in-sample predictions; Ethiopia uses held-out PSU predictions.',status='method_discrepancy'),
-                   dict(section='historical-duration-aware-planning',issue='Confirm all eight current planning tables against the active survey-update numerical outputs; saved-cell matches alone do not validate inference.',status='verification_scope')]
-    if a.country=='Nigeria':issues += [dict(section='regional-actionable-method-mix-decomposition',issue='Original code pools IUD with other modern and uses a different cohort/estimator from the Ethiopia pairwise shared-mix analysis.',status='method_discrepancy'),dict(section='three-approach-planning',issue='Saved planning uses projected 2025 stock and 2026 scenarios; earlier requested 2024 to 2025 horizon needs resolution.',status='horizon_review')]
-    issues += [dict(section='historical-duration-aware-planning; aft-duration-aware-planning',issue='mCPR equivalents use year-end nonmodern counts with observed switching/restarting; distinguish from gross actionable original-method endings.',status='estimand_review')]
+        issues += [dict(section='method-duration-class-discontinuation',issue='The reviewed exploratory short-acting grouping contains pills and injectables. This is a country-specific grouping, not all short-acting modern methods.',status='documented_definition'),
+                   dict(section='selected-reason-risk-strata',issue='The reviewed DRC risk-band diagnostic is in-sample; it is not the held-out prediction diagnostic used in Ethiopia.',status='documented_model_difference')]
+    if a.country=='Nigeria':
+        issues += [dict(section='regional-actionable-method-mix-decomposition',issue='The reviewed zone decomposition pools IUD with other modern and has its own cohort and estimator. It is distinct from Ethiopia pair-specific shared-mix standardization.',status='documented_model_difference')]
     summary=dict(country=a.country,report_sha256=hashlib.sha256(a.report_html.read_bytes()).hexdigest(),
       sections=len(sections),tables=len(inventory),images=len(assets),missing_images=sum(x['status']=='missing' for x in assets),
       table_candidate_matches=sum(bool(x['candidate_sources']) for x in inventory),
@@ -182,7 +181,7 @@ if __name__=='__main__':main()
 )-----"
 COUNTRY <- "DRC"
 REPORT_BASENAME <- "DRC_discontinuation_analysis.html"
-REPORT_SHA256 <- "1f871b9d7c937713cc95311ef4b57601647ca57463b91e3f02ce7405de69e1ca"
+REPORT_SHA256 <- "ef07544fb62b0ef26dcdd7ac025ca8d8a7d6eb63291f11cf622eb4ccbf3c9368"
 RAW_RELATIVE <- "Data/CDIR81FL.dta"
 CORE_MODULES <- c("01_drc_calendar_life_table.R")
 PLANNING_MODULES <- c("01_drc_calendar_life_table.R", "02_drc_descriptive_analyses.R", "05_drc_current_user_planning.R", "06_drc_historical_landmarks.R", "07_drc_duration_aware_planning.R", "08_drc_aft_duration_by_method_cause.R", "12_drc_2026_planning.py", "203_build_drc_planning_tables.py")
@@ -279,8 +278,8 @@ aft-switching-sensitivity	AFT duration model with observed switching pathways)--
 # Only the small, frozen external population inputs used by the report are
 # embedded. Provide a replacement via --auxiliary-dir to change those inputs.
 # Python helpers are included where original numerical arithmetic was Python;
-# they are not represented as original R code. HTML/PPTX layout assembly is
-# outside this numerical source collection. This file does not edit either
+# they are not represented as original R code. Reporting source is included below as REPORT_FILES. It is expanded only
+# into the private runtime directory. This file does not edit either
 # checked final document or promise pixel-identical HTML regeneration.
 
 stopifnot(getRversion() >= '4.0.0')
@@ -393,8 +392,25 @@ prepare_ir <- function(root, ir_file) {
   invisible(NULL)
 }
 
+# Delegate complete reports to the raw-IR national build, not a saved-results refresh.
+run_full_rebuild <- function(opt,planning_only=FALSE) {
+ f<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ if(!file.exists(f))f<-gsub('~+~',' ',f,fixed=TRUE)
+ repo<-dirname(dirname(normalizePath(f)))
+ script<-file.path(repo,if(planning_only)'recompute_planning.R'else'build_reports.R')
+ if(!file.exists(script))stop('Run from the complete repository, including the root build script and tools directory.')
+ input<-if(!is.null(opt[['ir-file']]))opt[['ir-file']]else Sys.getenv('DHS_IR_FILE',unset='')
+ if(!nzchar(input)||is.null(opt[['project-root']]))stop('A full rebuild requires --ir-file and a new --project-root output directory.')
+ python<-if(!is.null(opt$python))opt$python else Sys.getenv('PYTHON',unset='python3')
+ status<-system2(file.path(R.home('bin'),'Rscript'),shQuote(c(script,paste0('--country=',COUNTRY),paste0('--ir-file=',input),paste0('--output-dir=',opt[['project-root']]),paste0('--python=',python))))
+ if(status!=0L)stop('The full raw-IR build failed. Inspect its runtime diagnostics.')
+ invisible(NULL)
+}
+
 main <- function() {
   opt <- parse_options(commandArgs(trailingOnly=TRUE))
+  if(!is.null(opt$run) && opt$run %in% c('full','build-html'))return(run_full_rebuild(opt))
+  if(identical(opt$run,'build-planning'))return(run_full_rebuild(opt,TRUE))
   if (identical(opt$run,"build-html")) opt$run <- "revised-html"
   if (identical(opt$run,"build-planning")) opt$run <- "revised-planning"
   if (isTRUE(opt$help)) cat("Build modes: --run=build-html|build-planning, --statistics-dir, --base-html, --revision-inputs. See the revised README for the build boundary.\n")
@@ -3902,8 +3918,18 @@ m$reason9<-group9(m$reason)
 grouped9<-do.call(rbind,lapply(methods,function(s)do.call(rbind,share_rows(if(s=='All modern')m else m[m$method==s,],s,'reason9',order9))))
 write.csv(grouped9,file.path(out,'drc_five_year_reason_groups_corrected.csv'),row.names=FALSE)
 # Correct the old five-year CSV without changing its column contract.
-oldfile<-file.path(root,'output/Supporting_data/drc_five_year_reason_distribution_by_method.csv');old<-if(file.exists(oldfile))read.csv(oldfile)else NULL
+old <- NULL
 labels_detail<-c('1'='Method failure','2'='Wanted pregnancy','3'='Partner disapproval','7'='Want more effective method','15'='Changes in menstrual bleeding','4'='Other side effects/health','5'='Other side effects/health','6'='Access/cost/convenience','10'='Access/cost/convenience','8'='Access/cost/convenience','11'='Other recorded: fatalistic','12'='Difficulty becoming pregnant/menopause','9'='Infrequent sex/husband away','13'='Marital dissolution/separation','96'='Other recorded: other','98'='Other recorded: unknown','99'='Other recorded: missing')
+# Reconstruct the earlier available-calendar estimate for the correction audit.
+# Its window omitted the most recent three months and was not the DHS 60-month
+# reported-reason window. This calculation is independent of any saved CSV.
+legacy <- readRDS(file.path(root,'Data/Derived/drc_2023_24_calendar_events.rds'))
+legacy <- legacy[legacy$method_code %in% modern_codes & legacy$reason_code>0L & legacy$end<legacy$interview-3L,]
+legacy$method <- ifelse(legacy$method_code==1L,'Pill',ifelse(legacy$method_code==2L,'IUD',ifelse(legacy$method_code==3L,'Injectables',ifelse(legacy$method_code==11L,'Implants','Other modern'))))
+legacy$reason <- unname(labels_detail[as.character(legacy$reason_code)])
+legacy$reason[is.na(legacy$reason)] <- 'Other recorded: unclassified'
+old <- aggregate(wt~method+reason,legacy,sum)
+old$share_within_method_pct <- 100*old$wt/tapply(legacy$wt,legacy$method,sum)[old$method]
 m$detail<-unname(labels_detail[as.character(m$reason_code)]);r<-aggregate(wt~method+detail,m,sum);names(r)<-c('method','reason','weighted_endings');den<-tapply(m$wt,m$method,sum);r$share_within_method_pct<-100*r$weighted_endings/den[r$method];r$observed_endings_n<-vapply(seq_len(nrow(r)),function(i)sum(m$method==r$method[i]&m$detail==r$reason[i]),0L)
 write.csv(r,file.path(out,'drc_five_year_reason_distribution_by_method.csv'),row.names=FALSE)
 if(!is.null(old)){comp<-merge(old[,c('method','reason','share_within_method_pct')],r[,c('method','reason','share_within_method_pct')],by=c('method','reason'),all=TRUE,suffixes=c('_old','_corrected'));comp[is.na(comp)]<-0;comp$difference_pp<-comp$share_within_method_pct_corrected-comp$share_within_method_pct_old
@@ -4844,4 +4870,2406 @@ run_revised_report <- function(opt) {
  cat("Rebuilt 48 planning tables and updated the companion diagnostics. Other chapters and figures retained.\n")
 }
 for(n in names(REVISION_HELPERS))MODULES[[n]]<-list(language=if(grepl("[.]R$",n))"R"else"Python",args=character(),code=REVISION_HELPERS[[n]])
+MODULES[["10_build_drc_reports.py"]] <- list(language="Python",args=character(),code=r"------------------(#!/usr/bin/env python3
+"""Build DRC evidence review from parameterized project inputs.
+Set DRC_PROJECT_ROOT to move the project; no local paths are embedded.
+"""
+import os, html, math
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.path import Path as MplPath
+from matplotlib.patches import PathPatch
+from PIL import Image
+
+ROOT=Path(os.environ['DRC_PROJECT_ROOT'])
+OUT=ROOT/'output'; DATA=OUT/'Supporting_data'; ASSETS=OUT/'assets'
+OUT.mkdir(exist_ok=True);ASSETS.mkdir(exist_ok=True)
+read=lambda n:pd.read_csv(DATA/('drc_'+n+'.csv'))
+time=read('modern_timepoints'); reasons=read('actionable_reasons'); starts=read('method_start_mix')
+reg=read('actionable_province_adjusted_rates'); scenarios=read('2025_mcpr_scenarios')
+current=read('current_users_by_method_and_actionable_projection'); bycause=read('current_users_actionable_by_cause')
+hist=read('duration_aware_current_user_bridge'); aft=read('survival_model_duration_by_method')
+pathways=read('actionable_post_ending_pathways'); validate=read('table_7_13_validation')
+transitions=read('actionable_post_ending_transitions')
+pair3=read('actionable_raw_pairwise_3month');pair12=read('actionable_raw_pairwise_12month')
+N='#173f5b'; TEAL='#118c90'; GOLD='#dc9d28'; RED='#d95849'; GREY='#84909e'; BG='#ffffff'; PALE='#f3f7f9'
+methods=['Injectables','Implants','Pill','IUD','Other modern']
+provinces=[x for x in reg.zone if x!='National']
+reason_order=['Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience']
+plt.rcParams.update({'font.family':'DejaVu Sans','font.size':10,'axes.spines.top':False,'axes.spines.right':False,'axes.labelcolor':N,'text.color':N,'xtick.color':N,'ytick.color':N})
+
+def pct(x,d=1):return '—' if pd.isna(x) else f'{x:.{d}f}%'
+def integer(x):return '—' if pd.isna(x) else f'{x:,.0f}'
+def savefig(name):
+ plt.savefig(ASSETS/name,dpi=190,bbox_inches='tight',facecolor='white');plt.close()
+def national_curve(cause):
+ v=time[(time.scope=='National')].sort_values('month')
+ fig,ax=plt.subplots(figsize=(10,5.1));ax.plot(v.month,v[cause+'_pct'],color=TEAL if cause=='actionable' else N,lw=3,marker='o',ms=5)
+ for m in [3,6,9,12]:
+  z=v[v.month==m].iloc[0];ax.annotate(pct(z[cause+'_pct']),(m,z[cause+'_pct']),xytext=(0,11),textcoords='offset points',ha='center',fontsize=10)
+ ax.set(xlim=(0,12.5),ylim=(0,max(55,v[cause+'_pct'].max()+9)),xticks=[0,3,6,9,12],xlabel='Months since method initiation',ylabel='Cumulative discontinuation (%)')
+ ax.grid(axis='y',alpha=.15);fig.tight_layout();savefig('drc_'+cause+'_national_curve.png')
+for cause in ['all_reason','actionable']:national_curve(cause)
+
+def province_forest():
+ d=reg[reg.zone!='National'].sort_values('unadjusted_pct',ascending=False);y=np.arange(len(d))
+ fig,ax=plt.subplots(figsize=(10.5,10.5))
+ ax.errorbar(d.unadjusted_pct,y,xerr=[d.unadjusted_pct-d.unadjusted_low,d.unadjusted_high-d.unadjusted_pct],fmt='o',color=TEAL,ecolor=TEAL,capsize=2,ms=4)
+ ax.axvline(reg.iloc[0].unadjusted_pct,color=N,ls=':',lw=1.5)
+ ax.set_yticks(y,[z+('*' if n<30 else '') for z,n in zip(d.zone,d.actionable_endings_n)],fontsize=9)
+ ax.invert_yaxis();ax.set(xlabel='12-month actionable discontinuation (%)',xlim=(0,max(d.unadjusted_high)+5));ax.grid(axis='x',alpha=.13)
+ fig.tight_layout();savefig('drc_province_actionable_forest.png')
+province_forest()
+
+def province_forest_half(part):
+ d=reg[reg.zone!='National'].sort_values('unadjusted_pct',ascending=False).iloc[part*13:(part+1)*13];y=np.arange(len(d))
+ fig,ax=plt.subplots(figsize=(10.7,6.1))
+ ax.errorbar(d.unadjusted_pct,y,xerr=[d.unadjusted_pct-d.unadjusted_low,d.unadjusted_high-d.unadjusted_pct],fmt='o',color=TEAL,ecolor=TEAL,capsize=3,ms=5)
+ ax.axvline(reg.iloc[0].unadjusted_pct,color=N,ls=':',lw=1.5)
+ ax.set_yticks(y,[z+('*' if n<30 else '') for z,n in zip(d.zone,d.actionable_endings_n)],fontsize=11)
+ ax.invert_yaxis();ax.set(xlabel='12-month actionable discontinuation (%)',xlim=(0,65));ax.grid(axis='x',alpha=.13)
+ fig.tight_layout();savefig('drc_province_actionable_forest_'+str(part+1)+'.png')
+for k in range(2):province_forest_half(k)
+
+def heatmap(scopes,name,what='share_among_actionable_pct'):
+ d=reasons[reasons.scope.isin(scopes)].copy();p=d.pivot(index='scope',columns='reason',values=what).reindex(index=scopes,columns=reason_order)
+ fig,ax=plt.subplots(figsize=(10.8,max(3,len(scopes)*.35+1.4)))
+ cmap=LinearSegmentedColormap.from_list('c',['#ffffff','#d7ebed',TEAL])
+ ax.imshow(p.values,aspect='auto',cmap=cmap,vmin=0,vmax=100 if what.startswith('share') else 15)
+ ax.set_xticks(np.arange(5),['Failure','More effective','Bleeding','Other health','Access / cost / convenience'],fontsize=9)
+ ax.xaxis.tick_top();ax.set_yticks(np.arange(len(scopes)),[s.split(': ')[0]+('*' if d[d.scope==s].actionable_endings_n.iloc[0]<30 else '') for s in scopes],fontsize=9)
+ for i in range(len(scopes)):
+  for j in range(5):
+   if pd.notna(p.iloc[i,j]):ax.text(j,i,f'{p.iloc[i,j]:.1f}',ha='center',va='center',color='black',fontsize=8)
+ ax.set_xticks(np.arange(-.5,5,1),minor=True);ax.set_yticks(np.arange(-.5,len(scopes),1),minor=True);ax.grid(which='minor',color='white',lw=2);ax.tick_params(which='both',length=0)
+ fig.tight_layout();savefig(name)
+heatmap(['National']+provinces,'drc_province_reason_share.png')
+for k in range(2):heatmap((['National'] if k==0 else [])+provinces[k*13:(k+1)*13],'drc_province_reason_share_'+str(k+1)+'.png')
+for m in methods:heatmap(['National: '+m]+[p+': '+m for p in provinces if p+': '+m in reasons.scope.values],'drc_'+m.lower().replace(' ','_')+'_province_reason_share.png')
+for m in ['Injectables','Implants','Pill']:
+ for k in range(2):
+  scopes=(['National: '+m] if k==0 else [])+[p+': '+m for p in provinces[k*13:(k+1)*13] if p+': '+m in reasons.scope.values]
+  heatmap(scopes,'drc_'+m.lower()+'_province_reason_share_'+str(k+1)+'.png')
+
+def method_mix_chart():
+ d=starts[starts.scope=='National'].copy();d=d[d.method.isin(methods+['Emergency contraception','Non-modern methods'])]
+ colors={'Injectables':TEAL,'Implants':N,'Pill':GOLD,'IUD':RED,'Emergency contraception':'#bd6b95','Other modern':GREY,'Non-modern methods':'#a18b71'}
+ d=d.sort_values('share_of_all_starts_pct');fig,ax=plt.subplots(figsize=(9,4.8));ax.barh(d.method,d.share_of_all_starts_pct,color=[colors[x] for x in d.method])
+ for i,r in enumerate(d.itertuples()):ax.text(r.share_of_all_starts_pct+.4,i,pct(r.share_of_all_starts_pct),va='center',fontsize=10)
+ ax.set(xlim=(0,max(d.share_of_all_starts_pct)+8),xlabel='Share of all method starts (%)');ax.grid(axis='x',alpha=.15);fig.tight_layout();savefig('drc_method_start_mix.png')
+method_mix_chart()
+
+def province_mix_chart(part):
+ cats=['Injectables','Implants','Pill','IUD','Emergency contraception','Other modern','Non-modern methods']
+ colors=[TEAL,N,GOLD,RED,'#bd6b95',GREY,'#a18b71']
+ scopes=(['National'] if part==0 else [])+provinces[part*13:(part+1)*13]
+ d=starts[starts.scope.isin(scopes)].pivot(index='scope',columns='method',values='share_of_all_starts_pct').reindex(index=scopes,columns=cats).fillna(0)
+ fig,ax=plt.subplots(figsize=(11,6.4));left=np.zeros(len(scopes))
+ for cat,col in zip(cats,colors):
+  ax.barh(np.arange(len(scopes)),d[cat],left=left,color=col,label=cat,height=.68);left+=d[cat].values
+ ax.set_yticks(np.arange(len(scopes)),scopes,fontsize=10);ax.invert_yaxis();ax.set(xlim=(0,100),xlabel='Share of all method starts (%)')
+ ax.legend(ncol=4,bbox_to_anchor=(.5,-.13),loc='upper center',frameon=False,fontsize=9);fig.tight_layout();savefig('drc_province_start_mix_'+str(part+1)+'.png')
+for k in range(2):province_mix_chart(k)
+
+def province_method_pair(method,part):
+ scopes=provinces[part*13:(part+1)*13]
+ mix=starts[(starts.method==method)&(starts.scope.isin(scopes))].set_index('scope').share_of_all_starts_pct
+ risk=time[(time.month==12)&(time.scope.isin([p+': '+method for p in scopes]))].set_index('scope')
+ a=np.array([mix.get(p,0) for p in scopes]);b=np.array([risk.actionable_pct.get(p+': '+method,np.nan) for p in scopes]);n=np.array([risk.actionable_endings_n.get(p+': '+method,0) for p in scopes])
+ fig,ax=plt.subplots(figsize=(10.5,6.5));y=np.arange(len(scopes));ax.barh(y-.18,a,height=.32,color=GOLD,label='Share of all method starts');ax.barh(y+.18,b,height=.32,color=N,label='12-month actionable discontinuation')
+ ax.set_yticks(y,[p+('*' if nn<30 else '') for p,nn in zip(scopes,n)],fontsize=10);ax.invert_yaxis();ax.set(xlim=(0,max(65,np.nanmax(b)+5)),xlabel='Percent (different denominators)');ax.legend(loc='lower right',frameon=False,fontsize=9);ax.grid(axis='x',alpha=.15);fig.tight_layout();savefig('drc_'+method.lower().replace(' ','_')+'_start_risk_'+str(part+1)+'.png')
+for method in methods:
+ for part in range(2):province_method_pair(method,part)
+
+def pathway_figures():
+ d=pathways.pivot(index='status',columns='month_after_ending',values='percent').fillna(0).sort_values(12,ascending=False)
+ fig,ax=plt.subplots(figsize=(9.7,5));y=np.arange(len(d));ax.barh(y-.18,d.get(1,0),height=.34,color=GOLD,label='1 month');ax.barh(y+.18,d.get(12,0),height=.34,color=N,label='12 months')
+ ax.set_yticks(y,d.index,fontsize=9);ax.invert_yaxis();ax.set(xlim=(0,80),xlabel='Weighted share (%)');ax.legend(frameon=False);ax.grid(axis='x',alpha=.15);fig.tight_layout();savefig('drc_actionable_pathway_status.png')
+ order=['No method recorded','Different modern method','Same modern method','Pregnant, birth or termination','Traditional/other method','Other/unknown']
+ colors={'No method recorded':'#83909b','Different modern method':TEAL,'Same modern method':N,'Pregnant, birth or termination':GOLD,'Traditional/other method':RED,'Other/unknown':'#c0c8cc'}
+ m=transitions.pivot(index='month_1',columns='month_12',values='weighted_events').reindex(index=order,columns=order).fillna(0);m=m/m.values.sum();left=m.sum(axis=1);right=m.sum(axis=0)
+ fig,ax=plt.subplots(figsize=(10.5,5.8));ax.set_xlim(-.28,1.28);ax.set_ylim(0,1);ax.axis('off');lc=left.cumsum()-left;rc=right.cumsum()-right
+ lpos={s:lc[s] for s in order};rpos={s:rc[s] for s in order}
+ for src in order:
+  for dst in order:
+   v=m.loc[src,dst]
+   if v<=0:continue
+   y1=lpos[src];y2=rpos[dst];lpos[src]+=v;rpos[dst]+=v
+   verts=[(.08,y1),(.35,y1),(.65,y2),(.92,y2),(.92,y2+v),(.65,y2+v),(.35,y1+v),(.08,y1+v),(.08,y1)]
+   codes=[MplPath.MOVETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.LINETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.CLOSEPOLY]
+   ax.add_patch(PathPatch(MplPath(verts,codes),facecolor=colors[src],edgecolor='none',alpha=.37))
+ for s in order:
+  if left[s]>0:ax.bar(.06,left[s],bottom=lc[s],width=.045,color=colors[s]);ax.text(.015,lc[s]+left[s]/2,s,ha='right',va='center',fontsize=8)
+  if right[s]>0:ax.bar(.94,right[s],bottom=rc[s],width=.045,color=colors[s]);ax.text(.985,rc[s]+right[s]/2,s,ha='left',va='center',fontsize=8)
+ ax.text(.06,1.025,'1 month',ha='center',fontsize=12,fontweight='bold');ax.text(.94,1.025,'12 months',ha='center',fontsize=12,fontweight='bold');fig.tight_layout();savefig('drc_actionable_month1_to_month12_alluvial.png')
+pathway_figures()
+
+def htable(df,cols=None,formats=None,star=None):
+ cols=cols or list(df.columns);formats=formats or {};out=['<table><thead><tr>'+''.join('<th>'+html.escape(str(c))+'</th>' for c in cols)+'</tr></thead><tbody>']
+ for _,r in df.iterrows():
+  out.append('<tr>')
+  for c in cols:
+   x=r[c];s=formats[c](x) if c in formats else ('—' if pd.isna(x) else str(x))
+   if star and c==star[0] and bool(r[star[1]]):s+='*'
+   out.append('<td>'+html.escape(s)+'</td>')
+  out.append('</tr>')
+ out.append('</tbody></table>');return ''.join(out)
+
+def reason_table(scope):
+ d=reasons[reasons.scope==scope].set_index('reason').reindex(reason_order).reset_index()
+ d=d.rename(columns={'reason':'Reason','cause_specific_12_month_pct':'12-month cause-specific risk','share_among_actionable_pct':'Share of actionable endings'})
+ return htable(d,['Reason','12-month cause-specific risk','Share of actionable endings'],{'12-month cause-specific risk':pct,'Share of actionable endings':pct})
+
+htmlparts=['''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DRC contraceptive discontinuation analysis</title><style>
+:root{--navy:#173f5b;--teal:#118c90;--gold:#dc9d28}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#253c4c;margin:0;background:#fff;line-height:1.5}aside{position:fixed;top:0;bottom:0;left:0;width:245px;overflow:auto;background:#f3f7f9;padding:24px 18px}aside a{display:block;color:#173f5b;text-decoration:none;font-size:13px;padding:6px 0}main{max-width:1180px;margin-left:275px;padding:34px 45px}h1,h2,h3{font-family:Georgia,serif;color:#173f5b}h1{font-size:34px}h2{margin-top:62px;border-bottom:3px solid #dc9d28;padding-bottom:7px}h3{margin-top:30px}.lede{font-size:18px;color:#173f5b}.note{background:#f3f7f9;border-left:4px solid #118c90;padding:13px 16px;margin:16px 0}.caution{border-left-color:#dc9d28}table{border-collapse:collapse;width:100%;font-size:13px;margin:18px 0 28px}th{background:#173f5b;color:white;text-align:left}td,th{padding:7px 9px;border-bottom:1px solid #dce5e9}tr:nth-child(even) td{background:#f6f9fa}figure{margin:24px 0}figure img{width:100%;height:auto;max-height:850px;object-fit:contain}figcaption,.small{font-size:12px;color:#607480}.grid{display:grid;grid-template-columns:1fr 1fr;gap:25px}.banner{padding:19px 22px;background:#173f5b;color:#fff}.banner b{color:#e9b254}@media(max-width:900px){aside{position:static;width:auto}main{margin:0;padding:22px}.grid{grid-template-columns:1fr}}@media print{aside{display:none}main{margin:0}}
+</style></head><body><aside><b>DRC analysis</b><a href="#scope">Scope and denominators</a><a href="#validation">DHS validation</a><a href="#all-cause">All-reason discontinuation</a><a href="#actionable">Potentially actionable discontinuation</a><a href="#provinces">26-province analysis</a><a href="#adjusted">Adjusted province model</a><a href="#pathways">What follows discontinuation</a><a href="#planning">Current users and mCPR</a><a href="#duration">Duration-aware approaches</a><a href="#limitations">Interpretation</a></aside><main>''']
+htmlparts.append('<h1>Contraceptive discontinuation in the Democratic Republic of the Congo</h1><p class="lede">2023–24 DHS calendar analysis: national patterns, all 26 provinces, and illustrations for current modern-method users.</p>')
+htmlparts.append('<section id="scope"><h2>Scope and denominators</h2><p>Discontinuation rates use contraceptive-use episodes as their unit. National and provincial modern-method analyses include injectable, implant, pill, IUD, and other continuing modern-method episodes; emergency contraception is excluded from ongoing-method discontinuation risk. The survey mCPR includes all women aged 15–49 who report current modern use under the DHS definition. A 12-month cause-specific probability is a competing-risk life-table estimate, not the number of observed endings divided by the number of episodes.</p><div class="note">Potentially actionable reasons: method failure; wanting a more effective method; bleeding; other side effects or health concerns; and access, cost, or inconvenience. Pregnancy intentions, partner disapproval, and circumstantial or unresolved reasons are competing endings rather than actionable events.</div></section>')
+htmlparts.append('<section id="validation"><h2>Validation against the DHS discontinuation table</h2><p>The calendar reconstruction matches every published weighted episode count in Table 7.13; 104 of 110 rate cells agree to one decimal, with the remaining six differing by 0.1 percentage point.</p>')
+htmlparts.append(htable(validate.rename(columns={'method':'Method','weighted_episodes':'Weighted episodes','unweighted_episodes':'Observed episodes','max_rate_abs_difference_pp':'Largest rate difference (pp)'}),['Method','Weighted episodes','Observed episodes','Largest rate difference (pp)'],{'Weighted episodes':integer,'Largest rate difference (pp)':lambda x:f'{x:.1f}'}))
+htmlparts.append('</section><section id="all-cause"><h2>All-reason modern-method discontinuation</h2><div class="grid"><figure><img src="assets/drc_all_reason_national_curve.png"><figcaption>Cumulative discontinuation of the original modern method, any recorded reason.</figcaption></figure><figure><img src="assets/drc_method_start_mix.png"><figcaption>Weighted initiation mix among all method starts; non-modern starts are displayed for context.</figcaption></figure></div>')
+allnat=time[time.scope=='National'][['month','all_reason_pct','all_reason_ci_low','all_reason_ci_high']].copy();allnat.columns=['Month','All-reason 12-month cumulative (%)','95% CI low','95% CI high']
+htmlparts.append(htable(allnat,formats={c:pct for c in allnat.columns if c!='Month'}))
+htmlparts.append('<h3>Method initiation mix in all 26 provinces</h3><p>All method starts are included in these composition bars; the later discontinuation figures use eligible continuing modern-method episodes.</p><figure><img src="assets/drc_province_start_mix_1.png"></figure><figure><img src="assets/drc_province_start_mix_2.png"></figure>')
+alltab=read('table_7_13_replicated');alltab=alltab[alltab.method.isin(['Injectables','Implants','Pill','Male condom','All methods'])]
+alltab=alltab[['method','reason_1_pct','reason_2_pct','reason_3_pct','reason_4_pct','reason_5_pct','reason_6_pct','reason_7_pct','reason_8_pct','reason_9_pct','any_reason_pct']]
+alltab.columns=['Method','Failure','Want pregnancy','Other fertility','Bleeding','Other health','More effective','Access / cost','Partner disapproval','Other recorded','Any reason']
+htmlparts.append('<h3>Published-method categories: 12-month all-reason risks by recorded reason</h3><p>This is the reconstructed DHS Table 7.13 breakdown for its displayed method categories. Its “All methods” row includes non-modern methods and must not be read as the all-modern estimate above.</p>'+htable(alltab,formats={c:pct for c in alltab.columns if c!='Method'}))
+htmlparts.append('</section><section id="actionable"><h2>Potentially actionable discontinuation</h2><div class="grid"><figure><img src="assets/drc_actionable_national_curve.png"><figcaption>Cumulative competing-risk probability due to potentially actionable causes.</figcaption></figure><div class="banner"><b>National 12-month risk</b><h3 style="color:white;font-size:45px;margin:10px 0">'+pct(time[(time.scope=='National')&(time.month==12)].actionable_pct.iloc[0])+'</h3><p>Among eligible modern-method episodes. This is distinct from the all-reason risk and from an mCPR loss.</p></div></div><h3>Reason-specific 12-month risk and distribution</h3>'+reason_table('National'))
+mn=time[(time.scope.str.startswith('National:'))&(time.month==12)].copy();mn['method']=mn.scope.str.split(': ').str[-1];mn=mn[['method','eligible_episodes_n','actionable_endings_n','all_reason_pct','actionable_pct']];mn.columns=['Method','Eligible episodes','Observed actionable endings','All-reason 12-month risk','Actionable 12-month risk']
+htmlparts.append(htable(mn,formats={'All-reason 12-month risk':pct,'Actionable 12-month risk':pct}))
+htmlparts.append('</section><section id="provinces"><h2>All 26 provinces</h2><p>The province-level view retains all provinces. An asterisk marks fewer than 30 observed actionable endings, a descriptive warning rather than a significance test. Interpret the estimates with their design-bootstrap 95% confidence intervals.</p><figure><img src="assets/drc_province_actionable_forest.png"><figcaption>12-month actionable discontinuation. Dotted line: national estimate. * Fewer than 30 observed actionable endings.</figcaption></figure>')
+pr=reg[['zone','eligible_episodes_n','actionable_endings_n','unadjusted_pct','unadjusted_low','unadjusted_high']].copy();pr.columns=['Province','Eligible episodes','Actionable endings','12-month risk','95% CI low','95% CI high'];pr['small']=pr['Actionable endings']<30
+htmlparts.append(htable(pr,['Province','Eligible episodes','Actionable endings','12-month risk','95% CI low','95% CI high'],{c:pct for c in ['12-month risk','95% CI low','95% CI high']},('Province','small')))
+htmlparts.append('<h3>Timing by province</h3>')
+tm=time[time.scope.isin(['National']+provinces)].pivot(index='scope',columns='month',values='actionable_pct').reindex(['National']+provinces);tm.columns=[f'{c}-month' for c in tm.columns];tm.insert(0,'Province',tm.index);tm['First 3 months / 12 months']=100*tm['3-month']/tm['12-month'];tm=tm.reset_index(drop=True)
+htmlparts.append(htable(tm,formats={c:pct for c in tm.columns if c!='Province'}))
+htmlparts.append('<h3>Unadjusted province pairwise tests</h3><p>Pairwise differences were estimated from the stratified-PSU bootstrap of competing-risk rates and tested with two-sided normal approximations using bootstrap standard errors. Holm correction covers all 325 province pairs separately at 3 and 12 months. These are unadjusted comparisons; small-cell flags and uncertainty remain important.</p>')
+for mm,dd in [(3,pair3),(12,pair12)]:
+ selected=dd[dd.significant_05].sort_values('p_holm').copy();selected=selected[['province_1','province_2','difference_pp','ci_low','ci_high','p_holm']];selected.columns=['Province 1','Province 2','Difference (pp)','Pointwise 95% CI low','Pointwise 95% CI high','Holm p']
+ htmlparts.append('<h4>'+str(mm)+' months: '+str(len(selected))+' of 325 pairs pass Holm 5%</h4>'+htable(selected,formats={'Difference (pp)':lambda x:f'{x:+.1f}','Pointwise 95% CI low':lambda x:f'{x:+.1f}','Pointwise 95% CI high':lambda x:f'{x:+.1f}','Holm p':lambda x:f'{x:.3f}'}))
+htmlparts.append('<h3>Share of actionable endings by reason</h3><p>Each populated row sums to approximately 100% across the five reasons. The denominator is actionable discontinuations in that province, not all method episodes.</p><figure><img src="assets/drc_province_reason_share.png"><figcaption>* Fewer than 30 observed actionable endings.</figcaption></figure>')
+for m in methods:
+ htmlparts.append('<h3>'+m+': province reason distribution</h3><figure><img src="assets/drc_'+m.lower().replace(' ','_')+'_province_reason_share.png"><figcaption>* Fewer than 30 observed actionable endings. Most province-by-method cells are sparse; this is exploratory.</figcaption></figure>')
+htmlparts.append('<h3>Method starts and actionable risk, side by side</h3><p>Gold bars show the method’s share of all method starts in a province. Navy bars show its 12-month actionable ending probability among that method’s eligible episodes. These have different denominators. * marks fewer than 30 observed actionable endings for the method in that province.</p>')
+for m in methods:
+ htmlparts.append('<h3>'+m+'</h3><figure><img src="assets/drc_'+m.lower().replace(' ','_')+'_start_risk_1.png"></figure><figure><img src="assets/drc_'+m.lower().replace(' ','_')+'_start_risk_2.png"></figure>')
+htmlparts.append('</section><section id="adjusted"><h2>Adjusted province model</h2><p>A discrete-time multinomial episode-month model distinguishes continuation, actionable ending, and other competing ending. Model 1 includes month of method use and method mix plus province. Model 2 additionally includes age and parity at method start, marital status, education, wealth, residence, and start cohort. Common-mix predictions set each episode in the pooled analytic sample to each province in turn, then average; this makes province comparisons at the same method and population composition. The adjusted estimates below are exploratory point estimates; design-aware intervals for these predictions and pairwise comparisons have not yet been completed.</p>')
+ar=reg[['zone','unadjusted_pct','model_1_common_mix_pct','model_2_common_mix_pct','eligible_episodes_n','actionable_endings_n']].copy();ar.columns=['Province','Observed risk','Method-adjusted','Fully adjusted','Eligible episodes','Actionable endings'];ar['small']=ar['Actionable endings']<30
+htmlparts.append(htable(ar,['Province','Observed risk','Method-adjusted','Fully adjusted','Eligible episodes','Actionable endings'],{c:pct for c in ['Observed risk','Method-adjusted','Fully adjusted']},('Province','small'))+'</section>')
+htmlparts.append('<section id="pathways"><h2>What follows an actionable method ending</h2><p>Ending the original method does not necessarily mean leaving modern use. The calendar records modern switching, later restart, traditional method use, pregnancy-related states, and no method at different follow-up times.</p><figure><img src="assets/drc_actionable_pathway_status.png"><figcaption>Weighted status shares at one and twelve months; the follow-up denominators differ.</figcaption></figure><figure><img src="assets/drc_actionable_month1_to_month12_alluvial.png"><figcaption>Transitions among the same 633 observed actionable endings with both follow-up points. Ribbon widths reflect weighted episode shares.</figcaption></figure>')
+pt=pathways[['month_after_ending','status','percent','observed_ending_events_n']].copy();pt.columns=['Month after ending','Recorded status','Weighted share','Observed endings'];htmlparts.append(htable(pt,formats={'Weighted share':pct})+'</section>')
+htmlparts.append('<section id="planning"><h2>Current users and illustrative mCPR scale</h2><p>The 2024 DHS all-women mCPR is '+pct(scenarios.baseline_mcpr_2024_pct.iloc[0],2)+'. Applying it to 2024 UN women aged 15–49 gives '+integer(scenarios.current_users_2024.iloc[0])+' current modern users. Method shares come from the weighted DHS current-use distribution. These projections are illustrations, not forecasts of intervention impact.</p>')
+cu=current[['method','current_users_2024','actionable_first_year_risk_pct','illustrative_original_method_endings']].copy();cu.columns=['Method','2024 current users','First-year actionable risk','Illustrative original-method endings'];htmlparts.append(htable(cu,formats={'2024 current users':integer,'First-year actionable risk':pct,'Illustrative original-method endings':integer}))
+htmlparts.append('<h3>By method and cause</h3>');pivot=bycause.pivot(index='method',columns='reason',values='illustrative_users').reindex(methods).reindex(columns=reason_order);pivot['Total']=pivot.sum(axis=1);pivot.insert(0,'Method',pivot.index);pivot=pivot.reset_index(drop=True);htmlparts.append(htable(pivot,formats={c:integer for c in pivot.columns if c!='Method'}))
+htmlparts.append('<h3>Different mCPR growth scenarios</h3><p>The scenario labels identify the assumption applied to 2024 survey mCPR: no growth, historical DHS trend, or Track20/FPET modeled trend. The same 2025 women aged 15–49 denominator is used for all three scenarios.</p>')
+sc=scenarios[['scenario','growth_pp','baseline_mcpr_2024_pct','wra_2025','mcpr_2025_pct','gross_mcpr_equivalent_pp','mcpr_if_actionable_endings_avoided_pct']].copy();sc.columns=['Growth scenario','Annual growth (pp)','2024 mCPR','2025 women 15–49','2025 mCPR','Gross ending equivalent (pp)','mCPR if all original-method endings avoided'];htmlparts.append(htable(sc,formats={'Annual growth (pp)':lambda x:f'{x:+.2f}','2024 mCPR':pct,'2025 women 15–49':integer,'2025 mCPR':pct,'Gross ending equivalent (pp)':lambda x:f'{x:.2f}','mCPR if all original-method endings avoided':pct})+'</section>')
+htmlparts.append('<section id="duration"><h2>Duration-aware current-user approaches</h2><p>First-year risks apply to new method starts. For users already on a method, the historical approach averages observed next-12-month probabilities at each method and elapsed-duration landmark over the current-user duration distribution. The AFT approach fits cause-specific accelerated failure-time models and predicts the next 12 months conditional on elapsed use. Both pathway-adjusted illustrations then use observed modern-use status after an actionable ending.</p>')
+comparison=pd.DataFrame({'Approach':['First-year life table','Historical duration aware','AFT plus observed pathways'],'Original-method endings':[scenarios.illustrative_gross_endings.iloc[0],scenarios.historical_duration_actionable_endings.iloc[0],scenarios.aft_actionable_endings.iloc[0]],'Year-end nonmodern after actionable ending':[np.nan,scenarios.historical_duration_nonmodern_year_end.iloc[0],scenarios.aft_pathway_nonmodern_year_end.iloc[0]],'Gross mCPR equivalent (pp)':[scenarios.gross_mcpr_equivalent_pp.iloc[0],scenarios.historical_duration_gross_pp.iloc[0],scenarios.aft_gross_pp.iloc[0]],'Year-end nonmodern equivalent (pp)':[np.nan,scenarios.historical_duration_year_end_pp.iloc[0],scenarios.aft_pathway_year_end_pp.iloc[0]]})
+htmlparts.append(htable(comparison,formats={'Original-method endings':integer,'Year-end nonmodern after actionable ending':integer,'Gross mCPR equivalent (pp)':lambda x:'—' if pd.isna(x) else f'{x:.2f}','Year-end nonmodern equivalent (pp)':lambda x:'—' if pd.isna(x) else f'{x:.2f}'}))
+htmlparts.append('<h3>Historical duration-aware method estimates</h3>');hd=hist[['method','current_users_2024','actionable_ending_risk_next12_pct','projected_actionable_original_method_endings','projected_nonmodern_at_month12_after_actionable']].copy();hd.columns=['Method','Current users','Next-12-month actionable risk','Original-method endings','Nonmodern at year end'];htmlparts.append(htable(hd,formats={'Current users':integer,'Next-12-month actionable risk':pct,'Original-method endings':integer,'Nonmodern at year end':integer}))
+htmlparts.append('<h3>AFT method estimates</h3>');ad=aft[['method','current_users_2024','survival_actionable_next12_pct','survival_original_method_endings','survival_pathway_nonmodern_at_year_end']].copy();ad.columns=['Method','Current users','Next-12-month actionable risk','Original-method endings','Nonmodern at year end'];htmlparts.append(htable(ad,formats={'Current users':integer,'Next-12-month actionable risk':pct,'Original-method endings':integer,'Nonmodern at year end':integer}))
+htmlparts.append('<h3>Scenario comparison</h3>');ss=scenarios[['scenario','mcpr_2025_pct','historical_duration_year_end_pp','aft_pathway_year_end_pp']].copy();ss.columns=['Growth scenario','Usual 2025 mCPR','Historical year-end equivalent (pp)','AFT + pathways year-end equivalent (pp)'];htmlparts.append(htable(ss,formats={'Usual 2025 mCPR':pct,'Historical year-end equivalent (pp)':lambda x:f'{x:.2f}','AFT + pathways year-end equivalent (pp)':lambda x:f'{x:.2f}'}))
+histcause=read('duration_aware_current_user_by_cause');aftcause=read('survival_model_duration_by_method_cause')
+def cause_matrix(df,value):
+ m=df.pivot(index='method',columns='reason',values=value).reindex(index=methods,columns=reason_order).fillna(0)
+ m['Total']=m.sum(axis=1);total=m.sum(axis=0);m.loc['All methods']=total;m.loc['Women aged 15–49 in 2025']=scenarios.wra_2025.iloc[0];m.loc['mCPR equivalent (pp)']=100*total/scenarios.wra_2025.iloc[0]
+ m.insert(0,'Method',m.index);return m.reset_index(drop=True)
+cause_matrices=[('First-year original-method endings',cause_matrix(bycause,'illustrative_users')),
+ ('Historical duration-aware year-end nonmodern',cause_matrix(histcause,'projected_nonmodern_at_month12')),
+ ('AFT + pathways year-end nonmodern',cause_matrix(aftcause,'aft_pathway_nonmodern_at_year_end'))]
+for label,mat in cause_matrices:
+ htmlparts.append('<h3>'+label+': method × cause and mCPR equivalent</h3><p>Each percentage-point contribution is the total women for that cause divided by 2025 women aged 15–49 × 100. The first-year table measures original-method endings; the duration-aware tables measure nonmodern status at year end after an actionable ending.</p>'+htable(mat,formats={c:(lambda x:f'{x:.2f}' if x<10 else integer(x)) for c in mat.columns if c!='Method'}))
+
+use=read('current_use_mcpr'); use=use[['method','share_of_current_modern_users_pct']].set_index('method')
+def method_scenario_table(scenario,approach):
+ row=scenarios[scenarios.scenario==scenario].iloc[0];base=row.mcpr_2025_pct;wra=row.wra_2025
+ loss={'First-year':current.set_index('method').illustrative_original_method_endings,
+       'Historical':hist.set_index('method').projected_nonmodern_at_month12_after_actionable,
+       'AFT':aft.set_index('method').survival_pathway_nonmodern_at_year_end}[approach]
+ order=methods+['Emergency contraception'];records=[]
+ for m in order:
+  share=use.loc[m,'share_of_current_modern_users_pct']/100;users24=row.current_users_2024*share;usual=row.usual_users_2025*share;avoided=loss.get(m,0)
+  records.append({'Method':m,'2024 current users':users24,'2025 usual users':usual,'Avoided endings / nonmodern':avoided,'Usual mCPR share':100*usual/wra,'If avoided mCPR share':100*(usual+avoided)/wra})
+ d=pd.DataFrame(records);d.loc[len(d)]={'Method':'All modern methods','2024 current users':d['2024 current users'].sum(),'2025 usual users':d['2025 usual users'].sum(),'Avoided endings / nonmodern':d['Avoided endings / nonmodern'].sum(),'Usual mCPR share':d['Usual mCPR share'].sum(),'If avoided mCPR share':d['If avoided mCPR share'].sum()}
+ return d
+for approach in ['First-year','Historical','AFT']:
+ htmlparts.append('<h3>'+approach+' approach: 2025 mCPR by method and growth scenario</h3>')
+ for scenario in scenarios.scenario:
+  d=method_scenario_table(scenario,approach);htmlparts.append('<h4>'+scenario+'</h4>'+htable(d,formats={'2024 current users':integer,'2025 usual users':integer,'Avoided endings / nonmodern':integer,'Usual mCPR share':pct,'If avoided mCPR share':pct}))
+htmlparts.append('</section>')
+htmlparts.append('<section id="limitations"><h2>Interpretation and limits</h2><div class="note caution"><p>Sixteen of 26 provinces have fewer than 30 observed actionable endings. Province-specific injectable and implant reason distributions are much sparser. Asterisked cells are retained for transparency, not for ranking or statistical inference. The IUD national actionable estimate is based on only 23 eligible episodes and four events; the AFT projection uses an other-modern proxy.</p><p>The first-year projection applies the risk for a newly started episode to current users; it is an upper-level gross illustration of original-method endings. Averted endings are not equivalent to added modern users because some women switch or restart. Historical and AFT estimates account for current duration but rely on retrospective calendar and pathway assumptions. None is a causal estimate of program impact.</p></div></section></main></body></html>')
+html_path=OUT/'DRC_discontinuation_analysis.html';html_path.write_text(''.join(htmlparts),encoding='utf-8')
+
+)------------------")
+
+MODULES[["19_drc_method_timing_figures.py"]] <- list(language="Python",args=c("--project-root"),code=r"------------------(#!/usr/bin/env python3
+"""Create presentation timing plots from validated monthly life tables."""
+import argparse
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+args=ap.parse_args()
+root=args.project_root
+d=pd.read_csv(root/'output/Supporting_data/drc_method_timing_monthly.csv')
+out=root/'output/assets';out.mkdir(parents=True,exist_ok=True)
+colors={'Pill':'#DA9A25','Injectables':'#118C90','All modern':'#435666',
+        'Other modern':'#697885','IUD':'#E65A4F','Implants':'#173F5B'}
+order=['Injectables','Pill','All modern','Other modern','IUD','Implants']
+
+def make(field,filename,ylim):
+    plt.rcParams.update({'font.family':'Arial','font.size':14})
+    fig,ax=plt.subplots(figsize=(10,5.05),dpi=240)
+    fig.patch.set_facecolor('white');ax.set_facecolor('white')
+    for y in range(0,ylim+1,10):ax.axhline(y,color='#E6ECEF',lw=.8,zorder=0)
+    for x in (3,6,9,12):ax.axvline(x,color='#E6ECEF',lw=.7,ls=':',zorder=0)
+    for method in order:
+        m=d[d.method==method].sort_values('month');v=m[field].to_numpy()
+        ax.step([0,*m.month], [0,*v], where='post', lw=2.4,
+                color=colors[method],zorder=3)
+        ax.plot([3,6,12],[v[2],v[5],v[11]],'o',ms=5,color=colors[method],zorder=4)
+    # Keep direct labels legible where 12-month estimates nearly coincide.
+    offset={'all_reason_pct':{'Injectables':0,'Pill':0,'All modern':2.0,
+               'Other modern':-2.0,'IUD':0,'Implants':0},
+            'actionable_pct':{'Injectables':0,'Pill':0,'All modern':0,
+               'IUD':-1.0,'Other modern':1.8,'Implants':-1.8}}[field]
+    for method in order:
+        m=d[d.method==method].sort_values('month');end=float(m[field].iloc[-1]);label_y=end+offset[method]
+        if offset[method]:ax.plot([12,12.18],[end,label_y],color=colors[method],lw=.9)
+        flag='*' if method=='IUD' else ''
+        ax.text(12.25,label_y,f'{method}{flag}  {end:.1f}%',va='center',ha='left',
+                color=colors[method],fontsize=11.3,fontweight='bold' if method=='All modern' else 'normal')
+    ax.set_xlim(0,16.4);ax.set_ylim(0,ylim)
+    ax.set_xticks([0,3,6,9,12]);ax.set_yticks(range(0,ylim+1,10));
+    ax.set_yticklabels([f'{x}%' for x in range(0,ylim+1,10)])
+    ax.set_xlabel('Months since method initiation',labelpad=7)
+    ax.set_ylabel('Cumulative discontinuation probability',labelpad=8)
+    ax.spines[['top','right','left']].set_visible(False)
+    ax.spines['bottom'].set_color('#CBD7DE')
+    ax.tick_params(axis='both',length=0,pad=7)
+    fig.subplots_adjust(left=.10,right=.98,bottom=.16,top=.96)
+    fig.savefig(out/filename,dpi=240,facecolor='white')
+    plt.close(fig)
+
+make('all_reason_pct','drc_all_reason_method_timing.png',80)
+make('actionable_pct','drc_actionable_method_timing.png',50)
+print('Wrote two method-specific monthly timing figures')
+)------------------")
+
+MODULES[["23_drc_opening_method_figures.py"]] <- list(language="Python",args=c("--project-root"),code=r"------------------(#!/usr/bin/env python3
+"""Create DRC all-reason method bars and paired start/risk bars."""
+import argparse
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+a=ap.parse_args();root=a.project_root
+data=root/'output/Supporting_data';assets=root/'output/assets';assets.mkdir(parents=True,exist_ok=True)
+t=pd.read_csv(data/'drc_method_timing_monthly.csv');t=t[t.month==12].set_index('method')
+starts=pd.read_csv(data/'drc_method_start_mix.csv');starts=starts[starts.scope=='National'].set_index('method')
+methods=['Injectables','Implants','Pill','IUD','Other modern']
+navy='#173F5B';gold='#DA9A25';slate='#435666';grid='#DDE7EB'
+plt.rcParams.update({'font.family':'Arial','font.size':14})
+
+def axes(n):
+ fig,ax=plt.subplots(figsize=(10.4,4.75),dpi=240)
+ fig.patch.set_facecolor('white');ax.set_facecolor('white')
+ ax.set_xlim(0,80);ax.set_xticks([0,20,40,60,80]);ax.set_xticklabels(['0%','20%','40%','60%','80%'])
+ ax.xaxis.grid(True,color=grid,lw=.8);ax.set_axisbelow(True)
+ ax.spines[['top','right','left']].set_visible(False)
+ ax.spines['bottom'].set_color('#C9D6DC')
+ ax.tick_params(axis='both',length=0,pad=7)
+ fig.subplots_adjust(left=.20,right=.96,bottom=.16,top=.96)
+ return fig,ax
+
+fig,ax=axes(6)
+names=['All modern',*methods];vals=[float(t.loc[m,'all_reason_pct']) for m in names]
+yy=np.arange(len(names))[::-1]
+ax.barh(yy,vals,color=[slate]+[navy]*5,height=.55,zorder=3)
+ax.set_yticks(yy);ax.set_yticklabels([n+('*' if n=='IUD' else '') for n in names])
+for y,v in zip(yy,vals):ax.text(v+.6,y,f'{v:.1f}%',va='center',ha='left',fontsize=14,color=navy,fontweight='bold')
+ax.set_xlabel('12-month probability of ending the original method')
+fig.savefig(assets/'drc_all_reason_12month_method_bars.png',dpi=240,facecolor='white');plt.close(fig)
+
+fig,ax=axes(5);yy=np.arange(len(methods))[::-1]
+shares=[float(starts.loc[m,'share_of_all_starts_pct']) for m in methods]
+risks=[float(t.loc[m,'all_reason_pct']) for m in methods]
+ax.barh(yy+.16,risks,color=navy,height=.28,zorder=3,label='12-month discontinuation')
+ax.barh(yy-.16,shares,color=gold,height=.28,zorder=3,label='Share of all method starts')
+ax.set_yticks(yy);ax.set_yticklabels([m+('*' if m=='IUD' else '') for m in methods])
+for y,v in zip(yy,risks):ax.text(v+.5,y+.16,f'{v:.1f}%',va='center',fontsize=12.8,color=navy,fontweight='bold')
+for y,v in zip(yy,shares):ax.text(v+.5,y-.16,f'{v:.1f}%',va='center',fontsize=12.8,color=navy,fontweight='bold')
+ax.set_xlabel('Percent');ax.legend(loc='upper center',bbox_to_anchor=(.5,-.18),ncol=2,frameon=False,fontsize=12.5)
+fig.subplots_adjust(left=.20,right=.96,bottom=.26,top=.96)
+fig.savefig(assets/'drc_all_reason_starts_vs_discontinuation.png',dpi=240,facecolor='white');plt.close(fig)
+print('Created all-reason method and paired-start figures')
+)------------------")
+
+MODULES[["29_drc_ethiopia_sequence_figures.py"]] <- list(language="Python",args=c("--project-root"),code=r"------------------(#!/usr/bin/env python3
+"""DRC figures for the 82-slide Ethiopia-sequence presentation."""
+import argparse
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Patch
+
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True)
+a=ap.parse_args();root=a.project_root
+sup=root/'output/Supporting_data';out=root/'output/assets/ethiopia_sequence';out.mkdir(parents=True,exist_ok=True)
+N='#173F5B';T='#118C90';G='#DA9A25';R='#E65A4F';S='#697885';GRID='#DFE8EC';WHITE='#FFFFFF'
+METHODS=['Injectables','Implants','Pill','IUD','Other modern']
+PALETTE={'Injectables':T,'Implants':N,'Pill':G,'IUD':R,'Emergency contraception':'#B46A90','Other modern':'#8795A3','Non-modern methods':'#A8947E'}
+REASONS=['Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience']
+SHORT=['Failure','More effective','Bleeding','Other health','Access/cost']
+provinces=['Kinshasa','Kongo Central','Kwango','Kwilu','Mai-Ndombe','Équateur','Nord-Ubangi','Sud-Ubangi','Mongala','Tshuapa','Tshopo','Bas-Uélé','Haut-Uélé','Ituri','Nord-Kivu','Sud-Kivu','Maniema','Haut-Katanga','Haut-Lomami','Lualaba','Tanganyika','Lomami','Sankuru','Kasaï Oriental','Kasaï','Kasaï Central']
+plt.rcParams.update({'font.family':'Arial','font.size':11})
+mix=pd.read_csv(sup/'drc_method_start_mix.csv');year=pd.read_csv(sup/'drc_method_start_mix_by_year.csv')
+times=pd.read_csv(sup/'drc_modern_timepoints.csv');reason=pd.read_csv(sup/'drc_actionable_reasons.csv')
+allreason=pd.read_csv(sup/'drc_all_cause_method_reason_cif.csv');recorded=pd.read_csv(sup/'drc_all_cause_recorded_reason_shares.csv')
+adjusted=pd.read_csv(sup/'drc_actionable_province_adjusted_rates.csv');mcpr=pd.read_csv(sup/'drc_province_mcpr.csv')
+sub=pd.read_csv(sup/'drc_all_reason_adjusted_subgroups.csv')
+cmap=LinearSegmentedColormap.from_list('drc',['#F3F7F8','#9BCFD0','#118C90'])
+
+def save(n,fig):
+ fig.patch.set_facecolor('white');fig.savefig(out/f'slide_{n:02d}.png',dpi=220,facecolor='white',bbox_inches=None);plt.close(fig)
+def figaxes(figsize=(12.0,5.25)):
+ fig,ax=plt.subplots(figsize=figsize,dpi=220);ax.set_facecolor('white')
+ return fig,ax
+def basic(ax):
+ ax.spines[['top','right','left']].set_visible(False);ax.xaxis.grid(True,color=GRID,lw=.7);ax.set_axisbelow(True);ax.tick_params(length=0)
+def scope_method(province,method):
+ return ('National: '+method) if province=='National' else (province+': '+method)
+def n_for(scope):
+ z=times[(times.scope==scope)&(times.month==12)]
+ return int(z.eligible_episodes_n.iloc[0]) if len(z) else 0
+
+# 4: DHS current modern use, with method composition as supporting context.
+current=pd.read_csv(sup/'drc_current_use_mcpr.csv')
+fig,ax=figaxes();r=current.sort_values('all_women_method_prevalence_pct',ascending=True)
+ax.barh(r.method,r.all_women_method_prevalence_pct,color=[PALETTE.get(m,S) for m in r.method],height=.62)
+for j,v in enumerate(r.all_women_method_prevalence_pct):ax.text(v+.06,j,f'{v:.2f}%',va='center',color=N)
+ax.set_xlim(0,5.4);ax.set_xlabel('Percent of all women aged 15–49');basic(ax)
+fig.subplots_adjust(left=.20,right=.96,top=.94,bottom=.18);save(4,fig)
+
+# 5: overall initiation mix, then start mix by calendar year.
+fig,(a1,a2)=plt.subplots(1,2,figsize=(12,5.25),gridspec_kw={'width_ratios':[.9,1.1]})
+nat=mix[mix.scope=='National'].set_index('method')
+cats=['Injectables','Implants','Pill','IUD','Emergency contraception','Other modern','Non-modern methods']
+display_cats=['Injectables','Implants','Pill','IUD','EC','Other modern methods','Non-modern methods']
+vals=[nat.loc[m,'share_of_all_starts_pct'] for m in cats]
+yy=np.arange(len(cats))[::-1];a1.barh(yy,vals,color=[PALETTE[m] for m in cats],height=.6)
+a1.set_yticks(yy);a1.set_yticklabels(display_cats,fontsize=9.5)
+for y,v in zip(yy,vals):a1.text(v+.7,y,f'{v:.1f}%',va='center',fontsize=10,color=N)
+a1.set_xlim(0,52);a1.set_title('Overall initiation mix',color=N,fontweight='bold');a1.set_xlabel('Percent of starts');basic(a1)
+years=sorted(year.year.unique());bottom=np.zeros(len(years))
+for m in cats:
+ vals=[float(year[(year.year==y)&(year.group==m)].share_pct.sum()) for y in years]
+ a2.bar(years,vals,bottom=bottom,color=PALETTE[m],width=.68,label=m);bottom+=vals
+a2.set_ylim(0,100);a2.set_xticks(years);a2.set_ylabel('Percent of starts');a2.set_title('Initiation mix by calendar year',color=N,fontweight='bold')
+a2.spines[['top','right']].set_visible(False);a2.yaxis.grid(True,color=GRID,lw=.7);a2.set_axisbelow(True)
+handles=[Patch(facecolor=PALETTE[m],label=lab) for m,lab in zip(cats,display_cats)]
+fig.legend(handles=handles,loc='lower center',ncol=4,frameon=False,fontsize=8.7,bbox_to_anchor=(.5,-.015))
+fig.subplots_adjust(left=.19,right=.98,wspace=.32,bottom=.25,top=.90);save(5,fig)
+
+# 10: recorded reasons among all modern-method discontinuations.
+r=recorded[recorded.method=='All modern'].sort_values('share_of_recorded_endings_pct')
+fig,ax=figaxes();ax.barh(r.reason,r.share_of_recorded_endings_pct,color=[G if x=='Wanted pregnancy' else T if x in REASONS else S for x in r.reason])
+for i,v in enumerate(r.share_of_recorded_endings_pct):ax.text(v+.35,i,f'{v:.1f}%',va='center',fontsize=10,color=N)
+ax.set_xlim(0,max(r.share_of_recorded_endings_pct)*1.23);ax.set_xlabel('Share of recorded first-year modern-method endings');basic(ax)
+fig.subplots_adjust(left=.26,right=.97,bottom=.17,top=.96);save(10,fig)
+
+# 11: four broad reason groupings, shares of recorded endings.
+rd=recorded[recorded.method=='All modern'].set_index('reason').share_of_recorded_endings_pct
+v=[rd.get('Wanted pregnancy',0),sum(rd.get(x,0) for x in ['Method failure','More effective','Bleeding changes','Other health','Access/cost/convenience']),rd.get('Partner disapproval',0),sum(rd.get(x,0) for x in ['Other fertility','Other recorded'])]
+labs=['Wanted pregnancy','Method experience / access','Partner disapproval','Other circumstances']
+fig,ax=figaxes();left=0
+for val,lab,color in zip(v,labs,[G,T,R,S]):
+ ax.barh([0],[val],left=left,color=color,height=.38,label=lab)
+ if val>5:ax.text(left+val/2,0,f'{val:.1f}%',ha='center',va='center',color='white',fontweight='bold',fontsize=12)
+ left+=val
+ax.set_xlim(0,100);ax.set_yticks([]);ax.set_xlabel('Share of first-year recorded modern-method endings (%)');basic(ax)
+ax.legend(loc='upper center',bbox_to_anchor=(.5,1.22),ncol=4,frameon=False,fontsize=9)
+fig.subplots_adjust(left=.08,right=.97,bottom=.22,top=.72);save(11,fig)
+
+# 12: same four reason groupings within each modern method.
+fig,ax=figaxes();yy=np.arange(len(METHODS))[::-1];left=np.zeros(len(METHODS))
+groups=[['Wanted pregnancy'],['Method failure','More effective','Bleeding changes','Other health','Access/cost/convenience'],['Partner disapproval'],['Other fertility','Other recorded']]
+for names,label,color in zip(groups,labs,[G,T,R,S]):
+ vals=np.array([recorded[(recorded.method==m)&(recorded.reason.isin(names))].share_of_recorded_endings_pct.sum() for m in METHODS])
+ ax.barh(yy,vals,left=left,color=color,height=.56,label=label)
+ for y,l,vv in zip(yy,left,vals):
+  if vv>0:
+   ax.text(l+vv/2,y,f'{vv:.1f}',ha='center',va='center',color='black',
+           fontsize=7.4 if vv<7 else 9,rotation=90 if vv<7 else 0)
+ left+=vals
+ax.set_yticks(yy);ax.set_yticklabels(METHODS);ax.set_xlim(0,100);ax.set_xlabel('Share of first-year recorded endings (%)');basic(ax)
+ax.legend(loc='upper center',bbox_to_anchor=(.5,1.18),ncol=4,frameon=False,fontsize=8.7)
+fig.subplots_adjust(left=.17,right=.97,bottom=.19,top=.78);save(12,fig)
+
+# 13: cause-specific 12-month risks, where each row sums to all-reason risk.
+cause_order=['Method failure','Wanted pregnancy','Other fertility','Bleeding changes','Other health','More effective','Access/cost/convenience','Partner disapproval','Other recorded']
+fig,ax=figaxes();yy=np.arange(len(METHODS))[::-1];left=np.zeros(len(METHODS))
+cols=[R,G,'#C6A267','#78B5BA','#B1D7D7',T,'#4A9AA5','#BB6F89',S]
+for cause,color in zip(cause_order,cols):
+ vals=np.array([allreason[(allreason.method==m)&(allreason.reason==cause)].risk_pct.sum() for m in METHODS])
+ ax.barh(yy,vals,left=left,color=color,height=.58,label=cause)
+ for y,l,vv in zip(yy,left,vals):
+  if vv>0:
+   ax.text(l+vv/2,y,f'{vv:.1f}',ha='center',va='center',color='black',
+           fontsize=6.5 if vv<4 else 8,rotation=90 if vv<4 else 0)
+ left+=vals
+ax.set_yticks(yy);ax.set_yticklabels(METHODS);ax.set_xlim(-1,80);ax.set_xlabel('Cause-specific 12-month discontinuation probability (%)');basic(ax)
+fig.legend(loc='lower center',bbox_to_anchor=(.5,.01),ncol=3,frameon=False,fontsize=8.7)
+fig.subplots_adjust(left=.16,right=.97,bottom=.34,top=.96);save(13,fig)
+
+# 14: fully adjusted all-reason subgroup probabilities, grouped by covariate.
+sub=sub[~sub.covariate.isin(['method_group'])].copy();sub['category']=sub.category.fillna('None');sub['label']=sub.covariate.str.replace('_group','').str.title()+': '+sub.category
+fig,ax=figaxes();y=np.arange(len(sub))[::-1]
+for yy,row in zip(y,sub.itertuples()):
+ ax.plot([row.ci_low,row.ci_high],[yy,yy],color=N,lw=1.4,zorder=2)
+ ax.text(76,yy,f'{row.adjusted_12mo_pct:.1f} ({row.ci_low:.1f}–{row.ci_high:.1f})',va='center',fontsize=8.3,color=N)
+ax.scatter(sub.adjusted_12mo_pct,y,c=T,s=40,zorder=3)
+ax.set_yticks(y);ax.set_yticklabels(sub.label,fontsize=9);ax.set_xlim(0,100)
+ax.set_xlabel('Fully adjusted 12-month all-reason discontinuation (%)');basic(ax)
+fig.subplots_adjust(left=.27,right=.96,bottom=.16,top=.98);save(14,fig)
+
+# 15: provincial all-reason risk, split into two readable 13-row panels.
+def province_dot(n,values,low=None,high=None,reference=None,second=None,labels=None,xmax=75,xlabel='12-month probability (%)'):
+ fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+ for j,ax in enumerate(axes):
+  ps=provinces[j*13:(j+1)*13];y=np.arange(len(ps))[::-1]
+  ax.scatter([values.get(p,np.nan) for p in ps],y,c=T,s=31,zorder=3)
+  if low is not None:
+   for yy,p in zip(y,ps):
+    if np.isfinite(low.get(p,np.nan)) and np.isfinite(high.get(p,np.nan)):
+     ax.plot([low[p],high[p]],[yy,yy],color=T,lw=1,zorder=2)
+  if second is not None:ax.scatter([second.get(p,np.nan) for p in ps],y-.12,c=G,s=22,zorder=4)
+  if reference is not None:ax.axvline(reference,color=N,ls=':',lw=1)
+  ax.set_yticks(y);ax.set_yticklabels([p+('*' if labels is not None and labels.get(p,False) else '') for p in ps],fontsize=9.5)
+  ax.set_xlim(0,xmax);ax.set_ylim(-.6,12.8);ax.set_xlabel(xlabel);basic(ax)
+  ax.set_title('Provinces 1–13' if j==0 else 'Provinces 14–26',color=N,fontsize=11)
+ fig.subplots_adjust(left=.16,right=.98,wspace=.42,bottom=.16,top=.91)
+ save(n,fig)
+allp=times[(times.scope.isin(provinces))&(times.month==12)].set_index('scope')
+province_dot(15,allp.all_reason_pct.to_dict(),allp.all_reason_ci_low.to_dict(),allp.all_reason_ci_high.to_dict(),50.075651,xmax=85)
+
+# 17: province mCPR versus all-reason discontinuation.
+q=mcpr.set_index('province').join(allp[['all_reason_pct','eligible_episodes_n']],how='inner')
+fig,ax=figaxes();ax.scatter(q.mcpr_all_women_pct,q.all_reason_pct,s=34,c=T)
+for p in ['Kinshasa','Nord-Kivu','Haut-Katanga','Kongo Central']:
+ if p in q.index:ax.annotate(p,(q.loc[p,'mcpr_all_women_pct'],q.loc[p,'all_reason_pct']),xytext=(3,4),textcoords='offset points',fontsize=8)
+ax.set_xlabel('All-women mCPR (%)');ax.set_ylabel('All-reason 12-month modern-method discontinuation (%)')
+ax.spines[['top','right']].set_visible(False);ax.grid(color=GRID,lw=.7)
+fig.subplots_adjust(left=.11,right=.96,bottom=.18,top=.96);save(17,fig)
+
+# 29: actionable provincial 12-month probability, two panels.
+ad=adjusted[adjusted.zone!='National'].set_index('zone');small=ad.small_actionable_cell.to_dict()
+province_dot(29,ad.unadjusted_pct.to_dict(),ad.unadjusted_low.to_dict(),ad.unadjusted_high.to_dict(),
+ float(adjusted.loc[adjusted.zone=='National','unadjusted_pct'].iloc[0]),labels=small,xmax=60)
+
+# Combine the overall provincial risk and reason distribution in the same
+# slide slot. Two 14/13-row panels retain all 26 provinces plus national.
+from matplotlib.patches import Rectangle
+fig,axes=plt.subplots(1,2,figsize=(12,5.25))
+labels=['12-month risk','Failure','More effective','Bleeding','Other health','Access/cost']
+for j,ax in enumerate(axes):
+ ps=(['National']+provinces[:13]) if j==0 else provinces[13:]
+ for r,p in enumerate(ps):
+  row=adjusted[adjusted.zone==p]
+  risk=float(row.unadjusted_pct.iloc[0]) if len(row) else np.nan
+  z=reason[reason.scope==p].set_index('reason')
+  vals=[risk]+[float(z.loc[k,'share_among_actionable_pct']) if k in z.index else np.nan for k in REASONS]
+  for c,v in enumerate(vals):
+   intensity=min(max(v/(55 if c==0 else 70),0),1) if np.isfinite(v) else 0
+   color=plt.cm.YlOrBr(.08+.63*intensity) if c==0 else cmap(.08+.75*intensity)
+   if p=='National':color='#F2D48B'
+   ax.add_patch(Rectangle((c-.48,r-.47),.96,.94,facecolor=color,edgecolor='white',lw=.4))
+   ax.text(c,r,f'{v:.0f}' if np.isfinite(v) else '—',ha='center',va='center',fontsize=8.4,color='black')
+ ax.set_xlim(-.5,5.5);ax.set_ylim(len(ps)-.5,-.5)
+ ax.set_yticks(range(len(ps)));ax.set_yticklabels([p+('*' if small.get(p,False) else '') for p in ps],fontsize=8.4)
+ ax.set_xticks(range(6));ax.set_xticklabels(labels,fontsize=8.3,rotation=18,ha='right');ax.tick_params(length=0)
+ for spine in ax.spines.values():spine.set_visible(False)
+fig.subplots_adjust(left=.13,right=.99,wspace=.43,bottom=.19,top=.96);save(29,fig)
+
+# 30: 3/6/9/12 month risk and share of first-year risk occurring by month 3.
+fig,axes=plt.subplots(1,2,figsize=(12,5.25));cols=[3,6,9,12,'Early share']
+for j,ax in enumerate(axes):
+ ps=provinces[j*13:(j+1)*13];mat=[]
+ for p in ps:
+  z=times[times.scope==p].set_index('month');v=[float(z.loc[t,'actionable_pct']) for t in [3,6,9,12]]
+  mat.append(v+[100*v[0]/v[-1] if v[-1]>0 else np.nan])
+ arr=np.array(mat);ax.imshow(arr,cmap=cmap,vmin=0,vmax=50,aspect='auto')
+ ax.set_yticks(range(13));ax.set_yticklabels([p+('*' if small.get(p,False) else '') for p in ps],fontsize=9)
+ ax.set_xticks(range(5));ax.set_xticklabels(['3-month','6-month','9-month','12-month','First 3 / 12'],fontsize=9)
+ for r in range(13):
+  for c in range(5):ax.text(c,r,f'{arr[r,c]:.0f}' if np.isfinite(arr[r,c]) else '—',ha='center',va='center',fontsize=8,color='black')
+ ax.tick_params(length=0)
+fig.subplots_adjust(left=.14,right=.98,wspace=.44,bottom=.11,top=.96);save(30,fig)
+
+# 31: initiation mix by province, two columns of 13 stacked bars.
+fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+cats=['Injectables','Implants','Pill','IUD','Emergency contraception','Other modern','Non-modern methods']
+for j,ax in enumerate(axes):
+ ps=provinces[j*13:(j+1)*13];y=np.arange(13)[::-1];left=np.zeros(13)
+ for cat in cats:
+  vals=np.array([mix[(mix.scope==p)&(mix.method==cat)].share_of_all_starts_pct.sum() for p in ps])
+  ax.barh(y,vals,left=left,color=PALETTE[cat],height=.63,label=cat);left+=vals
+ ax.set_yticks(y);ax.set_yticklabels(ps,fontsize=8.5);ax.set_xlim(0,100);ax.set_xticks([0,25,50,75,100]);basic(ax)
+fig.legend(cats,loc='lower center',ncol=4,frameon=False,fontsize=8,bbox_to_anchor=(.5,-.015))
+fig.subplots_adjust(left=.14,right=.99,wspace=.37,bottom=.25,top=.95);save(31,fig)
+
+# 32–34: method-specific start shares and actionable risks, 26 provinces.
+for n,m in [(32,'Injectables'),(33,'Implants'),(34,'Pill')]:
+ fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+ for j,ax in enumerate(axes):
+  ps=provinces[j*13:(j+1)*13];y=np.arange(13)[::-1]
+  vals=[times[(times.scope==scope_method(p,m))&(times.month==12)].actionable_pct.iloc[0] if len(times[(times.scope==scope_method(p,m))&(times.month==12)]) else np.nan for p in ps]
+  shares=[mix[(mix.scope==p)&(mix.method==m)].share_of_all_starts_pct.sum() for p in ps]
+  ax.barh(y+.17,vals,height=.27,color=N,label='12-month actionable');ax.barh(y-.17,shares,height=.27,color=G,label='Share of starts')
+  ax.set_yticks(y);ax.set_yticklabels([p+('*' if n_for(scope_method(p,m))<30 else '') for p in ps],fontsize=8.5)
+  ax.set_xlim(0,80);ax.set_xticks([0,20,40,60,80]);basic(ax)
+ fig.legend(['12-month actionable','Share of starts'],loc='lower center',ncol=2,frameon=False,fontsize=10,bbox_to_anchor=(.5,.01))
+ fig.subplots_adjust(left=.15,right=.98,wspace=.39,bottom=.22,top=.95);save(n,fig)
+
+# 35–39: reason shares among actionable endings; rows sum to 100 when estimable.
+for n,m in [(35,'Injectables'),(36,'Implants'),(37,'Pill'),(38,'IUD'),(39,'Other modern')]:
+ fig,axes=plt.subplots(1,2,figsize=(12,5.25))
+ for j,ax in enumerate(axes):
+  ps=(['National']+provinces[:13]) if j==0 else provinces[13:]
+  arr=np.full((len(ps),5),np.nan);stars=[]
+  for r,p in enumerate(ps):
+   z=reason[reason.scope==scope_method(p,m)].set_index('reason')
+   sparse=(not len(z)) or int(z.actionable_endings_n.iloc[0])<30
+   stars.append(sparse)
+   if len(z) and (p=='National' or int(z.actionable_endings_n.iloc[0])>=5):
+    arr[r,:]=[z.loc[c,'share_among_actionable_pct'] if c in z.index else np.nan for c in REASONS]
+  ax.imshow(arr,cmap=cmap,vmin=0,vmax=65,aspect='auto')
+  if j==0:ax.add_patch(Rectangle((-.5,-.5),5,1,facecolor='#F2D48B',edgecolor='white',alpha=.78,zorder=2))
+  ax.set_yticks(range(len(ps)));ax.set_yticklabels([p+('*' if star else '') for p,star in zip(ps,stars)],fontsize=8.5)
+  ax.set_xticks(range(5));ax.set_xticklabels(SHORT,fontsize=8)
+  for r in range(len(ps)):
+   for c in range(5):
+    if np.isfinite(arr[r,c]):ax.text(c,r,f'{arr[r,c]:.0f}',ha='center',va='center',fontsize=7.5,color='black',zorder=3)
+  ax.tick_params(length=0)
+ fig.subplots_adjust(left=.14,right=.98,wspace=.44,bottom=.12,top=.96);save(n,fig)
+
+# 40: observed and fully adjusted provincial probabilities with CIs.
+fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+for j,ax in enumerate(axes):
+ ps=provinces[j*13:(j+1)*13];y=np.arange(13)[::-1]
+ for yy,p in zip(y,ps):
+  row=ad.loc[p]
+  ax.plot([row.unadjusted_low,row.unadjusted_high],[yy+.14,yy+.14],color=G,lw=1.2)
+  ax.plot([row.model_2_low,row.model_2_high],[yy-.14,yy-.14],color=N,lw=1.2)
+ ax.scatter([ad.loc[p,'unadjusted_pct'] for p in ps],y+.14,c=G,s=24,zorder=3)
+ ax.scatter([ad.loc[p,'model_2_common_mix_pct'] for p in ps],y-.14,c=N,s=24,zorder=3)
+ ax.set_yticks(y);ax.set_yticklabels([p+('*' if small.get(p,False) else '') for p in ps],fontsize=8.5)
+ ax.set_xlim(0,60);ax.set_xticks([0,10,20,30,40,50,60]);basic(ax)
+fig.legend(['Observed','Fully adjusted'],loc='lower center',ncol=2,frameon=False,fontsize=10,bbox_to_anchor=(.5,.01))
+fig.subplots_adjust(left=.15,right=.99,wspace=.4,bottom=.21,top=.95);save(40,fig)
+
+# 43–45: familywise pairwise comparisons across 325 provincial pairs.
+pairs=pd.read_csv(sup/'drc_actionable_adjusted_pairwise.csv')
+for n,stage in [(43,'Fully adjusted'),(44,'Method adjusted')]:
+ q=pairs[(pairs.stage==stage)&(pairs.significant_05==True)&(pairs.small_cell==False)].copy()
+ q=q.sort_values('p_holm').head(12)
+ fig,ax=figaxes();y=np.arange(len(q))[::-1]
+ labs=[f'{r.province_1} vs {r.province_2}' for r in q.itertuples()]
+ ax.scatter(q.difference_pp,y,c=T,s=33,zorder=3)
+ for yy,r in zip(y,q.itertuples()):ax.plot([r.ci_low,r.ci_high],[yy,yy],color=T,lw=1.2)
+ ax.axvline(0,color=N,lw=.9);ax.set_yticks(y);ax.set_yticklabels(labs,fontsize=9)
+ ax.set_xlabel('Adjusted gap in 12-month actionable discontinuation (pp)');basic(ax)
+ fig.subplots_adjust(left=.35,right=.96,bottom=.16,top=.96);save(n,fig)
+raw=pd.read_csv(sup/'drc_actionable_raw_pairwise_12month.csv')
+counts=[int(raw.significant_05.sum()),int(pairs[(pairs.stage=='Method adjusted')].significant_05.sum()),int(pairs[(pairs.stage=='Fully adjusted')].significant_05.sum())]
+fig,ax=figaxes();ax.bar(['Observed','Same method mix','Fully adjusted'],counts,color=[G,T,N],width=.55)
+for i,v in enumerate(counts):ax.text(i,v+.4,str(v),ha='center',color=N,fontweight='bold',fontsize=16)
+ax.set_ylabel('Province pairs with Holm-adjusted p < 0.05');ax.set_ylim(0,max(counts)+5)
+ax.spines[['top','right']].set_visible(False);ax.yaxis.grid(True,color=GRID);ax.set_axisbelow(True)
+fig.subplots_adjust(left=.15,right=.95,bottom=.18,top=.96);save(45,fig)
+
+# 46: injectable province-level descriptive rates; sparse cells flagged.
+inj=times[(times.scope.str.endswith(': Injectables'))&(times.month==12)].copy()
+inj['province']=inj.scope.str.replace(': Injectables','',regex=False);inj=inj.set_index('province')
+province_dot(46,inj.actionable_pct.to_dict(),inj.actionable_ci_low.to_dict(),inj.actionable_ci_high.to_dict(),
+ float(times[(times.scope=='National: Injectables')&(times.month==12)].actionable_pct.iloc[0]),
+ labels={p:int(inj.loc[p,'actionable_endings_n'])<30 if p in inj.index else True for p in provinces},xmax=90)
+
+# 83–84 are inserted immediately after the all-reason subgroup and province
+# slides in the shortened final deck.
+action_sub=pd.read_csv(sup/'drc_actionable_adjusted_subgroups.csv')
+action_sub['category']=action_sub.category.fillna('None')
+action_sub['label']=action_sub.covariate.str.replace('_group','').str.title()+': '+action_sub.category
+fig,ax=figaxes();y=np.arange(len(action_sub))[::-1]
+for yy,row in zip(y,action_sub.itertuples()):
+ ax.plot([row.ci_low,row.ci_high],[yy,yy],color=N,lw=1.4,zorder=2)
+ ax.text(42,yy,f'{row.adjusted_12mo_pct:.1f} ({row.ci_low:.1f}–{row.ci_high:.1f})',
+         va='center',fontsize=8.3,color=N)
+ax.scatter(action_sub.adjusted_12mo_pct,y,c=T,s=40,zorder=3)
+ax.set_yticks(y);ax.set_yticklabels(action_sub.label,fontsize=9);ax.set_xlim(0,65)
+ax.set_xlabel('Fully adjusted 12-month actionable discontinuation (%)');basic(ax)
+fig.subplots_adjust(left=.27,right=.96,bottom=.16,top=.98);save(83,fig)
+province_dot(84,ad.unadjusted_pct.to_dict(),ad.unadjusted_low.to_dict(),
+ ad.unadjusted_high.to_dict(),
+ float(adjusted.loc[adjusted.zone=='National','unadjusted_pct'].iloc[0]),
+ labels=small,xmax=60,xlabel='12-month actionable discontinuation (%)')
+print('Generated reference-sequence figures in',out)
+)------------------")
+
+MODULES[["31_drc_selected_pathway_figures.py"]] <- list(language="Python",args=c("--project-root"),code=r"------------------(#!/usr/bin/env python3
+"""Pre-actionable pathway slides use selected-reason endings, as in Ethiopia."""
+import argparse
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.path import Path as MplPath
+from matplotlib.patches import PathPatch
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True)
+a=ap.parse_args();root=a.project_root
+sup=root/'output/Supporting_data';out=root/'output/assets/ethiopia_sequence';out.mkdir(parents=True,exist_ok=True)
+data=pd.read_csv(sup/'drc_selected_reason_post_ending_pathways.csv')
+trans=pd.read_csv(sup/'drc_selected_reason_post_ending_transitions.csv')
+order=['No method recorded','Pregnant, birth or termination','Different modern method','Same modern method','Traditional/other method','Other/unknown']
+colors={'No method recorded':'#8796A2','Different modern method':'#118C90','Same modern method':'#173F5B',
+ 'Pregnant, birth or termination':'#DA9A25','Traditional/other method':'#E65A4F','Other/unknown':'#CDD5DA'}
+for month,n in [(1,18),(12,19)]:
+ d=data[data.month_after_ending==month].set_index('status').reindex(order).fillna(0)
+ fig,ax=plt.subplots(figsize=(12,5.25),dpi=220)
+ y=np.arange(len(order))[::-1];vals=d.percent.to_numpy()
+ ax.barh(y,vals,color=[colors[k] for k in order],height=.65)
+ for yy,v in zip(y,vals):
+  if v>=.1:ax.text(v+.45,yy,f'{v:.1f}%',va='center',fontsize=12,color='#173F5B')
+ ax.set_yticks(y);ax.set_yticklabels(order,fontsize=12);ax.set_xlim(0,84)
+ ax.set_xlabel('Weighted share among eligible first-year endings (%)',fontsize=12)
+ ax.spines[['top','right','left']].set_visible(False);ax.xaxis.grid(True,color='#DFE8EC');ax.set_axisbelow(True);ax.tick_params(length=0)
+ fig.subplots_adjust(left=.25,right=.96,bottom=.19,top=.95)
+ fig.savefig(out/f'slide_{n:02d}.png',dpi=220,facecolor='white');plt.close(fig)
+
+order=['No method recorded','Different modern method','Same modern method','Pregnant, birth or termination','Traditional/other method','Other/unknown']
+m=trans.pivot(index='month_1',columns='month_12',values='weighted_events').reindex(index=order,columns=order).fillna(0)
+m=m/m.values.sum();left=m.sum(axis=1);right=m.sum(axis=0)
+fig,ax=plt.subplots(figsize=(12,5.25),dpi=220);ax.set_xlim(-.30,1.30);ax.set_ylim(0,1);ax.axis('off')
+lc=left.cumsum()-left;rc=right.cumsum()-right
+lpos={s:lc[s] for s in order};rpos={s:rc[s] for s in order}
+for src in order:
+ for dst in order:
+  v=m.loc[src,dst]
+  if v<=0:continue
+  y1=lpos[src];y2=rpos[dst];lpos[src]+=v;rpos[dst]+=v
+  verts=[(.08,y1),(.35,y1),(.65,y2),(.92,y2),(.92,y2+v),(.65,y2+v),(.35,y1+v),(.08,y1+v),(.08,y1)]
+  codes=[MplPath.MOVETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.LINETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.CLOSEPOLY]
+  ax.add_patch(PathPatch(MplPath(verts,codes),facecolor=colors[src],edgecolor='none',alpha=.37))
+for s in order:
+ if left[s]>0:
+  ax.bar(.06,left[s],bottom=lc[s],width=.045,color=colors[s]);ax.text(.01,lc[s]+left[s]/2,s,ha='right',va='center',fontsize=9)
+ if right[s]>0:
+  ax.bar(.94,right[s],bottom=rc[s],width=.045,color=colors[s]);ax.text(.99,rc[s]+right[s]/2,s,ha='left',va='center',fontsize=9)
+ax.text(.06,1.015,'1 month',ha='center',fontsize=12,color='#173F5B',fontweight='bold')
+ax.text(.94,1.015,'12 months',ha='center',fontsize=12,color='#173F5B',fontweight='bold')
+fig.tight_layout();fig.savefig(out/'slide_21.png',dpi=220,facecolor='white');plt.close(fig)
+print('Created selected-reason pathway figures')
+)------------------")
+
+MODULES[["39_drc_injectable_heatmap.py"]] <- list(language="Python",args=c("--project-root"),code=r"------------------(#!/usr/bin/env python3
+"""Create DRC injectable reason and immediate-destination heatmaps."""
+import os
+import argparse
+from pathlib import Path
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+ap.add_argument('--output',type=Path,default=Path(os.environ['DRC_PROJECT_ROOT'])/'output/assets/drc_injectable_reason_destination_timing.png')
+a=ap.parse_args()
+sup=a.project_root/'output/Supporting_data'
+dest=pd.read_csv(sup/'drc_injectable_reason_month1_destinations.csv')
+time=pd.read_csv(sup/'drc_injectable_reason_timing_destinations.csv')
+reasons=['Method failure','Wanted more effective','Bleeding changes',
+         'Other side effects/health','Access/cost/convenience']
+states=['No method recorded','Same modern method','Different modern method',
+        'Traditional/other method','Pregnant, birth or termination','Other/unknown']
+periods=['Months 1–3','Months 4–6','Months 7–12']
+left=dest.pivot_table(index='reason',columns='destination',values='share_within_reason_pct',fill_value=0).reindex(index=reasons,columns=states,fill_value=0)
+right=time.groupby(['reason','timing']).weighted_endings.sum().unstack(fill_value=0).reindex(index=reasons,columns=periods,fill_value=0)
+right=right.div(right.sum(axis=1),axis=0).mul(100).fillna(0)
+cmap=LinearSegmentedColormap.from_list('drc',['#F3F7F8','#9BCFD0','#118C90'])
+fig,axes=plt.subplots(1,2,figsize=(13.0,5.2),gridspec_kw={'width_ratios':[1.55,1]})
+for ax,data,title in zip(axes,[left,right],['Status one month after ending','When the original method ended']):
+ ax.imshow(data,cmap=cmap,vmin=0,vmax=max(left.to_numpy().max(),right.to_numpy().max()),aspect='auto')
+ ax.set_xticks(range(len(data.columns)));ax.set_xticklabels(data.columns,rotation=35,ha='right',fontsize=8.5)
+ ax.set_yticks(range(len(reasons)));ax.set_yticklabels(reasons,fontsize=9)
+ ax.set_title(title,fontsize=13,fontweight='bold',color='#173F5B')
+ for i in range(len(reasons)):
+  for j in range(len(data.columns)):
+   v=data.iloc[i,j];ax.text(j,i,f'{v:.0f}' if v>=.5 else '0',ha='center',va='center',fontsize=9,color='#173F5B')
+ for spine in ax.spines.values():spine.set_visible(False)
+ ax.set_xticks(np.arange(-.5,len(data.columns),1),minor=True)
+ ax.set_yticks(np.arange(-.5,len(reasons),1),minor=True)
+ ax.grid(which='minor',color='white',linewidth=2);ax.tick_params(which='both',length=0)
+fig.subplots_adjust(left=.18,right=.98,bottom=.28,top=.86,wspace=.62)
+a.output.parent.mkdir(parents=True,exist_ok=True)
+fig.savefig(a.output,dpi=220,facecolor='white');plt.close(fig)
+print('Wrote',a.output)
+)------------------")
+
+MODULES[["42_drc_selected_reason_province_figure.py"]] <- list(language="Python",args=c("--project-root"),code=r"------------------(#!/usr/bin/env python3
+"""Observed and adjusted selected-reason discontinuation across DRC provinces."""
+import os
+import argparse
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+ap.add_argument('--output',type=Path,default=Path(os.environ['DRC_PROJECT_ROOT'])/'output/assets/drc_selected_reason_province_adjusted.png')
+a=ap.parse_args()
+d=pd.read_csv(a.project_root/'output/Supporting_data/drc_selected_reason_province_adjusted_rates.csv')
+colors=[('#DA9A25','observed_pct','observed_low','observed_high','Observed'),
+        ('#118C90','method_adjusted_pct','method_adjusted_low','method_adjusted_high','Method-adjusted'),
+        ('#173F5B','fully_adjusted_pct','fully_adjusted_low','fully_adjusted_high','Fully adjusted')]
+fig,axes=plt.subplots(1,2,figsize=(14,8.2),sharex=True)
+for j,ax in enumerate(axes):
+ x=d.iloc[j*13:(j+1)*13].copy();y=np.arange(len(x))[::-1]
+ for k,(color,v,lo,hi,label) in enumerate(colors):
+  offset=(1-k)*.18
+  for yy,row in zip(y,x.itertuples()):
+   a0=getattr(row,lo);a1=getattr(row,hi)
+   if np.isfinite(a0) and np.isfinite(a1):ax.plot([a0,a1],[yy+offset,yy+offset],color=color,lw=1)
+  ax.scatter(x[v],y+offset,s=23,color=color,label=label,zorder=3)
+ ax.set_yticks(y);ax.set_yticklabels([r.province+('*' if r.small_cell else '') for r in x.itertuples()],fontsize=9)
+ ax.set_xlim(0,70);ax.set_ylim(-.6,12.6)
+ ax.set_xlabel('12-month selected-reason discontinuation (%)')
+ ax.xaxis.grid(True,color='#DFE8EC');ax.set_axisbelow(True)
+ ax.spines[['top','right','left']].set_visible(False);ax.tick_params(length=0)
+ ax.set_title('Provinces 1–13' if j==0 else 'Provinces 14–26',color='#173F5B',fontsize=13)
+handles,labels=axes[0].get_legend_handles_labels()
+fig.legend(handles,labels,ncol=3,loc='upper center',bbox_to_anchor=(.5,.99),frameon=False)
+fig.subplots_adjust(left=.16,right=.98,top=.90,bottom=.08,wspace=.48)
+a.output.parent.mkdir(parents=True,exist_ok=True)
+fig.savefig(a.output,dpi=220,facecolor='white');plt.close(fig)
+print('Wrote',a.output)
+)------------------")
+
+MODULES[["43_drc_current_user_pathway.py"]] <- list(language="Python",args=c("--project-root"),code=r"------------------(#!/usr/bin/env python3
+"""DRC current-user stock to actionable ending and year-end use diagram."""
+import os
+import argparse,json
+from pathlib import Path
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch,FancyArrowPatch
+
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True)
+ap.add_argument('--output',type=Path,default=Path(os.environ['DRC_PROJECT_ROOT'])/'output/assets/drc_current_user_pathway.png');a=ap.parse_args()
+b=json.loads((a.project_root/'output/Supporting_data/drc_2026_planning_bundle.json').read_text())
+x=[z for z in b['methods'] if z['approach']=='Historical duration-aware']
+stock=sum(z['projected_2025_current_users'] for z in x)
+all_modern=b['scenarios'][0]['projected_current_users_2025']
+ending=sum(z['projected_actionable_original_method_endings'] for z in x)
+nonmodern=sum(z['retained_modern_users_2026_illustration'] for z in x)
+modern=ending-nonmodern
+fig,ax=plt.subplots(figsize=(13,4.8));fig.patch.set_facecolor('white');ax.set_xlim(0,13);ax.set_ylim(0,5);ax.axis('off')
+def box(x,y,w,h,color,title,value,subtitle=''):
+ p=FancyBboxPatch((x,y),w,h,boxstyle='round,pad=0.04,rounding_size=.08',facecolor=color,edgecolor='none')
+ ax.add_patch(p);ax.text(x+w/2,y+h*.68,title,ha='center',va='center',color='white',fontsize=13,fontweight='bold')
+ ax.text(x+w/2,y+h*.36,f'{value:,.0f}',ha='center',va='center',color='white',fontsize=19,fontweight='bold')
+ if subtitle:ax.text(x+w/2,y-.22,subtitle,ha='center',va='top',color='#607480',fontsize=10)
+def arrow(x1,y1,x2,y2):
+ ax.add_patch(FancyArrowPatch((x1,y1),(x2,y2),arrowstyle='-|>',mutation_scale=16,
+  linewidth=2,color='#9CB4BE',connectionstyle='arc3,rad=0'))
+box(.3,1.75,3.0,1.5,'#173F5B','Current method users',stock,'Projected 2025; excludes EC')
+box(4.35,1.75,3.0,1.5,'#118C90','Actionable method endings',ending,'Next 12 months, duration-aware')
+box(9.0,2.85,3.4,1.25,'#173F5B','Modern at year end',modern)
+box(9.0,.70,3.4,1.25,'#DA9A25','Nonmodern at year end',nonmodern)
+arrow(3.32,2.5,4.28,2.5);arrow(7.4,2.55,8.93,3.47);arrow(7.4,2.43,8.93,1.33)
+ax.text(6.9,.25,f'Only the actionable-ending subset is shown downstream. All-modern mCPR stock including EC: {all_modern:,.0f}.',ha='center',color='#607480',fontsize=10.5)
+fig.tight_layout(pad=.7);a.output.parent.mkdir(parents=True,exist_ok=True)
+fig.savefig(a.output,dpi=220,facecolor='white');plt.close(fig)
+print('Wrote',a.output)
+)------------------")
+
+
+# Plain source resources, expanded only into a private runtime directory.
+REPORT_FILES <- list()
+REPORT_FILES[["src/report/10_build_drc_reports.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Build DRC evidence review from parameterized project inputs.
+Set DRC_PROJECT_ROOT to move the project; no local paths are embedded.
+"""
+import os, html, math
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.path import Path as MplPath
+from matplotlib.patches import PathPatch
+from PIL import Image
+
+ROOT=Path(os.environ['DRC_PROJECT_ROOT'])
+OUT=ROOT/'output'; DATA=OUT/'Supporting_data'; ASSETS=OUT/'assets'
+OUT.mkdir(exist_ok=True);ASSETS.mkdir(exist_ok=True)
+read=lambda n:pd.read_csv(DATA/('drc_'+n+'.csv'))
+time=read('modern_timepoints'); reasons=read('actionable_reasons'); starts=read('method_start_mix')
+reg=read('actionable_province_adjusted_rates'); scenarios=read('2025_mcpr_scenarios')
+current=read('current_users_by_method_and_actionable_projection'); bycause=read('current_users_actionable_by_cause')
+hist=read('duration_aware_current_user_bridge'); aft=read('survival_model_duration_by_method')
+pathways=read('actionable_post_ending_pathways'); validate=read('table_7_13_validation')
+transitions=read('actionable_post_ending_transitions')
+pair3=read('actionable_raw_pairwise_3month');pair12=read('actionable_raw_pairwise_12month')
+N='#173f5b'; TEAL='#118c90'; GOLD='#dc9d28'; RED='#d95849'; GREY='#84909e'; BG='#ffffff'; PALE='#f3f7f9'
+methods=['Injectables','Implants','Pill','IUD','Other modern']
+provinces=[x for x in reg.zone if x!='National']
+reason_order=['Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience']
+plt.rcParams.update({'font.family':'DejaVu Sans','font.size':10,'axes.spines.top':False,'axes.spines.right':False,'axes.labelcolor':N,'text.color':N,'xtick.color':N,'ytick.color':N})
+
+def pct(x,d=1):return '—' if pd.isna(x) else f'{x:.{d}f}%'
+def integer(x):return '—' if pd.isna(x) else f'{x:,.0f}'
+def savefig(name):
+ plt.savefig(ASSETS/name,dpi=190,bbox_inches='tight',facecolor='white');plt.close()
+def national_curve(cause):
+ v=time[(time.scope=='National')].sort_values('month')
+ fig,ax=plt.subplots(figsize=(10,5.1));ax.plot(v.month,v[cause+'_pct'],color=TEAL if cause=='actionable' else N,lw=3,marker='o',ms=5)
+ for m in [3,6,9,12]:
+  z=v[v.month==m].iloc[0];ax.annotate(pct(z[cause+'_pct']),(m,z[cause+'_pct']),xytext=(0,11),textcoords='offset points',ha='center',fontsize=10)
+ ax.set(xlim=(0,12.5),ylim=(0,max(55,v[cause+'_pct'].max()+9)),xticks=[0,3,6,9,12],xlabel='Months since method initiation',ylabel='Cumulative discontinuation (%)')
+ ax.grid(axis='y',alpha=.15);fig.tight_layout();savefig('drc_'+cause+'_national_curve.png')
+for cause in ['all_reason','actionable']:national_curve(cause)
+
+def province_forest():
+ d=reg[reg.zone!='National'].sort_values('unadjusted_pct',ascending=False);y=np.arange(len(d))
+ fig,ax=plt.subplots(figsize=(10.5,10.5))
+ ax.errorbar(d.unadjusted_pct,y,xerr=[d.unadjusted_pct-d.unadjusted_low,d.unadjusted_high-d.unadjusted_pct],fmt='o',color=TEAL,ecolor=TEAL,capsize=2,ms=4)
+ ax.axvline(reg.iloc[0].unadjusted_pct,color=N,ls=':',lw=1.5)
+ ax.set_yticks(y,[z+('*' if n<30 else '') for z,n in zip(d.zone,d.actionable_endings_n)],fontsize=9)
+ ax.invert_yaxis();ax.set(xlabel='12-month actionable discontinuation (%)',xlim=(0,max(d.unadjusted_high)+5));ax.grid(axis='x',alpha=.13)
+ fig.tight_layout();savefig('drc_province_actionable_forest.png')
+province_forest()
+
+def province_forest_half(part):
+ d=reg[reg.zone!='National'].sort_values('unadjusted_pct',ascending=False).iloc[part*13:(part+1)*13];y=np.arange(len(d))
+ fig,ax=plt.subplots(figsize=(10.7,6.1))
+ ax.errorbar(d.unadjusted_pct,y,xerr=[d.unadjusted_pct-d.unadjusted_low,d.unadjusted_high-d.unadjusted_pct],fmt='o',color=TEAL,ecolor=TEAL,capsize=3,ms=5)
+ ax.axvline(reg.iloc[0].unadjusted_pct,color=N,ls=':',lw=1.5)
+ ax.set_yticks(y,[z+('*' if n<30 else '') for z,n in zip(d.zone,d.actionable_endings_n)],fontsize=11)
+ ax.invert_yaxis();ax.set(xlabel='12-month actionable discontinuation (%)',xlim=(0,65));ax.grid(axis='x',alpha=.13)
+ fig.tight_layout();savefig('drc_province_actionable_forest_'+str(part+1)+'.png')
+for k in range(2):province_forest_half(k)
+
+def heatmap(scopes,name,what='share_among_actionable_pct'):
+ d=reasons[reasons.scope.isin(scopes)].copy();p=d.pivot(index='scope',columns='reason',values=what).reindex(index=scopes,columns=reason_order)
+ fig,ax=plt.subplots(figsize=(10.8,max(3,len(scopes)*.35+1.4)))
+ cmap=LinearSegmentedColormap.from_list('c',['#ffffff','#d7ebed',TEAL])
+ ax.imshow(p.values,aspect='auto',cmap=cmap,vmin=0,vmax=100 if what.startswith('share') else 15)
+ ax.set_xticks(np.arange(5),['Failure','More effective','Bleeding','Other health','Access / cost / convenience'],fontsize=9)
+ ax.xaxis.tick_top();ax.set_yticks(np.arange(len(scopes)),[s.split(': ')[0]+('*' if d[d.scope==s].actionable_endings_n.iloc[0]<30 else '') for s in scopes],fontsize=9)
+ for i in range(len(scopes)):
+  for j in range(5):
+   if pd.notna(p.iloc[i,j]):ax.text(j,i,f'{p.iloc[i,j]:.1f}',ha='center',va='center',color='black',fontsize=8)
+ ax.set_xticks(np.arange(-.5,5,1),minor=True);ax.set_yticks(np.arange(-.5,len(scopes),1),minor=True);ax.grid(which='minor',color='white',lw=2);ax.tick_params(which='both',length=0)
+ fig.tight_layout();savefig(name)
+heatmap(['National']+provinces,'drc_province_reason_share.png')
+for k in range(2):heatmap((['National'] if k==0 else [])+provinces[k*13:(k+1)*13],'drc_province_reason_share_'+str(k+1)+'.png')
+for m in methods:heatmap(['National: '+m]+[p+': '+m for p in provinces if p+': '+m in reasons.scope.values],'drc_'+m.lower().replace(' ','_')+'_province_reason_share.png')
+for m in ['Injectables','Implants','Pill']:
+ for k in range(2):
+  scopes=(['National: '+m] if k==0 else [])+[p+': '+m for p in provinces[k*13:(k+1)*13] if p+': '+m in reasons.scope.values]
+  heatmap(scopes,'drc_'+m.lower()+'_province_reason_share_'+str(k+1)+'.png')
+
+def method_mix_chart():
+ d=starts[starts.scope=='National'].copy();d=d[d.method.isin(methods+['Emergency contraception','Non-modern methods'])]
+ colors={'Injectables':TEAL,'Implants':N,'Pill':GOLD,'IUD':RED,'Emergency contraception':'#bd6b95','Other modern':GREY,'Non-modern methods':'#a18b71'}
+ d=d.sort_values('share_of_all_starts_pct');fig,ax=plt.subplots(figsize=(9,4.8));ax.barh(d.method,d.share_of_all_starts_pct,color=[colors[x] for x in d.method])
+ for i,r in enumerate(d.itertuples()):ax.text(r.share_of_all_starts_pct+.4,i,pct(r.share_of_all_starts_pct),va='center',fontsize=10)
+ ax.set(xlim=(0,max(d.share_of_all_starts_pct)+8),xlabel='Share of all method starts (%)');ax.grid(axis='x',alpha=.15);fig.tight_layout();savefig('drc_method_start_mix.png')
+method_mix_chart()
+
+def province_mix_chart(part):
+ cats=['Injectables','Implants','Pill','IUD','Emergency contraception','Other modern','Non-modern methods']
+ colors=[TEAL,N,GOLD,RED,'#bd6b95',GREY,'#a18b71']
+ scopes=(['National'] if part==0 else [])+provinces[part*13:(part+1)*13]
+ d=starts[starts.scope.isin(scopes)].pivot(index='scope',columns='method',values='share_of_all_starts_pct').reindex(index=scopes,columns=cats).fillna(0)
+ fig,ax=plt.subplots(figsize=(11,6.4));left=np.zeros(len(scopes))
+ for cat,col in zip(cats,colors):
+  ax.barh(np.arange(len(scopes)),d[cat],left=left,color=col,label=cat,height=.68);left+=d[cat].values
+ ax.set_yticks(np.arange(len(scopes)),scopes,fontsize=10);ax.invert_yaxis();ax.set(xlim=(0,100),xlabel='Share of all method starts (%)')
+ ax.legend(ncol=4,bbox_to_anchor=(.5,-.13),loc='upper center',frameon=False,fontsize=9);fig.tight_layout();savefig('drc_province_start_mix_'+str(part+1)+'.png')
+for k in range(2):province_mix_chart(k)
+
+def province_method_pair(method,part):
+ scopes=provinces[part*13:(part+1)*13]
+ mix=starts[(starts.method==method)&(starts.scope.isin(scopes))].set_index('scope').share_of_all_starts_pct
+ risk=time[(time.month==12)&(time.scope.isin([p+': '+method for p in scopes]))].set_index('scope')
+ a=np.array([mix.get(p,0) for p in scopes]);b=np.array([risk.actionable_pct.get(p+': '+method,np.nan) for p in scopes]);n=np.array([risk.actionable_endings_n.get(p+': '+method,0) for p in scopes])
+ fig,ax=plt.subplots(figsize=(10.5,6.5));y=np.arange(len(scopes));ax.barh(y-.18,a,height=.32,color=GOLD,label='Share of all method starts');ax.barh(y+.18,b,height=.32,color=N,label='12-month actionable discontinuation')
+ ax.set_yticks(y,[p+('*' if nn<30 else '') for p,nn in zip(scopes,n)],fontsize=10);ax.invert_yaxis();ax.set(xlim=(0,max(65,np.nanmax(b)+5)),xlabel='Percent (different denominators)');ax.legend(loc='lower right',frameon=False,fontsize=9);ax.grid(axis='x',alpha=.15);fig.tight_layout();savefig('drc_'+method.lower().replace(' ','_')+'_start_risk_'+str(part+1)+'.png')
+for method in methods:
+ for part in range(2):province_method_pair(method,part)
+
+def pathway_figures():
+ d=pathways.pivot(index='status',columns='month_after_ending',values='percent').fillna(0).sort_values(12,ascending=False)
+ fig,ax=plt.subplots(figsize=(9.7,5));y=np.arange(len(d));ax.barh(y-.18,d.get(1,0),height=.34,color=GOLD,label='1 month');ax.barh(y+.18,d.get(12,0),height=.34,color=N,label='12 months')
+ ax.set_yticks(y,d.index,fontsize=9);ax.invert_yaxis();ax.set(xlim=(0,80),xlabel='Weighted share (%)');ax.legend(frameon=False);ax.grid(axis='x',alpha=.15);fig.tight_layout();savefig('drc_actionable_pathway_status.png')
+ order=['No method recorded','Different modern method','Same modern method','Pregnant, birth or termination','Traditional/other method','Other/unknown']
+ colors={'No method recorded':'#83909b','Different modern method':TEAL,'Same modern method':N,'Pregnant, birth or termination':GOLD,'Traditional/other method':RED,'Other/unknown':'#c0c8cc'}
+ m=transitions.pivot(index='month_1',columns='month_12',values='weighted_events').reindex(index=order,columns=order).fillna(0);m=m/m.values.sum();left=m.sum(axis=1);right=m.sum(axis=0)
+ fig,ax=plt.subplots(figsize=(10.5,5.8));ax.set_xlim(-.28,1.28);ax.set_ylim(0,1);ax.axis('off');lc=left.cumsum()-left;rc=right.cumsum()-right
+ lpos={s:lc[s] for s in order};rpos={s:rc[s] for s in order}
+ for src in order:
+  for dst in order:
+   v=m.loc[src,dst]
+   if v<=0:continue
+   y1=lpos[src];y2=rpos[dst];lpos[src]+=v;rpos[dst]+=v
+   verts=[(.08,y1),(.35,y1),(.65,y2),(.92,y2),(.92,y2+v),(.65,y2+v),(.35,y1+v),(.08,y1+v),(.08,y1)]
+   codes=[MplPath.MOVETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.LINETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.CLOSEPOLY]
+   ax.add_patch(PathPatch(MplPath(verts,codes),facecolor=colors[src],edgecolor='none',alpha=.37))
+ for s in order:
+  if left[s]>0:ax.bar(.06,left[s],bottom=lc[s],width=.045,color=colors[s]);ax.text(.015,lc[s]+left[s]/2,s,ha='right',va='center',fontsize=8)
+  if right[s]>0:ax.bar(.94,right[s],bottom=rc[s],width=.045,color=colors[s]);ax.text(.985,rc[s]+right[s]/2,s,ha='left',va='center',fontsize=8)
+ ax.text(.06,1.025,'1 month',ha='center',fontsize=12,fontweight='bold');ax.text(.94,1.025,'12 months',ha='center',fontsize=12,fontweight='bold');fig.tight_layout();savefig('drc_actionable_month1_to_month12_alluvial.png')
+pathway_figures()
+
+def htable(df,cols=None,formats=None,star=None):
+ cols=cols or list(df.columns);formats=formats or {};out=['<table><thead><tr>'+''.join('<th>'+html.escape(str(c))+'</th>' for c in cols)+'</tr></thead><tbody>']
+ for _,r in df.iterrows():
+  out.append('<tr>')
+  for c in cols:
+   x=r[c];s=formats[c](x) if c in formats else ('—' if pd.isna(x) else str(x))
+   if star and c==star[0] and bool(r[star[1]]):s+='*'
+   out.append('<td>'+html.escape(s)+'</td>')
+  out.append('</tr>')
+ out.append('</tbody></table>');return ''.join(out)
+
+def reason_table(scope):
+ d=reasons[reasons.scope==scope].set_index('reason').reindex(reason_order).reset_index()
+ d=d.rename(columns={'reason':'Reason','cause_specific_12_month_pct':'12-month cause-specific risk','share_among_actionable_pct':'Share of actionable endings'})
+ return htable(d,['Reason','12-month cause-specific risk','Share of actionable endings'],{'12-month cause-specific risk':pct,'Share of actionable endings':pct})
+
+htmlparts=['''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DRC contraceptive discontinuation analysis</title><style>
+:root{--navy:#173f5b;--teal:#118c90;--gold:#dc9d28}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#253c4c;margin:0;background:#fff;line-height:1.5}aside{position:fixed;top:0;bottom:0;left:0;width:245px;overflow:auto;background:#f3f7f9;padding:24px 18px}aside a{display:block;color:#173f5b;text-decoration:none;font-size:13px;padding:6px 0}main{max-width:1180px;margin-left:275px;padding:34px 45px}h1,h2,h3{font-family:Georgia,serif;color:#173f5b}h1{font-size:34px}h2{margin-top:62px;border-bottom:3px solid #dc9d28;padding-bottom:7px}h3{margin-top:30px}.lede{font-size:18px;color:#173f5b}.note{background:#f3f7f9;border-left:4px solid #118c90;padding:13px 16px;margin:16px 0}.caution{border-left-color:#dc9d28}table{border-collapse:collapse;width:100%;font-size:13px;margin:18px 0 28px}th{background:#173f5b;color:white;text-align:left}td,th{padding:7px 9px;border-bottom:1px solid #dce5e9}tr:nth-child(even) td{background:#f6f9fa}figure{margin:24px 0}figure img{width:100%;height:auto;max-height:850px;object-fit:contain}figcaption,.small{font-size:12px;color:#607480}.grid{display:grid;grid-template-columns:1fr 1fr;gap:25px}.banner{padding:19px 22px;background:#173f5b;color:#fff}.banner b{color:#e9b254}@media(max-width:900px){aside{position:static;width:auto}main{margin:0;padding:22px}.grid{grid-template-columns:1fr}}@media print{aside{display:none}main{margin:0}}
+</style></head><body><aside><b>DRC analysis</b><a href="#scope">Scope and denominators</a><a href="#validation">DHS validation</a><a href="#all-cause">All-reason discontinuation</a><a href="#actionable">Potentially actionable discontinuation</a><a href="#provinces">26-province analysis</a><a href="#adjusted">Adjusted province model</a><a href="#pathways">What follows discontinuation</a><a href="#planning">Current users and mCPR</a><a href="#duration">Duration-aware approaches</a><a href="#limitations">Interpretation</a></aside><main>''']
+htmlparts.append('<h1>Contraceptive discontinuation in the Democratic Republic of the Congo</h1><p class="lede">2023–24 DHS calendar analysis: national patterns, all 26 provinces, and illustrations for current modern-method users.</p>')
+htmlparts.append('<section id="scope"><h2>Scope and denominators</h2><p>Discontinuation rates use contraceptive-use episodes as their unit. National and provincial modern-method analyses include injectable, implant, pill, IUD, and other continuing modern-method episodes; emergency contraception is excluded from ongoing-method discontinuation risk. The survey mCPR includes all women aged 15–49 who report current modern use under the DHS definition. A 12-month cause-specific probability is a competing-risk life-table estimate, not the number of observed endings divided by the number of episodes.</p><div class="note">Potentially actionable reasons: method failure; wanting a more effective method; bleeding; other side effects or health concerns; and access, cost, or inconvenience. Pregnancy intentions, partner disapproval, and circumstantial or unresolved reasons are competing endings rather than actionable events.</div></section>')
+htmlparts.append('<section id="validation"><h2>Validation against the DHS discontinuation table</h2><p>The calendar reconstruction matches every published weighted episode count in Table 7.13; 104 of 110 rate cells agree to one decimal, with the remaining six differing by 0.1 percentage point.</p>')
+htmlparts.append(htable(validate.rename(columns={'method':'Method','weighted_episodes':'Weighted episodes','unweighted_episodes':'Observed episodes','max_rate_abs_difference_pp':'Largest rate difference (pp)'}),['Method','Weighted episodes','Observed episodes','Largest rate difference (pp)'],{'Weighted episodes':integer,'Largest rate difference (pp)':lambda x:f'{x:.1f}'}))
+htmlparts.append('</section><section id="all-cause"><h2>All-reason modern-method discontinuation</h2><div class="grid"><figure><img src="assets/drc_all_reason_national_curve.png"><figcaption>Cumulative discontinuation of the original modern method, any recorded reason.</figcaption></figure><figure><img src="assets/drc_method_start_mix.png"><figcaption>Weighted initiation mix among all method starts; non-modern starts are displayed for context.</figcaption></figure></div>')
+allnat=time[time.scope=='National'][['month','all_reason_pct','all_reason_ci_low','all_reason_ci_high']].copy();allnat.columns=['Month','All-reason 12-month cumulative (%)','95% CI low','95% CI high']
+htmlparts.append(htable(allnat,formats={c:pct for c in allnat.columns if c!='Month'}))
+htmlparts.append('<h3>Method initiation mix in all 26 provinces</h3><p>All method starts are included in these composition bars; the later discontinuation figures use eligible continuing modern-method episodes.</p><figure><img src="assets/drc_province_start_mix_1.png"></figure><figure><img src="assets/drc_province_start_mix_2.png"></figure>')
+alltab=read('table_7_13_replicated');alltab=alltab[alltab.method.isin(['Injectables','Implants','Pill','Male condom','All methods'])]
+alltab=alltab[['method','reason_1_pct','reason_2_pct','reason_3_pct','reason_4_pct','reason_5_pct','reason_6_pct','reason_7_pct','reason_8_pct','reason_9_pct','any_reason_pct']]
+alltab.columns=['Method','Failure','Want pregnancy','Other fertility','Bleeding','Other health','More effective','Access / cost','Partner disapproval','Other recorded','Any reason']
+htmlparts.append('<h3>Published-method categories: 12-month all-reason risks by recorded reason</h3><p>This is the reconstructed DHS Table 7.13 breakdown for its displayed method categories. Its “All methods” row includes non-modern methods and must not be read as the all-modern estimate above.</p>'+htable(alltab,formats={c:pct for c in alltab.columns if c!='Method'}))
+htmlparts.append('</section><section id="actionable"><h2>Potentially actionable discontinuation</h2><div class="grid"><figure><img src="assets/drc_actionable_national_curve.png"><figcaption>Cumulative competing-risk probability due to potentially actionable causes.</figcaption></figure><div class="banner"><b>National 12-month risk</b><h3 style="color:white;font-size:45px;margin:10px 0">'+pct(time[(time.scope=='National')&(time.month==12)].actionable_pct.iloc[0])+'</h3><p>Among eligible modern-method episodes. This is distinct from the all-reason risk and from an mCPR loss.</p></div></div><h3>Reason-specific 12-month risk and distribution</h3>'+reason_table('National'))
+mn=time[(time.scope.str.startswith('National:'))&(time.month==12)].copy();mn['method']=mn.scope.str.split(': ').str[-1];mn=mn[['method','eligible_episodes_n','actionable_endings_n','all_reason_pct','actionable_pct']];mn.columns=['Method','Eligible episodes','Observed actionable endings','All-reason 12-month risk','Actionable 12-month risk']
+htmlparts.append(htable(mn,formats={'All-reason 12-month risk':pct,'Actionable 12-month risk':pct}))
+htmlparts.append('</section><section id="provinces"><h2>All 26 provinces</h2><p>The province-level view retains all provinces. An asterisk marks fewer than 30 observed actionable endings, a descriptive warning rather than a significance test. Interpret the estimates with their design-bootstrap 95% confidence intervals.</p><figure><img src="assets/drc_province_actionable_forest.png"><figcaption>12-month actionable discontinuation. Dotted line: national estimate. * Fewer than 30 observed actionable endings.</figcaption></figure>')
+pr=reg[['zone','eligible_episodes_n','actionable_endings_n','unadjusted_pct','unadjusted_low','unadjusted_high']].copy();pr.columns=['Province','Eligible episodes','Actionable endings','12-month risk','95% CI low','95% CI high'];pr['small']=pr['Actionable endings']<30
+htmlparts.append(htable(pr,['Province','Eligible episodes','Actionable endings','12-month risk','95% CI low','95% CI high'],{c:pct for c in ['12-month risk','95% CI low','95% CI high']},('Province','small')))
+htmlparts.append('<h3>Timing by province</h3>')
+tm=time[time.scope.isin(['National']+provinces)].pivot(index='scope',columns='month',values='actionable_pct').reindex(['National']+provinces);tm.columns=[f'{c}-month' for c in tm.columns];tm.insert(0,'Province',tm.index);tm['First 3 months / 12 months']=100*tm['3-month']/tm['12-month'];tm=tm.reset_index(drop=True)
+htmlparts.append(htable(tm,formats={c:pct for c in tm.columns if c!='Province'}))
+htmlparts.append('<h3>Unadjusted province pairwise tests</h3><p>Pairwise differences were estimated from the stratified-PSU bootstrap of competing-risk rates and tested with two-sided normal approximations using bootstrap standard errors. Holm correction covers all 325 province pairs separately at 3 and 12 months. These are unadjusted comparisons; small-cell flags and uncertainty remain important.</p>')
+for mm,dd in [(3,pair3),(12,pair12)]:
+ selected=dd[dd.significant_05].sort_values('p_holm').copy();selected=selected[['province_1','province_2','difference_pp','ci_low','ci_high','p_holm']];selected.columns=['Province 1','Province 2','Difference (pp)','Pointwise 95% CI low','Pointwise 95% CI high','Holm p']
+ htmlparts.append('<h4>'+str(mm)+' months: '+str(len(selected))+' of 325 pairs pass Holm 5%</h4>'+htable(selected,formats={'Difference (pp)':lambda x:f'{x:+.1f}','Pointwise 95% CI low':lambda x:f'{x:+.1f}','Pointwise 95% CI high':lambda x:f'{x:+.1f}','Holm p':lambda x:f'{x:.3f}'}))
+htmlparts.append('<h3>Share of actionable endings by reason</h3><p>Each populated row sums to approximately 100% across the five reasons. The denominator is actionable discontinuations in that province, not all method episodes.</p><figure><img src="assets/drc_province_reason_share.png"><figcaption>* Fewer than 30 observed actionable endings.</figcaption></figure>')
+for m in methods:
+ htmlparts.append('<h3>'+m+': province reason distribution</h3><figure><img src="assets/drc_'+m.lower().replace(' ','_')+'_province_reason_share.png"><figcaption>* Fewer than 30 observed actionable endings. Most province-by-method cells are sparse; this is exploratory.</figcaption></figure>')
+htmlparts.append('<h3>Method starts and actionable risk, side by side</h3><p>Gold bars show the method’s share of all method starts in a province. Navy bars show its 12-month actionable ending probability among that method’s eligible episodes. These have different denominators. * marks fewer than 30 observed actionable endings for the method in that province.</p>')
+for m in methods:
+ htmlparts.append('<h3>'+m+'</h3><figure><img src="assets/drc_'+m.lower().replace(' ','_')+'_start_risk_1.png"></figure><figure><img src="assets/drc_'+m.lower().replace(' ','_')+'_start_risk_2.png"></figure>')
+htmlparts.append('</section><section id="adjusted"><h2>Adjusted province model</h2><p>A discrete-time multinomial episode-month model distinguishes continuation, actionable ending, and other competing ending. Model 1 includes month of method use and method mix plus province. Model 2 additionally includes age and parity at method start, marital status, education, wealth, residence, and start cohort. Common-mix predictions set each episode in the pooled analytic sample to each province in turn, then average; this makes province comparisons at the same method and population composition. The adjusted estimates below are exploratory point estimates; design-aware intervals for these predictions and pairwise comparisons have not yet been completed.</p>')
+ar=reg[['zone','unadjusted_pct','model_1_common_mix_pct','model_2_common_mix_pct','eligible_episodes_n','actionable_endings_n']].copy();ar.columns=['Province','Observed risk','Method-adjusted','Fully adjusted','Eligible episodes','Actionable endings'];ar['small']=ar['Actionable endings']<30
+htmlparts.append(htable(ar,['Province','Observed risk','Method-adjusted','Fully adjusted','Eligible episodes','Actionable endings'],{c:pct for c in ['Observed risk','Method-adjusted','Fully adjusted']},('Province','small'))+'</section>')
+htmlparts.append('<section id="pathways"><h2>What follows an actionable method ending</h2><p>Ending the original method does not necessarily mean leaving modern use. The calendar records modern switching, later restart, traditional method use, pregnancy-related states, and no method at different follow-up times.</p><figure><img src="assets/drc_actionable_pathway_status.png"><figcaption>Weighted status shares at one and twelve months; the follow-up denominators differ.</figcaption></figure><figure><img src="assets/drc_actionable_month1_to_month12_alluvial.png"><figcaption>Transitions among the same 633 observed actionable endings with both follow-up points. Ribbon widths reflect weighted episode shares.</figcaption></figure>')
+pt=pathways[['month_after_ending','status','percent','observed_ending_events_n']].copy();pt.columns=['Month after ending','Recorded status','Weighted share','Observed endings'];htmlparts.append(htable(pt,formats={'Weighted share':pct})+'</section>')
+htmlparts.append('<section id="planning"><h2>Current users and illustrative mCPR scale</h2><p>The 2024 DHS all-women mCPR is '+pct(scenarios.baseline_mcpr_2024_pct.iloc[0],2)+'. Applying it to 2024 UN women aged 15–49 gives '+integer(scenarios.current_users_2024.iloc[0])+' current modern users. Method shares come from the weighted DHS current-use distribution. These projections are illustrations, not forecasts of intervention impact.</p>')
+cu=current[['method','current_users_2024','actionable_first_year_risk_pct','illustrative_original_method_endings']].copy();cu.columns=['Method','2024 current users','First-year actionable risk','Illustrative original-method endings'];htmlparts.append(htable(cu,formats={'2024 current users':integer,'First-year actionable risk':pct,'Illustrative original-method endings':integer}))
+htmlparts.append('<h3>By method and cause</h3>');pivot=bycause.pivot(index='method',columns='reason',values='illustrative_users').reindex(methods).reindex(columns=reason_order);pivot['Total']=pivot.sum(axis=1);pivot.insert(0,'Method',pivot.index);pivot=pivot.reset_index(drop=True);htmlparts.append(htable(pivot,formats={c:integer for c in pivot.columns if c!='Method'}))
+htmlparts.append('<h3>Different mCPR growth scenarios</h3><p>The scenario labels identify the assumption applied to 2024 survey mCPR: no growth, historical DHS trend, or Track20/FPET modeled trend. The same 2025 women aged 15–49 denominator is used for all three scenarios.</p>')
+sc=scenarios[['scenario','growth_pp','baseline_mcpr_2024_pct','wra_2025','mcpr_2025_pct','gross_mcpr_equivalent_pp','mcpr_if_actionable_endings_avoided_pct']].copy();sc.columns=['Growth scenario','Annual growth (pp)','2024 mCPR','2025 women 15–49','2025 mCPR','Gross ending equivalent (pp)','mCPR if all original-method endings avoided'];htmlparts.append(htable(sc,formats={'Annual growth (pp)':lambda x:f'{x:+.2f}','2024 mCPR':pct,'2025 women 15–49':integer,'2025 mCPR':pct,'Gross ending equivalent (pp)':lambda x:f'{x:.2f}','mCPR if all original-method endings avoided':pct})+'</section>')
+htmlparts.append('<section id="duration"><h2>Duration-aware current-user approaches</h2><p>First-year risks apply to new method starts. For users already on a method, the historical approach averages observed next-12-month probabilities at each method and elapsed-duration landmark over the current-user duration distribution. The AFT approach fits cause-specific accelerated failure-time models and predicts the next 12 months conditional on elapsed use. Both pathway-adjusted illustrations then use observed modern-use status after an actionable ending.</p>')
+comparison=pd.DataFrame({'Approach':['First-year life table','Historical duration aware','AFT plus observed pathways'],'Original-method endings':[scenarios.illustrative_gross_endings.iloc[0],scenarios.historical_duration_actionable_endings.iloc[0],scenarios.aft_actionable_endings.iloc[0]],'Year-end nonmodern after actionable ending':[np.nan,scenarios.historical_duration_nonmodern_year_end.iloc[0],scenarios.aft_pathway_nonmodern_year_end.iloc[0]],'Gross mCPR equivalent (pp)':[scenarios.gross_mcpr_equivalent_pp.iloc[0],scenarios.historical_duration_gross_pp.iloc[0],scenarios.aft_gross_pp.iloc[0]],'Year-end nonmodern equivalent (pp)':[np.nan,scenarios.historical_duration_year_end_pp.iloc[0],scenarios.aft_pathway_year_end_pp.iloc[0]]})
+htmlparts.append(htable(comparison,formats={'Original-method endings':integer,'Year-end nonmodern after actionable ending':integer,'Gross mCPR equivalent (pp)':lambda x:'—' if pd.isna(x) else f'{x:.2f}','Year-end nonmodern equivalent (pp)':lambda x:'—' if pd.isna(x) else f'{x:.2f}'}))
+htmlparts.append('<h3>Historical duration-aware method estimates</h3>');hd=hist[['method','current_users_2024','actionable_ending_risk_next12_pct','projected_actionable_original_method_endings','projected_nonmodern_at_month12_after_actionable']].copy();hd.columns=['Method','Current users','Next-12-month actionable risk','Original-method endings','Nonmodern at year end'];htmlparts.append(htable(hd,formats={'Current users':integer,'Next-12-month actionable risk':pct,'Original-method endings':integer,'Nonmodern at year end':integer}))
+htmlparts.append('<h3>AFT method estimates</h3>');ad=aft[['method','current_users_2024','survival_actionable_next12_pct','survival_original_method_endings','survival_pathway_nonmodern_at_year_end']].copy();ad.columns=['Method','Current users','Next-12-month actionable risk','Original-method endings','Nonmodern at year end'];htmlparts.append(htable(ad,formats={'Current users':integer,'Next-12-month actionable risk':pct,'Original-method endings':integer,'Nonmodern at year end':integer}))
+htmlparts.append('<h3>Scenario comparison</h3>');ss=scenarios[['scenario','mcpr_2025_pct','historical_duration_year_end_pp','aft_pathway_year_end_pp']].copy();ss.columns=['Growth scenario','Usual 2025 mCPR','Historical year-end equivalent (pp)','AFT + pathways year-end equivalent (pp)'];htmlparts.append(htable(ss,formats={'Usual 2025 mCPR':pct,'Historical year-end equivalent (pp)':lambda x:f'{x:.2f}','AFT + pathways year-end equivalent (pp)':lambda x:f'{x:.2f}'}))
+histcause=read('duration_aware_current_user_by_cause');aftcause=read('survival_model_duration_by_method_cause')
+def cause_matrix(df,value):
+ m=df.pivot(index='method',columns='reason',values=value).reindex(index=methods,columns=reason_order).fillna(0)
+ m['Total']=m.sum(axis=1);total=m.sum(axis=0);m.loc['All methods']=total;m.loc['Women aged 15–49 in 2025']=scenarios.wra_2025.iloc[0];m.loc['mCPR equivalent (pp)']=100*total/scenarios.wra_2025.iloc[0]
+ m.insert(0,'Method',m.index);return m.reset_index(drop=True)
+cause_matrices=[('First-year original-method endings',cause_matrix(bycause,'illustrative_users')),
+ ('Historical duration-aware year-end nonmodern',cause_matrix(histcause,'projected_nonmodern_at_month12')),
+ ('AFT + pathways year-end nonmodern',cause_matrix(aftcause,'aft_pathway_nonmodern_at_year_end'))]
+for label,mat in cause_matrices:
+ htmlparts.append('<h3>'+label+': method × cause and mCPR equivalent</h3><p>Each percentage-point contribution is the total women for that cause divided by 2025 women aged 15–49 × 100. The first-year table measures original-method endings; the duration-aware tables measure nonmodern status at year end after an actionable ending.</p>'+htable(mat,formats={c:(lambda x:f'{x:.2f}' if x<10 else integer(x)) for c in mat.columns if c!='Method'}))
+
+use=read('current_use_mcpr'); use=use[['method','share_of_current_modern_users_pct']].set_index('method')
+def method_scenario_table(scenario,approach):
+ row=scenarios[scenarios.scenario==scenario].iloc[0];base=row.mcpr_2025_pct;wra=row.wra_2025
+ loss={'First-year':current.set_index('method').illustrative_original_method_endings,
+       'Historical':hist.set_index('method').projected_nonmodern_at_month12_after_actionable,
+       'AFT':aft.set_index('method').survival_pathway_nonmodern_at_year_end}[approach]
+ order=methods+['Emergency contraception'];records=[]
+ for m in order:
+  share=use.loc[m,'share_of_current_modern_users_pct']/100;users24=row.current_users_2024*share;usual=row.usual_users_2025*share;avoided=loss.get(m,0)
+  records.append({'Method':m,'2024 current users':users24,'2025 usual users':usual,'Avoided endings / nonmodern':avoided,'Usual mCPR share':100*usual/wra,'If avoided mCPR share':100*(usual+avoided)/wra})
+ d=pd.DataFrame(records);d.loc[len(d)]={'Method':'All modern methods','2024 current users':d['2024 current users'].sum(),'2025 usual users':d['2025 usual users'].sum(),'Avoided endings / nonmodern':d['Avoided endings / nonmodern'].sum(),'Usual mCPR share':d['Usual mCPR share'].sum(),'If avoided mCPR share':d['If avoided mCPR share'].sum()}
+ return d
+for approach in ['First-year','Historical','AFT']:
+ htmlparts.append('<h3>'+approach+' approach: 2025 mCPR by method and growth scenario</h3>')
+ for scenario in scenarios.scenario:
+  d=method_scenario_table(scenario,approach);htmlparts.append('<h4>'+scenario+'</h4>'+htable(d,formats={'2024 current users':integer,'2025 usual users':integer,'Avoided endings / nonmodern':integer,'Usual mCPR share':pct,'If avoided mCPR share':pct}))
+htmlparts.append('</section>')
+htmlparts.append('<section id="limitations"><h2>Interpretation and limits</h2><div class="note caution"><p>Sixteen of 26 provinces have fewer than 30 observed actionable endings. Province-specific injectable and implant reason distributions are much sparser. Asterisked cells are retained for transparency, not for ranking or statistical inference. The IUD national actionable estimate is based on only 23 eligible episodes and four events; the AFT projection uses an other-modern proxy.</p><p>The first-year projection applies the risk for a newly started episode to current users; it is an upper-level gross illustration of original-method endings. Averted endings are not equivalent to added modern users because some women switch or restart. Historical and AFT estimates account for current duration but rely on retrospective calendar and pathway assumptions. None is a causal estimate of program impact.</p></div></section></main></body></html>')
+html_path=OUT/'DRC_discontinuation_analysis.html';html_path.write_text(''.join(htmlparts),encoding='utf-8')
+
+)----------------------"
+REPORT_FILES[["src/report/13_extend_drc_2026_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Add the Ethiopia-style three-approach 2026 planning sequence to DRC HTML.
+
+All file locations are relative to --project-root. Existing HTML sections are
+preserved, and the inserted section can be regenerated from saved CSV tables.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+from html import escape
+from pathlib import Path
+
+import pandas as pd
+
+
+METHODS = ["Injectables", "Implants", "Pill", "IUD", "Other modern"]
+REASONS = ["Method failure", "Wanted more effective method",
+           "Changes in menstrual bleeding", "Other side effects/health",
+           "Access/cost/convenience"]
+
+
+def table(headers: list[str], rows: list[list[object]]) -> str:
+    head = "".join(f"<th>{escape(str(h))}</th>" for h in headers)
+    body = "".join("<tr>" + "".join(f"<td>{escape(str(v))}</td>" for v in row) + "</tr>"
+                   for row in rows)
+    return f"<div class='tablewrap'><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+
+
+def count(x: float) -> str:
+    return f"{x:,.0f}"
+
+
+def build(root: Path) -> None:
+    output = root / "output"
+    data = output / "Supporting_data"
+    scenarios = pd.read_csv(data / "drc_2026_planning_scenarios.csv")
+    methods = pd.read_csv(data / "drc_2026_planning_by_method.csv")
+    causes = pd.read_csv(data / "drc_2026_planning_by_method_cause.csv")
+    use = pd.read_csv(data / "drc_current_use_mcpr.csv").set_index("method")
+    html_path = output / "DRC_discontinuation_analysis.html"
+    original = html_path.read_text(encoding="utf-8")
+    assert original.count('<section id="limitations">') == 1
+    if '<section id="planning-2026">' in original:
+        beginning = original.index('<section id="planning-2026">')
+        ending = original.index('<section id="limitations">', beginning)
+        original = original[:beginning] + original[ending:]
+    original = original.replace('<a href="#planning-2026">2026 mCPR scenarios</a>', '')
+    wra = float(scenarios.wra_2026.iloc[0])
+    first = scenarios.iloc[0]
+    parts = [
+        '<section id="planning-2026"><h2>2026 mCPR and actionable discontinuation: three approaches</h2>',
+        '<p>The 2023–24 survey provides the 2024 all-women mCPR baseline. The illustrative 2025 current-user stock applies the Track20/FPET recent all-women increment of +0.4 percentage points to that baseline and uses projected 2025 women aged 15–49. The three 2026 cases then add no further growth, the UN modeled 2025–26 increment of +0.5 points, or another +0.4 points from the Track20/FPET recent trend. Only the increments—not the modelled prevalence levels—are transferred to the survey baseline. All cases use projected 2026 women aged 15–49 as the percentage-point denominator.</p>',
+        '<div class="note caution">These are upper-bound accounting illustrations. The first-year approach counts endings of the original method, including women who may switch and remain modern users. The historical and AFT approaches condition on elapsed method use and use observed post-ending pathways to identify women outside modern use at year end. Avoiding an actionable ending is assumed to retain those otherwise nonmodern women in modern use; no intervention effectiveness is estimated.</div>',
+        '<h3>Common population and mCPR assumptions</h3>',
+        table(["2024 survey mCPR", "Projected 2025 mCPR", "Projected 2025 current users", "Projected 2026 women aged 15–49"],
+              [[f"{first.dhs_all_women_mcpr_2024_pct:.2f}%", f"{first.projected_mcpr_2025_pct:.2f}%", count(first.projected_current_users_2025), count(wra)]]),
+        '<h3>Three approaches and their percentage-point equivalents</h3>',
+    ]
+    summary = []
+    for approach in scenarios.approach.drop_duplicates():
+        row = scenarios[scenarios.approach == approach].iloc[0]
+        summary.append([approach, count(row.projected_actionable_original_method_endings),
+                        "Not estimated" if approach == "First-year life table" else count(row.retained_modern_users_2026_illustration),
+                        f"{row.mcpr_equivalent_pp:.2f} pp",
+                        "Gross original-method endings" if approach == "First-year life table" else "Outside modern use at year end"])
+    parts.append(table(["Approach", "Original-method endings", "Outside modern use at year end", "mCPR equivalent", "What the mCPR count means"], summary))
+
+    for approach in scenarios.approach.drop_duplicates():
+        part = scenarios[scenarios.approach == approach]
+        part_method = methods[methods.approach == approach].set_index("method")
+        part_cause = causes[causes.approach == approach]
+        parts.append(f"<h3>{escape(approach)}: 2026 mCPR scenarios</h3>")
+        rows = []
+        for row in part.itertuples():
+            rows.append([row.scenario, f"{row.usual_mcpr_2026_pct:.2f}%",
+                         count(row.usual_modern_users_2026),
+                         count(row.projected_actionable_original_method_endings),
+                         count(row.retained_modern_users_2026_illustration),
+                         f"{row.mcpr_equivalent_pp:.2f} pp",
+                         f"{row.mcpr_if_retained_2026_pct:.2f}%"])
+        parts.append(table(["2026 growth case", "Usual mCPR", "Usual modern users", "Original-method endings", "Users counted for mCPR", "mCPR equivalent", "Illustrative mCPR if retained"], rows))
+
+        parts.append(f"<h3>{escape(approach)}: users by method and actionable cause</h3>")
+        matrix = part_cause.pivot(index="method", columns="reason", values="retained_modern_users_2026_illustration").reindex(index=METHODS, columns=REASONS)
+        cause_rows = []
+        for method in METHODS:
+            values = [float(matrix.loc[method, reason]) for reason in REASONS]
+            cause_rows.append([method, *map(count, values), count(sum(values))])
+        totals = matrix.sum(axis=0)
+        grand = totals.sum()
+        cause_rows.append(["All methods", *[count(totals.loc[r]) for r in REASONS], count(grand)])
+        cause_rows.append(["2026 women aged 15–49", *([count(wra)] * 6)])
+        cause_rows.append(["mCPR equivalent", *[f"{100*totals.loc[r]/wra:.2f} pp" for r in REASONS], f"{100*grand/wra:.2f} pp"])
+        parts.append(table(["Current method", *REASONS, "All actionable causes"], cause_rows))
+
+        if approach != "First-year life table":
+            original_matrix = part_cause.pivot(index="method", columns="reason", values="projected_actionable_original_method_endings").reindex(index=METHODS, columns=REASONS)
+            original_rows = []
+            for method in METHODS:
+                values = [float(original_matrix.loc[method, reason]) for reason in REASONS]
+                original_rows.append([method, *map(count, values), count(sum(values))])
+            original_totals = original_matrix.sum(axis=0)
+            original_rows.append(["All methods", *[count(original_totals.loc[r]) for r in REASONS], count(original_totals.sum())])
+            parts.append(f"<h4>{escape(approach)}: original-method endings before post-ending pathways</h4>")
+            parts.append(table(["Current method", *REASONS, "All actionable causes"], original_rows))
+
+        for row in part.itertuples():
+            parts.append(f"<h3>{escape(approach)}: {escape(row.scenario)} by method</h3>")
+            method_rows = []
+            for method in METHODS + ["Emergency contraception"]:
+                share = float(use.loc[method, "share_of_current_modern_users_pct"]) / 100
+                usual = row.usual_modern_users_2026 * share
+                retained = 0.0 if method == "Emergency contraception" else float(part_method.loc[method, "retained_modern_users_2026_illustration"])
+                method_rows.append([method, count(row.projected_current_users_2025 * share),
+                                    count(usual), count(retained), count(usual+retained),
+                                    f"{100*usual/wra:.2f}%", f"{100*(usual+retained)/wra:.2f}%"])
+            method_rows.append(["All modern", count(row.projected_current_users_2025),
+                                count(row.usual_modern_users_2026),
+                                count(row.retained_modern_users_2026_illustration),
+                                count(row.usual_modern_users_2026+row.retained_modern_users_2026_illustration),
+                                f"{row.usual_mcpr_2026_pct:.2f}%", f"{row.mcpr_if_retained_2026_pct:.2f}%"])
+            parts.append(table(["Method", "2025 current users", "2026 usual users", "Users counted if retained", "2026 users if retained", "Usual mCPR contribution", "If retained contribution"], method_rows))
+    parts.append('</section>')
+    addition = ''.join(parts)
+    updated = original.replace('<section id="limitations">', addition + '<section id="limitations">')
+    updated = updated.replace('<a href="#limitations">Interpretation</a>',
+                              '<a href="#planning-2026">2026 mCPR scenarios</a><a href="#limitations">Interpretation</a>')
+    assert updated.count('id="planning-2026"') == 1
+    assert not re.search(r"[/](?:Users|Volumes|home)[/]|file:[/]", updated, re.I)
+    html_path.write_text(updated, encoding="utf-8")
+    print(f"Wrote {html_path.name} with {len(parts)} new planning fragments")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project-root", required=True, type=Path)
+    args = parser.parse_args()
+    build(args.project_root.resolve())
+)----------------------"
+REPORT_FILES[["src/report/19_drc_method_timing_figures.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Create presentation timing plots from validated monthly life tables."""
+import argparse
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+args=ap.parse_args()
+root=args.project_root
+d=pd.read_csv(root/'output/Supporting_data/drc_method_timing_monthly.csv')
+out=root/'output/assets';out.mkdir(parents=True,exist_ok=True)
+colors={'Pill':'#DA9A25','Injectables':'#118C90','All modern':'#435666',
+        'Other modern':'#697885','IUD':'#E65A4F','Implants':'#173F5B'}
+order=['Injectables','Pill','All modern','Other modern','IUD','Implants']
+
+def make(field,filename,ylim):
+    plt.rcParams.update({'font.family':'Arial','font.size':14})
+    fig,ax=plt.subplots(figsize=(10,5.05),dpi=240)
+    fig.patch.set_facecolor('white');ax.set_facecolor('white')
+    for y in range(0,ylim+1,10):ax.axhline(y,color='#E6ECEF',lw=.8,zorder=0)
+    for x in (3,6,9,12):ax.axvline(x,color='#E6ECEF',lw=.7,ls=':',zorder=0)
+    for method in order:
+        m=d[d.method==method].sort_values('month');v=m[field].to_numpy()
+        ax.step([0,*m.month], [0,*v], where='post', lw=2.4,
+                color=colors[method],zorder=3)
+        ax.plot([3,6,12],[v[2],v[5],v[11]],'o',ms=5,color=colors[method],zorder=4)
+    # Keep direct labels legible where 12-month estimates nearly coincide.
+    offset={'all_reason_pct':{'Injectables':0,'Pill':0,'All modern':2.0,
+               'Other modern':-2.0,'IUD':0,'Implants':0},
+            'actionable_pct':{'Injectables':0,'Pill':0,'All modern':0,
+               'IUD':-1.0,'Other modern':1.8,'Implants':-1.8}}[field]
+    for method in order:
+        m=d[d.method==method].sort_values('month');end=float(m[field].iloc[-1]);label_y=end+offset[method]
+        if offset[method]:ax.plot([12,12.18],[end,label_y],color=colors[method],lw=.9)
+        flag='*' if method=='IUD' else ''
+        ax.text(12.25,label_y,f'{method}{flag}  {end:.1f}%',va='center',ha='left',
+                color=colors[method],fontsize=11.3,fontweight='bold' if method=='All modern' else 'normal')
+    ax.set_xlim(0,16.4);ax.set_ylim(0,ylim)
+    ax.set_xticks([0,3,6,9,12]);ax.set_yticks(range(0,ylim+1,10));
+    ax.set_yticklabels([f'{x}%' for x in range(0,ylim+1,10)])
+    ax.set_xlabel('Months since method initiation',labelpad=7)
+    ax.set_ylabel('Cumulative discontinuation probability',labelpad=8)
+    ax.spines[['top','right','left']].set_visible(False)
+    ax.spines['bottom'].set_color('#CBD7DE')
+    ax.tick_params(axis='both',length=0,pad=7)
+    fig.subplots_adjust(left=.10,right=.98,bottom=.16,top=.96)
+    fig.savefig(out/filename,dpi=240,facecolor='white')
+    plt.close(fig)
+
+make('all_reason_pct','drc_all_reason_method_timing.png',80)
+make('actionable_pct','drc_actionable_method_timing.png',50)
+print('Wrote two method-specific monthly timing figures')
+)----------------------"
+REPORT_FILES[["src/report/219_rebase_selected_projection.R"]] <- r"----------------------(#!/usr/bin/env Rscript
+# Full-frame design linearization for DRC life tables and fitted predictions.
+# Includes joint covariance and empirical standardization-reference uncertainty.
+a<-commandArgs(TRUE);stopifnot(length(a)>=1);root<-normalizePath(a[1]);sup<-file.path(root,'output/Supporting_data');der<-file.path(root,'Data/Derived')
+suppressPackageStartupMessages(library(haven));suppressPackageStartupMessages(library(nnet));suppressPackageStartupMessages(library(survey))
+ir<-readRDS(file.path(root,'Data/ir.rds'));e<-readRDS(file.path(der,'drc_2023_24_modern_episodes.rds'));ep<-readRDS(file.path(der,'drc_2023_24_model_episode_covariates.rds'));person<-readRDS(file.path(der,'drc_2023_24_person_month.rds'))
+frame<-unique(data.frame(cluster=as.numeric(ir$v021),stratum=as.numeric(ir$v022)));N<-nrow(frame);groups<-split(seq_len(N),frame$stratum);df<-N-length(groups);crit<-qt(.975,df)
+stopifnot(N==778,length(groups)==51,df==727,all(lengths(groups)>1))
+cluster_sum<-function(v,cluster){v<-as.matrix(v);z<-matrix(0,N,ncol(v));q<-rowsum(v,match(cluster,frame$cluster),reorder=FALSE);z[as.integer(rownames(q)),]<-q;z}
+design_vcov<-function(z){v<-matrix(0,ncol(z),ncol(z));for(ids in groups){q<-z[ids,,drop=FALSE];q<-sweep(q,2,colMeans(q));v<-v+length(ids)/(length(ids)-1)*crossprod(q)};v}
+bounds<-function(p,se,prob=TRUE){if(!prob)return(c(p-crit*se,p+crit*se));if(p<=0||p>=100)return(c(max(0,p-crit*se),min(100,p+crit*se)));100*plogis(qlogis(p/100)+c(-1,1)*crit*se/(p*(1-p/100)))}
+action<-c(1L,4L,5L,6L,7L,8L,10L,15L)
+cif<-function(d,targets=list(all=function(x)rep(TRUE,nrow(x)),actionable=function(x)x$reason_code%in%action,selected=function(x)!x$reason_code%in%c(2L,3L))){
+ s<-1;ds<-rep(0,N);f<-numeric(length(targets));dif<-matrix(0,N,length(targets));out<-vector('list',12)
+ marked<-do.call(cbind,lapply(targets,function(fun)fun(d)))
+ for(t in 1:12){at<-d$entry<t&d$exposure>=t;den<-sum(d$wt[at]);if(den<=0)return(NULL)
+  en<-at&d$discontinued&d$exposure==t;ha<-sum(d$wt[en])/den
+  h<-colSums(marked*(d$wt*en))/den
+  dha<-cluster_sum(d$wt*(as.numeric(en)-ha*as.numeric(at))/den,d$cluster)[,1]
+  dh<-cluster_sum((marked*as.numeric(en)-outer(as.numeric(at),h))*d$wt/den,d$cluster)
+  dif<-dif+outer(ds,h)+s*dh;f<-f+s*h;ds<-(1-ha)*ds-s*dha;s<-s*(1-ha)
+  out[[t]]<-list(point=100*f,influence=100*dif)
+ }
+ out
+}
+# Broader first-year cause projections with joint risk/current-stock variance.
+causes<-list('Method failure'=1L,'Other fertility'=c(9L,12L,13L),'Bleeding changes'=15L,'Other health'=c(4L,5L),'More effective'=7L,'Access/cost/convenience'=c(6L,8L,10L),'Other recorded'=c(11L,96L,98L,99L,0L))
+W<-as.numeric(ir$v005)/1e6;modern<-as.numeric(ir$v313)==3L;method<-ifelse(as.integer(ir$v312)==3L,'Injectables',ifelse(as.integer(ir$v312)==11L,'Implants',ifelse(as.integer(ir$v312)==1L,'Pill',ifelse(as.integer(ir$v312)==2L,'IUD','Other modern'))))
+method[as.integer(ir$v312)==16L]<-'EC'
+T<-sum(W);M<-sum(W[modern]);w24<-24386254.5;rows<-list(c('Method','Reason','2024 survey current users','Cause-specific first-year probability','Illustrative original-method endings'))
+for(m in c('Injectables','Implants','Pill','IUD','Other modern')){
+ Mm<-sum(W[modern&method==m]);stock<-w24*Mm/T
+ stock_if<-cluster_sum(W*w24/T*(as.numeric(modern&method==m)-Mm/T),as.numeric(ir$v021))[,1]
+ ss<-sqrt(design_vcov(matrix(stock_if,ncol=1))[1,1]);sc<-bounds(stock,ss,FALSE)
+ zz<-cif(e[e$method_group==m,],lapply(causes,function(c)function(x)x$reason_code%in%c))[[12]]
+ for(j in seq_along(causes)){
+  p<-zz$point[j]/100;ppsi<-zz$influence[,j]/100;v<-stock*p;vpsi<-stock_if*p+stock*ppsi;se<-sqrt(design_vcov(matrix(vpsi,ncol=1))[1,1]);ci<-bounds(v,se,FALSE);ps<-sqrt(design_vcov(matrix(zz$influence[,j],ncol=1))[1,1]);pc<-bounds(100*p,ps)
+  fmt<-function(x,l,u,percent=FALSE){if(x==0&&l==0&&u==0)return('0 (CI unavailable†)');sprintf(if(percent)'%.1f%% (%.1f–%.1f)'else'%.0f (%.0f–%.0f)',x,max(0,l),u)}
+  rows[[length(rows)+1L]]<-c(m,names(causes)[j],fmt(stock,sc[1],sc[2]),fmt(100*p,pc[1],pc[2],TRUE),fmt(v,ci[1],ci[2]))
+ }
+}
+jsonlite::write_json(rows,a[2],auto_unbox=TRUE,pretty=TRUE)
+cat('Saved observed-2024 cohort projection with joint full-frame survey intervals.\n')
+)----------------------"
+REPORT_FILES[["src/report/220_update_planning_html.py"]] <- r"----------------------(from pathlib import Path
+from lxml import html,etree
+from html import escape
+import json,csv,re,copy,sys
+source,freshfile,stats,specfile,target=map(Path,sys.argv[1:]);doc=html.parse(str(freshfile));old=html.parse(str(source));oldids=set(old.xpath('//section/@id'))
+specs=json.loads(specfile.read_text());meta=json.loads((stats/'metadata.json').read_text());D={r['key']:{k:float(r[k]) for k in ['estimate','lower','upper']} for r in csv.DictReader((stats/'planning_intervals.csv').open())}
+
+for sid in ['switching-sensitivity','historical-switching-sensitivity','aft-observed-pathway-sensitivity']:
+ for e in doc.xpath(f'//section[@id="{sid}"]'):e.getparent().remove(e)
+methods=meta['methods'];causes=meta['causes'];short=['Method failure','Want more effective','Bleeding changes','Other side effects/health','Access/cost/convenience']
+main=doc.find('.//main')
+def sec(sid):return doc.xpath(f'//section[@id="{sid}"]')[0]
+def content(sid,title,markup):
+ s=sec(sid);s.clear();s.set('id',sid);h=html.Element('h2');h.text=title;s.append(h)
+ for el in html.fragments_fromstring(markup):
+  if isinstance(el,str):s.text=(s.text or'')+el
+  else:s.append(el)
+ return s
+def table(rows):return '<div class="table-wrap"><table class="analysis-table"><thead><tr>'+''.join('<th>'+escape(str(c)).replace('\n','<br>')+'</th>' for c in rows[0])+'</tr></thead><tbody>'+''.join('<tr>'+''.join(('<th scope="row">' if j==0 else'<td>')+escape(str(c)).replace('\n','<br>')+('</th>' if j==0 else'</td>') for j,c in enumerate(row))+'</tr>' for row in rows[1:])+'</tbody></table></div>'
+def article(s):return '<article class="planning-table"><h3>'+escape(s['title'])+'</h3><p>'+escape(s['subtitle'])+'</p>'+table(s['table'])+'<p class="note">'+escape(s['note'])+'</p></article>'
+def val(key,kind='count'):
+ x=D[key];digits=0 if kind=='count'else 1 if kind=='risk'else 2
+ def f(v):return '<0.01' if kind=='pp'and 0<v<.005 else f'{v:,.{digits}f}'
+ suffix=' pp'if kind=='pp'else'%'if kind in ['risk','pct']else''
+ v=f(x['estimate'])+suffix
+ if x['lower']==x['upper']==0:return v+'\n(CI unavailable†)'
+ if abs(x['upper']-x['lower'])<1e-9:return v+'\n(fixed)'if kind=='pct'else v
+ return v+'\n('+f(x['lower'])+'–'+f(x['upper'])+')'
+def cirows(a,legacy=False):
+ prefix='legacy_'if legacy else'';wra=meta['wra2025']if legacy else meta['wra2025'];rows=[['Method / measure',*short,'All actionable causes']]
+ for m in methods:rows.append(['IUD*'if m=='IUD'else m]+[val(f'{prefix}count|{a}|{m}|{c}')for c in causes]+[val(f'{prefix}count|{a}|{m}|Total')])
+ rows.append(['Users ending / year-end losses']+[val(f'{prefix}count|{a}|Total|{c}')for c in causes]+[val(f'{prefix}count|{a}|Total|Total')])
+ rows.append([f'{2025} women aged 15–49 (fixed)']+[f'{wra:,.1f}']*6)
+ rows.append(['mCPR equivalent (pp)']+[val(f'{prefix}pp|{a}|Total|{c}','pp')for c in causes]+[val(f'{prefix}pp|{a}|Total|Total','pp')]);return rows
+base_note='<p class="note">Estimates show 95% survey confidence intervals. Population and growth assumptions are fixed. CI bounds do not add across methods/causes. † No reliable interval from zero observed events. * IUD estimates are sparse; its AFT curve is an Other-modern proxy.</p>'
+# Canonical 2026 main sets contain gross actionable endings only.
+content('mcpr-2026-retention-scenarios','2026 planning: first-year actionable method endings',
+ '<p>The observed 2024 DHS current-user cohort is followed over the next 12 months to 2025. Current method mix remains at its survey distribution. The 2025 baseline mCPR equals the 2024 survey estimate plus the recent DHS, longer-term DHS, or FPET-informed annual change. Main tables assume every potentially actionable original-method ending is a lost modern user; switching/restarting is not deducted.</p>'+''.join(article(s)for s in specs[:8]))
+content('historical-duration-aware-planning','Historical duration-aware planning: all actionable endings treated as user losses',
+ '<p>These eight tables condition next-12-month actionable-ending probabilities on the current method and time already used. They use observed historical calendar landmarks and do not deduct switching or restarting. Duration 61+ months uses the observed 37–60-month proxy.</p>'+''.join(article(s)for s in specs[8:16]))
+content('aft-duration-aware-planning','AFT survival planning: all actionable endings treated as user losses',
+ '<p>These eight tables use six weighted cause-specific AFT models: five actionable causes and other competing endings. Current elapsed use conditions each next-12-month prediction. IUD shares the Other-modern curve. Switching/restarting is not deducted.</p>'+''.join(article(s)for s in specs[16:24]))
+# All earlier switching tables move below the main three approaches.
+div=html.Element('section',id='switching-sensitivity');div.append(html.Element('h2'));div[0].text='Appendix: Sensitivity analysis if some users who discontinue switch'
+div.append(html.fragment_fromstring('<div><p>The following historical and AFT sets count women outside modern use at year end after a potentially actionable ending. Direct switching and later restarting can therefore reduce the gross count. EC is counted as modern at year end, consistently with the mCPR definition.</p><ul><li>Switching/restarting pathways are retrospective; future behavior and intervention effects are not identified.</li><li>IUD has 23 eligible episodes and 14 current users. AFT uses an Other-modern proxy. Implant method failure has only two first-year training events.</li><li>Eight of 25 AFT method–cause pathway fractions pool across methods because fewer than 10 distinct historical episodes support the narrower cell. Repeated monthly landmarks are not independent episodes.</li><li>Historical 61+ months uses a 37–60-month proxy. AFT intervals hold selected distribution families fixed.</li><li>500 stratified PSU bootstrap replicates propagate sampling uncertainty in prevalence, method/duration mix, risks, fitted curves and pathways. A small positive weight floor preserves sparse support; deviations are corrected for its first-order attenuation. Population and growth assumptions remain fixed.</li></ul></div>'))
+main.append(div)
+for sid,title,part in [('historical-switching-sensitivity','Historical sensitivity: switching and restarting',specs[24:32]),('aft-observed-pathway-sensitivity','AFT sensitivity: switching and restarting',specs[32:40])]:
+ s=html.Element('section',id=sid);h=html.Element('h2');h.text=title;s.append(h)
+ for sp in part:s.append(html.fragment_fromstring(article(sp)))
+ main.append(s)
+# Detailed 2026 matrices stay available with intervals for every mCPR cell.
+content('mcpr-2026-method-detail','2026 method-specific user and mCPR detail',
+ '<p>Method-specific results under all three growth scenarios appear in each main approach and sensitivity set above. The usual 2026 method mix is held at the observed current-user mix.</p>'+''.join(article(s)for s in specs if s['approach']in[1,2,3]and s['kind']=='method_scenario'))
+content('actionable-cause-mcpr-ceiling','2026 percentage-point equivalents by actionable cause',
+ '<p>Every cause uses the same 2026 WRA denominator. Gross tables assume all actionable endings are losses. Sensitivity tables deduct women using modern contraception at year end.</p>'+''.join(article(s)for s in specs if s['kind']=='cause_pp'))
+# Preserve the earlier 2024-to-2025 illustration as separate diagnostics with CIs.
+legacy_intro='<p>These complementary diagnostics use the same observed 2024 current-user cohort and projected 2025 women ages 15–49 as the main tables. The probabilities and survey bootstrap are unchanged; the current-user cohort, population denominator, and growth scenarios now agree throughout.</p>'
+legacy_method=[['Method','2024 current users','First-year actionable discontinuation','Original-method endings','2025 mCPR equivalent']]
+for m in methods:legacy_method.append(['IUD*'if m=='IUD'else m,val('legacy_stock|'+m),val(f'risk|1|{m}|Total','risk'),val(f'legacy_count|1|{m}|Total'),val(f'legacy_pp|1|{m}|Total','pp')])
+legacy_sc=[['Different mCPR growth scenarios','2024 mCPR','2025 mCPR','2025 women 15–49 (fixed)','Gross equivalent (pp)','2025 mCPR if retained']]
+for j,name in enumerate(['10-year DHS trend','17-year DHS trend','FPET-informed growth'],1):legacy_sc.append([name,val('mcpr2024','pct'),val(f'legacy_base|{j}','pct'),f'{meta["wra2025"]:,.0f}',val('legacy_pp|1|Total|Total','pp'),val(f'legacy_retainedmcpr|{j}|1|Total','pct')])
+content('expected-user-calculations','Earlier 2024-to-2025 first-year illustration',legacy_intro+table(legacy_method)+table(cirows(1,True))+table(legacy_sc)+base_note)
+content('current-user-actionable-projection','Current-user actionable projection definitions',
+ '<p>The earlier 2024-to-2025 tables are in <a href="#expected-user-calculations">the earlier-horizon illustration</a>. The main 2025-to-2026 first-year set is <a href="#mcpr-2026-retention-scenarios">here</a>. Both assume every actionable original-method ending is a lost user.</p>')
+content('duration-adjusted-reason-planning','Choosing the duration-aware planning approach',
+ '<p>The main <a href="#historical-duration-aware-planning">historical</a> and <a href="#aft-duration-aware-planning">AFT</a> sets use gross actionable endings. Their <a href="#switching-sensitivity">switching sensitivities</a> are in the appendix. Earlier 2024-to-2025 diagnostics are retained below, using their own population denominator.</p>')
+# Earlier duration diagnostics reproduce the previous analyses without bare pp cells.
+legacy=['<h3>2024-to-2025 comparison of gross endings and year-end nonmodern use</h3>']
+comparison=[['Approach','Gross original-method endings','Outside modern use at year end','Gross equivalent (pp)','Year-end equivalent (pp)']]
+for a,name,net in [(1,'First-year',None),(2,'Historical',4),(3,'AFT',5)]:comparison.append([name,val(f'legacy_count|{a}|Total|Total'),'Not estimated'if net is None else val(f'legacy_count|{net}|Total|Total'),val(f'legacy_pp|{a}|Total|Total','pp'),'Not estimated'if net is None else val(f'legacy_pp|{net}|Total|Total','pp')])
+legacy.append(table(comparison))
+for a,name,net in [(2,'Historical',4),(3,'AFT',5)]:
+ rows=[['Method','2024 current users','Next-12-month actionable discontinuation','Original-method endings','Outside modern use at year end']]
+ for m in methods:rows.append(['IUD*'if m=='IUD'else m,val('legacy_stock|'+m),val(f'risk|{a}|{m}|Total','risk'),val(f'legacy_count|{a}|{m}|Total'),val(f'legacy_count|{net}|{m}|Total')])
+ legacy.append('<h3>'+name+': original endings and year-end outcomes</h3>'+table(rows))
+rows=[['Growth scenario','Usual 2025 mCPR','Historical year-end equivalent (pp)','AFT year-end equivalent (pp)']]
+for j,name in enumerate(['10-year DHS trend','17-year DHS trend','FPET-informed growth'],1):rows.append([name,val(f'legacy_base|{j}','pct'),val('legacy_pp|4|Total|Total','pp'),val('legacy_pp|5|Total|Total','pp')])
+legacy.append(table(rows))
+for a,name in [(1,'First-year gross'),(4,'Historical switching sensitivity'),(5,'AFT switching sensitivity')]:
+ legacy.append('<h3>'+name+': earlier method–cause matrix</h3>'+table(cirows(a,True)))
+ for j,scenario in enumerate(['10-year DHS trend','17-year DHS trend','FPET-informed growth'],1):
+  rows=[['Method','2024 current users','2025 usual users','Users counted if retained','Usual mCPR share','If retained mCPR share']]
+  for m in methods+['EC','Total']:
+   rows.append(['All modern'if m=='Total'else'IUD*'if m=='IUD'else m,val('legacy_stock|'+m),val(f'legacy_usualusers|{j}|{a}|{m}'),'Not estimated'if m=='EC'else val(f'legacy_count|{a}|{m}|Total'),val(f'legacy_usualmcpr|{j}|{a}|{m}','pct'),val(f'legacy_retainedmcpr|{j}|{a}|{m}','pct')])
+  legacy.append('<h4>'+name+': '+scenario+'</h4>'+table(rows))
+oldbin=copy.deepcopy(sec('duration-planning-appendix').xpath('.//table')[-1])
+content('duration-planning-appendix','Appendix: earlier duration-aware diagnostics with uncertainty',legacy_intro+''.join(legacy)+base_note+'<h3>Historical duration support</h3><p>Landmark counts repeat episodes at different months and are not independent observations. These descriptive support counts retain their original definitions.</p>')
+sec('duration-planning-appendix').append(oldbin)
+content('duration-modern-use-2026-bridge','Appendix: original-method endings and modern use at year end',
+ '<p>These two tables use observed 2024 users and the projected 2025 WRA denominator. The ending probability remains the gross actionable probability; year-end losses deduct switching and restarting.</p>'+article(specs[24])+article(specs[32]))
+rows=[['Approach','Method','Actionable cause','Original-method endings','Users counted for mCPR','mCPR equivalent (pp)']]
+for a,name in [(1,'First-year gross'),(2,'Historical gross'),(3,'AFT gross'),(4,'Historical sensitivity'),(5,'AFT sensitivity')]:
+ for m in methods:
+  for c in causes:rows.append([name,'IUD*'if m=='IUD'else m,c,val(f'count|{2 if a==4 else 3 if a==5 else a}|{m}|{c}'),val(f'count|{a}|{m}|{c}'),val(f'pp|{a}|{m}|{c}','pp')])
+content('duration-aware-cause-pp-matrices','Appendix: complete method–cause planning estimates',table(rows)+base_note)
+rows=[['Method','Cause','AFT actionable probability','AFT original-method endings','Fraction outside modern use at year end','AFT year-end losses']]
+for m in methods:
+ for c in causes:rows.append(['IUD*'if m=='IUD'else m,c,val(f'risk|3|{m}|{c}','risk'),val(f'count|3|{m}|{c}'),val(f'fraction|5|{m}|{c}','risk'),val(f'count|5|{m}|{c}')])
+content('aft-switching-sensitivity','Appendix: AFT observed-pathway fractions',
+ '<p>Eight sparse method–cause pathway fractions are pooled across methods. Fractions reflect modern-use status at year end and include later restarting. They are not causal switching probabilities.</p>'+table(rows)+base_note)
+# Broader selected-reason projections remain labelled and receive joint survey CIs.
+# Updated numerical cells are supplied by the survey-projection export.
+projection=stats/'selected_projection.json'
+if projection.exists():
+ content('current-user-reason-planning','Broader selected-reason current-user illustration',
+  '<p>This diagnostic includes endings other than wanted pregnancy or partner disapproval, including circumstances outside the actionable set. Main actionable planning tables are separate. First-year cause probabilities are applied to observed 2024 users without elapsed-duration adjustment.</p>'+table(json.loads(projection.read_text()))+base_note)
+# Refresh the historical stock-to-outcome bridge with the same corrected estimates.
+flow=sec('standardized-current-users')
+flow_figure=copy.deepcopy(flow.xpath('.//figure')[0])
+content('standardized-current-users','Current-user stock and year-end outcomes',
+ '<p>Switching/restarting sensitivity: the observed 2024 cohort is followed to 2025 using historical duration-aware actionable-ending probabilities. The flow follows only women with an actionable original-method ending. It separates those using a modern method again at year end from those outside modern use. EC counts as modern at year end.</p>'+article(specs[24]))
+flow=sec('standardized-current-users');flow.insert(2,flow_figure)
+# Keep numerical tests legible rather than rounding p values to one decimal.
+for csvpath in (stats.parent/'Supporting_data').glob('*.csv'):
+ records=list(csv.reader(csvpath.open()))
+ if not records or not any(c in records[0] for c in ['p_value','p_raw']):continue
+ headers=records[0]
+ for oldtable in list(doc.xpath('//table')):
+  if [c.text_content().strip()for c in oldtable.xpath('./thead/tr/th')]!=headers:continue
+  if len(oldtable.xpath('./tbody/tr'))!=len(records)-1:continue
+  rows=[headers]
+  for record in records[1:]:
+   row=[]
+   for key,value in zip(headers,record):
+    if key in ['p_value','p_raw','p_holm']:
+     value=('<0.001' if float(value)<.001 else f'{float(value):.3f}')
+    elif key in ['odds_ratio','ci_low','ci_high','survey_se','difference_pp','se_pp']:
+     value=f'{float(value):.2f}'
+    row.append(value)
+   rows.append(row)
+  newtable=html.fragment_fromstring(table(rows));parent=oldtable.getparent()
+  parent.replace(oldtable,newtable[0])
+
+# Move appendix sections to the end after all three gross approaches.
+append_ids=['switching-sensitivity','standardized-current-users','historical-switching-sensitivity','aft-observed-pathway-sensitivity','duration-planning-appendix','switching-2026-bridge','duration-modern-use-2026-bridge','duration-aware-cause-pp-matrices','aft-switching-sensitivity']
+for sid in append_ids:s=sec(sid);s.getparent().remove(s);main.append(s)
+# Add methods explaining full-frame inference and conditional planning uncertainty.
+methods_note='<h3>Survey-design inference audit</h3><p>All point estimates use v005/1,000,000. Inference uses all 778 PSUs and 51 strata, including 141 PSUs with no eligible modern-method episodes. Repeated episodes/months stay within the woman\'s PSU. Life-table intervals use design linearization. Adjusted probability intervals combine full-frame clustered model-score covariance with uncertainty in the empirical common-reference distribution. Pairwise tests use joint covariance, 727 design degrees of freedom, and Holm correction over all 325 province pairs separately by stage/time.</p><p>Planning intervals use 500 Rao–Wu PSU bootstrap replicates within strata, with a 0.0001 positive-weight floor to retain sparse support. Replicate deviations are rescaled by 1/(1−0.0001). Current prevalence, mix, duration, risks, AFT fitting and pathways are propagated jointly; population, growth assumptions and selected AFT families are fixed. CI bounds are not additive. No-event cells have no reliable empirical interval and are flagged.</p><p>The historical gross count is unchanged from the saved calculation. Switching sensitivities now count EC as modern at year end. AFT sensitivities pool eight sparse pathway fractions rather than assuming that unsupported method–cause cells imply no year-end loss.</p>'
+# Existing full-frame methods audit is retained without duplication.
+# Correct stale descriptions without rewriting the underlying all-cause chapters.
+
+for element in doc.iter():
+ if element.text:element.text=element.text.replace('2026','2025').replace('main projected-2025-to-2025','main observed-2024-to-2025').replace('2025-to-2025','2024-to-2025').replace('The historical gross count is unchanged from the saved calculation.','Gross and switching-sensitive probabilities are unchanged; user counts now use the observed 2024 cohort and 2025 WRA denominator.')
+ if element.tail:element.tail=element.tail.replace('2026','2025')
+text=etree.tostring(doc,encoding='unicode',method='html')
+text=text.replace('2025-to-2025','2024-to-2025').replace('using their own population denominator','using the same 2025 population denominator')
+text=text.replace('Five-year recorded reasons by modern method','Recorded reasons across the observed calendar by modern method')
+text=text.replace('two-sided normal approximations using bootstrap standard errors','two-sided t tests using survey-linearized standard errors and 727 design degrees of freedom')
+for a,b in [('survey-bootstrap confidence intervals','survey-design confidence intervals'),('design-bootstrap 95% confidence intervals','survey-design 95% confidence intervals'),('stratified-PSU bootstrap','full-frame survey linearization'),('stratified PSU bootstrap','full-frame survey linearization'),('120 survey-stratified PSU-bootstrap model refits','full-frame survey linearization'),('Survey-stratified PSU-bootstrap intervals','Full-frame survey-design intervals')]:text=text.replace(a,b)
+doc=html.document_fromstring(text)
+# Remove obsolete Source-prefixed display notes while retaining method explanations.
+for el in list(doc.xpath('//p|//figcaption|//div[@class="note"]')):
+ if re.match(r'^\s*(DHS source|Source\s*:|National row is gold)',el.text_content(),re.I):el.getparent().remove(el)
+# Make the country report standalone so moving/uploading it cannot break figures.
+# Slide-gallery images are refreshed after the final PPTX render in a separate pass.
+for im in doc.xpath('//img'):
+ src=im.get('src','')
+ if src.startswith(('http:','https:','data:')):continue
+ src=src.split('?')[0];path=freshfile.parent/src
+ if not path.exists():raise RuntimeError('Missing figure '+src)
+ im.set('src',src)
+# Comprehensive left navigation includes all section headings and table headings.
+nav=doc.find('.//aside')
+for a in list(nav.xpath('./a')):nav.remove(a)
+seen=set(doc.xpath('//@id'))
+for i,h in enumerate(doc.xpath('//main//h2|//main//h3'),1):
+ parent=h.getparent();sid=parent.get('id')if h.tag=='h2'else None
+ if not sid:
+  sid=f'analysis-heading-{i}';h.set('id',sid)
+ link=html.Element('a',href='#'+sid);link.text=h.text_content();
+ if h.tag=='h3':link.set('style','padding-left:12px;font-size:11.5px')
+ nav.append(link)
+# Planning tables use navy headers and readable multiline estimates.
+style=doc.find('.//style');style.text=(style.text or'')+'\n.planning-table table{font-size:13px}.planning-table td{white-space:normal;min-width:110px}.planning-table tbody th{background:#f1f6f8;color:#173f5b;position:static}.planning-table .note{font-size:12px}.planning-table{margin:26px 0 40px}tbody tr:last-child{font-weight:600}\n'
+assert oldids<=set(doc.xpath('//section/@id'))
+result=html.tostring(doc,encoding='unicode',doctype='<!DOCTYPE html>')
+target.write_text(result)
+print('Updated HTML with',len(doc.xpath('//section')),'sections and',len(doc.xpath('//table')),'tables.')
+)----------------------"
+REPORT_FILES[["src/report/221_reconcile_reasons_html.py"]] <- r"----------------------(from pathlib import Path
+from lxml import html,etree
+from html import escape
+import csv,json,re,hashlib
+import argparse
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True);ap.add_argument('--source',type=Path,required=True);ap.add_argument('--output',type=Path,required=True)
+a=ap.parse_args();source=a.source;out=a.output;d=html.parse(str(source));data=a.project_root/'output/Supporting_data';support=data
+
+def read(name):return list(csv.DictReader((data/name).open()))
+def tbl(rows):return '<div class="table-wrap"><table class="analysis-table"><thead><tr>'+''.join('<th>'+escape(str(x))+'</th>'for x in rows[0])+'</tr></thead><tbody>'+''.join('<tr>'+''.join(('<th scope="row">'if j==0 else'<td>')+escape(str(v))+('</th>'if j==0 else'</td>')for j,v in enumerate(row))+'</tr>'for row in rows[1:])+'</tbody></table></div>'
+new=read('drc_five_year_reason_distribution_by_method.csv');headers=['method','reason','weighted_endings','share_within_method_pct','observed_endings_n'];count=0
+for t in list(d.xpath('//table')):
+ h=[c.text_content().strip()for c in t.xpath('./thead/tr/th')]
+ if h!=headers:continue
+ sid=t.xpath('ancestor::section[1]/@id')[0];records=new
+ if sid=='other-reasons-count-breakdown':records=[q for q in new if q['reason']in ['Infrequent sex/husband away','Difficulty becoming pregnant/menopause','Marital dissolution/separation']or q['reason'].startswith('Other recorded')]
+ rows=[headers]+[[q['method']+('*'if q['method']=='IUD'else''),q['reason'],f"{float(q['weighted_endings']):,.1f}",f"{float(q['share_within_method_pct']):.1f}",q['observed_endings_n']]for q in records]
+ t.getparent().replace(t,html.fragment_fromstring(tbl(rows))[0]);count+=1
+assert count==2
+for sid in ['reasons712','other-reasons-count-breakdown']:
+ s=d.xpath(f'//section[@id="{sid}"]')[0]
+ n=etree.SubElement(s,'p',{'class':'note'});n.text='Five-year shares now follow calendar positions v018 through v018+59, including recent months and all reported use durations. They are separate from first-year reason shares. * IUD: only 12 observed five-year discontinuations; percentages are unstable and suppressed in the published report.'
+for h in d.xpath('//h3'):
+ if h.text_content()=='Five-year distribution of recorded reasons by method':h.text='Five-year reason distribution using the DHS Table 7.14 window'
+# Separate the first-year and five-year questions explicitly.
+s=d.xpath('//section[@id="reasons712"]')[0];s.xpath('./h2')[0].text='Discontinuation reasons: first-year endings and the DHS five-year comparison'
+for p in s.xpath('./p'):
+ if 'all observed modern-method endings in the retrospective calendar' in p.text_content():p.text='Cause-specific 12-month probabilities use the full modern-method risk sets. The reason charts use weighted recorded endings during the first 12 months of use. The separate five-year table below counts all reported discontinuations in the DHS five-year calendar window, regardless of use duration. These denominators answer different questions.'
+methods=['All modern','Injectables','Implants','Pill','IUD','Other modern'];reasons=list(dict.fromkeys(q['reason']for q in read('drc_five_year_reason_groups_corrected.csv')))
+labels={'Changes in menstrual bleeding':'Bleeding changes','Other side effects/health':'Other side effects/health','Want more effective method':'Wanted a more effective method'}
+def matrix(name):
+ x=read(name);rows=[['Reason',*methods]]
+ for r in reasons:rows.append([labels.get(r,r)]+[f"{float(next(q for q in x if q['method']==m and q['reason']==r)['share_pct']):.1f}%"+('*'if m=='IUD'else'')for m in methods])
+ rows.append(['Total before rounding',*['100.0%']*6]);first={m:next(q for q in x if q['method']==m)for m in methods};rows.append(['Observed discontinuations (unweighted)',*[first[m]['method_endings_n']for m in methods]])
+ return tbl(rows)
+x=read('drc_reason_share_corrections.csv');r=[['Method','Largest absolute correction','Reason','Old share','Corrected share']]
+for m in methods[1:]:
+ q=max([q for q in x if q['method']==m],key=lambda q:abs(float(q['difference_pp'])));r.append([m+('*'if m=='IUD'else''),f"{abs(float(q['difference_pp'])):.2f} pp",q['reason'],f"{float(q['share_within_method_pct_old']):.1f}%",f"{float(q['share_within_method_pct_corrected']):.1f}%"])
+records=list(csv.DictReader((support/'drc_modern_timepoints.csv').open()))
+def timing(field):
+ rows=[['Method','3 months','6 months','9 months','12 months']]
+ for m in methods:
+  scope='National'if m=='All modern'else'National: '+m;q=[q for q in records if q['scope']==scope];rows.append([m+('*'if m=='IUD'else'')]+[f"{float(next(z for z in q if int(z['month'])==t)[field]):.1f}%"for t in [3,6,9,12]])
+ return tbl(rows)
+# Detailed CI table keeps design-based uncertainty available without crowding the matrices.
+cirows=[['Window','Method','Reason','Share','95% CI','Observed reason count','Observed method discontinuations']]
+for name,lab in [('drc_first_year_reason_groups_checked.csv','First-year endings'),('drc_five_year_reason_groups_corrected.csv','Five-year reported endings')]:
+ for q in read(name):
+  def num(s):return float(s)if s not in ['NA','']else None
+  low,high=num(q['ci_low']),num(q['ci_high']);ci='Not estimable from zero events'if low is None or high is None else f'{low:.1f}–{high:.1f}%'
+  cirows.append([lab,q['method']+('*'if q['method']=='IUD'else''),q['reason'],f"{float(q['share_pct']):.1f}%",ci,q['observed_endings_n'],q['method_endings_n']])
+ind=read('drc_five_year_reason_groups_individual_methods.csv');im=list(dict.fromkeys(q['method']for q in ind));indrows=[['Specific modern method','Observed discontinuations',*list(labels.get(x,x)for x in reasons)]]
+for m in im:
+ q=[q for q in ind if q['method']==m];small=q[0]['sparse_method']=='TRUE';indrows.append([m+('*'if small else''),q[0]['method_endings_n']]+[f"{float(next(v for v in q if v['reason']==r)['share_pct']):.1f}%"for r in reasons])
+# The individual methods behind presentation groups are retained in both windows.
+indfirst=read('drc_first_year_reason_groups_individual_methods.csv');imfirst=list(dict.fromkeys(q['method']for q in indfirst));ifrows=[['Specific modern method','Observed discontinuations',*list(labels.get(x,x)for x in reasons)]]
+for m in imfirst:
+ q=[q for q in indfirst if q['method']==m];small=q[0]['sparse_method']=='TRUE';ifrows.append([m+('*'if small else''),q[0]['method_endings_n']]+[f"{float(next(v for v in q if v['reason']==r)['share_pct']):.1f}%"for r in reasons])
+itimes=read('drc_individual_method_timepoints_checked.csv');timedetail=[['Specific modern method','Causes','3 months','6 months','9 months','12 months','Eligible episodes']]
+for m in dict.fromkeys(q['method']for q in itimes):
+ q=[q for q in itimes if q['method']==m];small=q[0]['limited_precision']=='TRUE'
+ for field,label in [('all_reason_pct','All recorded causes'),('actionable_pct','Potentially actionable')]:
+  def f(t):
+   z=next(z for z in q if int(z['month'])==t);v=z[field];return 'Insufficient exposure'if v=='NA'else f'{float(v):.1f}%'
+  timedetail.append([m+('*'if small else''),label,*[f(t)for t in [3,6,9,12]],q[0]['eligible_episodes_n']])
+markup='<h2>Reason and timing reconciliation with the DRC DHS report</h2><p>All modern-method results below exclude EC. First-year life-table estimates and first-year recorded-ending shares are unchanged. The five-year reason distribution has been corrected using the DHS month-by-month rule.</p><h3>What was corrected</h3><p>The old five-year code selected method runs across the available calendar and removed recent months. The corrected table uses every nonblank reported reason in exactly 60 calendar positions, v018 through v018+59. The method is read in the same calendar position. This includes the most recent months and counts endings at all use durations. The observation window for first-year life tables remains 3–62 months before interview.</p><p>The corrected Table 7.14 replication matches all 160 published percentage cells and all 13 weighted discontinuation counts. The IUD and other small published columns have no displayed reference percentages to compare. The earlier Table 7.13 audit remains 104/110 rate cells matching, with six differences of 0.1 pp and all 10 episode counts matching. No rates were forced to the published numbers.</p>'+tbl(r)+'<h3>First-year reason shares: the presentation definition</h3><p>Denominator: weighted observed modern-method discontinuations occurring during months 1–12 of use in the life-table analysis window. These are shares among recorded endings, not life-table risks. A woman may contribute multiple episodes.</p>'+matrix('drc_first_year_reason_groups_checked.csv')+'<p class="note">* IUD has only six observed first-year discontinuations. Its percentages are shown only to reconcile existing outputs and should not be ranked or interpreted as precise estimates. Columns sum to 100% before rounding.</p><h3>Five-year reason shares: the corrected DHS-comparable definition</h3><p>Denominator: weighted reported modern-method discontinuations in the 60 months through interview, at any use duration. The table groups detailed DHS reasons to match our presentation categories. All-modern and Other-modern groups are project aggregates, not the published all-methods and Other columns.</p>'+matrix('drc_five_year_reason_groups_corrected.csv')+'<p class="note">* IUD has 12 observed five-year discontinuations. DHS suppresses its reason percentages because there are fewer than 25 unweighted cases. Large changes in this column reflect sparse data. These five-year shares are not expected to equal first-year shares.</p><h3>When discontinuation occurs: all recorded causes</h3><p>Cumulative probability since starting the named method, estimated from weighted competing-risk life tables. Each column uses its duration-specific risk sets; these percentages do not sum to 100% across months.</p>'+timing('all_reason_pct')+'<h3>When discontinuation occurs: potentially actionable causes</h3><p>Failure, wanting a more effective method, bleeding changes, other side effects/health and access/cost/convenience count as events. All other reasons remain competing endings.</p>'+timing('actionable_pct')+'<p class="note">* IUD timing is imprecise (23 eligible episodes). The 3-, 6- and 9-month estimates are additional analyses; they have been checked against the same monthly life-table calculations, not against independently published monthly benchmarks. Method-specific 12-month injectable, implant and pill rates match the report.</p><details><summary>Reason shares for individual modern methods, including the components of Other modern</summary>'+tbl(indrows)+'<p>* Fewer than 25 observed discontinuations. No discontinuations were observed for some method types, so no reason distribution can be estimated for them.</p></details><details><summary>Survey-design confidence intervals for both reason-share definitions</summary><p>95% intervals use full-frame ratio linearization with all 778 PSUs, 51 strata and 727 design degrees of freedom. Repeated episodes stay within their PSU. Zero-event cells have no reliable empirical interval. Intervals do not resolve sparse-sample limitations.</p>'+tbl(cirows)+'</details>'
+markup+='<details><summary>First-year reason shares for each individual modern method</summary>'+tbl(ifrows)+'<p>* Fewer than 25 observed discontinuations. Methods with no observed ending have no reason distribution.</p></details><details><summary>Timing for each individual modern method</summary>'+tbl(timedetail)+'<p>* Fewer than 50 eligible episodes or 25 observed first-year endings. Unsupported durations are not extrapolated. Corresponding full-frame confidence intervals are retained in the numerical outputs.</p></details>'
+audit=html.fragment_fromstring('<section id="reason-timing-dhs-reconciliation">'+markup+'</section>');s=d.xpath('//section[@id="reasons712"]')[0];s.addnext(audit)
+# Update existing validation notes without erasing the known 12-month residuals.
+s=d.xpath('//section[@id="validation"]')[0];p=etree.SubElement(s,'p');p.text='The corrected five-year Table 7.14 replication now matches all 160 displayed reason percentages and all 13 weighted discontinuation counts. Its 60-month window is distinct from the first-year life-table window. Sparse IUD reason shares remain unsuitable for comparison.'
+nav=d.find('.//aside');a=etree.SubElement(nav,'a',href='#reason-timing-dhs-reconciliation');a.text='Reason and timing reconciliation with DHS'
+# Keep the navigation in section order.
+for a in list(nav.xpath('./a')):nav.remove(a)
+seen=set(d.xpath('//@id'));idx=0
+for h in d.xpath('//main//h2|//main//h3'):
+ idx+=1;sid=h.getparent().get('id')if h.tag=='h2'else h.get('id')
+ if not sid:
+  sid=f'reason-review-heading-{idx}';assert sid not in seen;h.set('id',sid);seen.add(sid)
+ a=etree.SubElement(nav,'a',href='#'+sid);a.text=h.text_content()
+ if h.tag=='h3':a.set('style','padding-left:12px;font-size:11.5px')
+text=html.tostring(d,encoding='unicode',doctype='<!DOCTYPE html>');plain=re.sub(r'data:[^"\s]+','[embedded image]',text)
+ids=d.xpath('//@id');assert len(ids)==len(set(ids));assert all(x[1:]in ids for x in d.xpath('//a[starts-with(@href,"#")]/@href'))
+out.write_text(text);print('Corrected two historical reason tables; added all requested reason/timing comparisons. All embedded figures preserved.')
+)----------------------"
+REPORT_FILES[["src/report/23_drc_opening_method_figures.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Create DRC all-reason method bars and paired start/risk bars."""
+import argparse
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+a=ap.parse_args();root=a.project_root
+data=root/'output/Supporting_data';assets=root/'output/assets';assets.mkdir(parents=True,exist_ok=True)
+t=pd.read_csv(data/'drc_method_timing_monthly.csv');t=t[t.month==12].set_index('method')
+starts=pd.read_csv(data/'drc_method_start_mix.csv');starts=starts[starts.scope=='National'].set_index('method')
+methods=['Injectables','Implants','Pill','IUD','Other modern']
+navy='#173F5B';gold='#DA9A25';slate='#435666';grid='#DDE7EB'
+plt.rcParams.update({'font.family':'Arial','font.size':14})
+
+def axes(n):
+ fig,ax=plt.subplots(figsize=(10.4,4.75),dpi=240)
+ fig.patch.set_facecolor('white');ax.set_facecolor('white')
+ ax.set_xlim(0,80);ax.set_xticks([0,20,40,60,80]);ax.set_xticklabels(['0%','20%','40%','60%','80%'])
+ ax.xaxis.grid(True,color=grid,lw=.8);ax.set_axisbelow(True)
+ ax.spines[['top','right','left']].set_visible(False)
+ ax.spines['bottom'].set_color('#C9D6DC')
+ ax.tick_params(axis='both',length=0,pad=7)
+ fig.subplots_adjust(left=.20,right=.96,bottom=.16,top=.96)
+ return fig,ax
+
+fig,ax=axes(6)
+names=['All modern',*methods];vals=[float(t.loc[m,'all_reason_pct']) for m in names]
+yy=np.arange(len(names))[::-1]
+ax.barh(yy,vals,color=[slate]+[navy]*5,height=.55,zorder=3)
+ax.set_yticks(yy);ax.set_yticklabels([n+('*' if n=='IUD' else '') for n in names])
+for y,v in zip(yy,vals):ax.text(v+.6,y,f'{v:.1f}%',va='center',ha='left',fontsize=14,color=navy,fontweight='bold')
+ax.set_xlabel('12-month probability of ending the original method')
+fig.savefig(assets/'drc_all_reason_12month_method_bars.png',dpi=240,facecolor='white');plt.close(fig)
+
+fig,ax=axes(5);yy=np.arange(len(methods))[::-1]
+shares=[float(starts.loc[m,'share_of_all_starts_pct']) for m in methods]
+risks=[float(t.loc[m,'all_reason_pct']) for m in methods]
+ax.barh(yy+.16,risks,color=navy,height=.28,zorder=3,label='12-month discontinuation')
+ax.barh(yy-.16,shares,color=gold,height=.28,zorder=3,label='Share of all method starts')
+ax.set_yticks(yy);ax.set_yticklabels([m+('*' if m=='IUD' else '') for m in methods])
+for y,v in zip(yy,risks):ax.text(v+.5,y+.16,f'{v:.1f}%',va='center',fontsize=12.8,color=navy,fontweight='bold')
+for y,v in zip(yy,shares):ax.text(v+.5,y-.16,f'{v:.1f}%',va='center',fontsize=12.8,color=navy,fontweight='bold')
+ax.set_xlabel('Percent');ax.legend(loc='upper center',bbox_to_anchor=(.5,-.18),ncol=2,frameon=False,fontsize=12.5)
+fig.subplots_adjust(left=.20,right=.96,bottom=.26,top=.96)
+fig.savefig(assets/'drc_all_reason_starts_vs_discontinuation.png',dpi=240,facecolor='white');plt.close(fig)
+print('Created all-reason method and paired-start figures')
+)----------------------"
+REPORT_FILES[["src/report/29_drc_ethiopia_sequence_figures.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""DRC figures for the 82-slide Ethiopia-sequence presentation."""
+import argparse
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Patch
+
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True)
+a=ap.parse_args();root=a.project_root
+sup=root/'output/Supporting_data';out=root/'output/assets/ethiopia_sequence';out.mkdir(parents=True,exist_ok=True)
+N='#173F5B';T='#118C90';G='#DA9A25';R='#E65A4F';S='#697885';GRID='#DFE8EC';WHITE='#FFFFFF'
+METHODS=['Injectables','Implants','Pill','IUD','Other modern']
+PALETTE={'Injectables':T,'Implants':N,'Pill':G,'IUD':R,'Emergency contraception':'#B46A90','Other modern':'#8795A3','Non-modern methods':'#A8947E'}
+REASONS=['Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience']
+SHORT=['Failure','More effective','Bleeding','Other health','Access/cost']
+provinces=['Kinshasa','Kongo Central','Kwango','Kwilu','Mai-Ndombe','Équateur','Nord-Ubangi','Sud-Ubangi','Mongala','Tshuapa','Tshopo','Bas-Uélé','Haut-Uélé','Ituri','Nord-Kivu','Sud-Kivu','Maniema','Haut-Katanga','Haut-Lomami','Lualaba','Tanganyika','Lomami','Sankuru','Kasaï Oriental','Kasaï','Kasaï Central']
+plt.rcParams.update({'font.family':'Arial','font.size':11})
+mix=pd.read_csv(sup/'drc_method_start_mix.csv');year=pd.read_csv(sup/'drc_method_start_mix_by_year.csv')
+times=pd.read_csv(sup/'drc_modern_timepoints.csv');reason=pd.read_csv(sup/'drc_actionable_reasons.csv')
+allreason=pd.read_csv(sup/'drc_all_cause_method_reason_cif.csv');recorded=pd.read_csv(sup/'drc_all_cause_recorded_reason_shares.csv')
+adjusted=pd.read_csv(sup/'drc_actionable_province_adjusted_rates.csv');mcpr=pd.read_csv(sup/'drc_province_mcpr.csv')
+sub=pd.read_csv(sup/'drc_all_reason_adjusted_subgroups.csv')
+cmap=LinearSegmentedColormap.from_list('drc',['#F3F7F8','#9BCFD0','#118C90'])
+
+def save(n,fig):
+ fig.patch.set_facecolor('white');fig.savefig(out/f'slide_{n:02d}.png',dpi=220,facecolor='white',bbox_inches=None);plt.close(fig)
+def figaxes(figsize=(12.0,5.25)):
+ fig,ax=plt.subplots(figsize=figsize,dpi=220);ax.set_facecolor('white')
+ return fig,ax
+def basic(ax):
+ ax.spines[['top','right','left']].set_visible(False);ax.xaxis.grid(True,color=GRID,lw=.7);ax.set_axisbelow(True);ax.tick_params(length=0)
+def scope_method(province,method):
+ return ('National: '+method) if province=='National' else (province+': '+method)
+def n_for(scope):
+ z=times[(times.scope==scope)&(times.month==12)]
+ return int(z.eligible_episodes_n.iloc[0]) if len(z) else 0
+
+# 4: DHS current modern use, with method composition as supporting context.
+current=pd.read_csv(sup/'drc_current_use_mcpr.csv')
+fig,ax=figaxes();r=current.sort_values('all_women_method_prevalence_pct',ascending=True)
+ax.barh(r.method,r.all_women_method_prevalence_pct,color=[PALETTE.get(m,S) for m in r.method],height=.62)
+for j,v in enumerate(r.all_women_method_prevalence_pct):ax.text(v+.06,j,f'{v:.2f}%',va='center',color=N)
+ax.set_xlim(0,5.4);ax.set_xlabel('Percent of all women aged 15–49');basic(ax)
+fig.subplots_adjust(left=.20,right=.96,top=.94,bottom=.18);save(4,fig)
+
+# 5: overall initiation mix, then start mix by calendar year.
+fig,(a1,a2)=plt.subplots(1,2,figsize=(12,5.25),gridspec_kw={'width_ratios':[.9,1.1]})
+nat=mix[mix.scope=='National'].set_index('method')
+cats=['Injectables','Implants','Pill','IUD','Emergency contraception','Other modern','Non-modern methods']
+display_cats=['Injectables','Implants','Pill','IUD','EC','Other modern methods','Non-modern methods']
+vals=[nat.loc[m,'share_of_all_starts_pct'] for m in cats]
+yy=np.arange(len(cats))[::-1];a1.barh(yy,vals,color=[PALETTE[m] for m in cats],height=.6)
+a1.set_yticks(yy);a1.set_yticklabels(display_cats,fontsize=9.5)
+for y,v in zip(yy,vals):a1.text(v+.7,y,f'{v:.1f}%',va='center',fontsize=10,color=N)
+a1.set_xlim(0,52);a1.set_title('Overall initiation mix',color=N,fontweight='bold');a1.set_xlabel('Percent of starts');basic(a1)
+years=sorted(year.year.unique());bottom=np.zeros(len(years))
+for m in cats:
+ vals=[float(year[(year.year==y)&(year.group==m)].share_pct.sum()) for y in years]
+ a2.bar(years,vals,bottom=bottom,color=PALETTE[m],width=.68,label=m);bottom+=vals
+a2.set_ylim(0,100);a2.set_xticks(years);a2.set_ylabel('Percent of starts');a2.set_title('Initiation mix by calendar year',color=N,fontweight='bold')
+a2.spines[['top','right']].set_visible(False);a2.yaxis.grid(True,color=GRID,lw=.7);a2.set_axisbelow(True)
+handles=[Patch(facecolor=PALETTE[m],label=lab) for m,lab in zip(cats,display_cats)]
+fig.legend(handles=handles,loc='lower center',ncol=4,frameon=False,fontsize=8.7,bbox_to_anchor=(.5,-.015))
+fig.subplots_adjust(left=.19,right=.98,wspace=.32,bottom=.25,top=.90);save(5,fig)
+
+# 10: recorded reasons among all modern-method discontinuations.
+r=recorded[recorded.method=='All modern'].sort_values('share_of_recorded_endings_pct')
+fig,ax=figaxes();ax.barh(r.reason,r.share_of_recorded_endings_pct,color=[G if x=='Wanted pregnancy' else T if x in REASONS else S for x in r.reason])
+for i,v in enumerate(r.share_of_recorded_endings_pct):ax.text(v+.35,i,f'{v:.1f}%',va='center',fontsize=10,color=N)
+ax.set_xlim(0,max(r.share_of_recorded_endings_pct)*1.23);ax.set_xlabel('Share of recorded first-year modern-method endings');basic(ax)
+fig.subplots_adjust(left=.26,right=.97,bottom=.17,top=.96);save(10,fig)
+
+# 11: four broad reason groupings, shares of recorded endings.
+rd=recorded[recorded.method=='All modern'].set_index('reason').share_of_recorded_endings_pct
+v=[rd.get('Wanted pregnancy',0),sum(rd.get(x,0) for x in ['Method failure','More effective','Bleeding changes','Other health','Access/cost/convenience']),rd.get('Partner disapproval',0),sum(rd.get(x,0) for x in ['Other fertility','Other recorded'])]
+labs=['Wanted pregnancy','Method experience / access','Partner disapproval','Other circumstances']
+fig,ax=figaxes();left=0
+for val,lab,color in zip(v,labs,[G,T,R,S]):
+ ax.barh([0],[val],left=left,color=color,height=.38,label=lab)
+ if val>5:ax.text(left+val/2,0,f'{val:.1f}%',ha='center',va='center',color='white',fontweight='bold',fontsize=12)
+ left+=val
+ax.set_xlim(0,100);ax.set_yticks([]);ax.set_xlabel('Share of first-year recorded modern-method endings (%)');basic(ax)
+ax.legend(loc='upper center',bbox_to_anchor=(.5,1.22),ncol=4,frameon=False,fontsize=9)
+fig.subplots_adjust(left=.08,right=.97,bottom=.22,top=.72);save(11,fig)
+
+# 12: same four reason groupings within each modern method.
+fig,ax=figaxes();yy=np.arange(len(METHODS))[::-1];left=np.zeros(len(METHODS))
+groups=[['Wanted pregnancy'],['Method failure','More effective','Bleeding changes','Other health','Access/cost/convenience'],['Partner disapproval'],['Other fertility','Other recorded']]
+for names,label,color in zip(groups,labs,[G,T,R,S]):
+ vals=np.array([recorded[(recorded.method==m)&(recorded.reason.isin(names))].share_of_recorded_endings_pct.sum() for m in METHODS])
+ ax.barh(yy,vals,left=left,color=color,height=.56,label=label)
+ for y,l,vv in zip(yy,left,vals):
+  if vv>0:
+   ax.text(l+vv/2,y,f'{vv:.1f}',ha='center',va='center',color='black',
+           fontsize=7.4 if vv<7 else 9,rotation=90 if vv<7 else 0)
+ left+=vals
+ax.set_yticks(yy);ax.set_yticklabels(METHODS);ax.set_xlim(0,100);ax.set_xlabel('Share of first-year recorded endings (%)');basic(ax)
+ax.legend(loc='upper center',bbox_to_anchor=(.5,1.18),ncol=4,frameon=False,fontsize=8.7)
+fig.subplots_adjust(left=.17,right=.97,bottom=.19,top=.78);save(12,fig)
+
+# 13: cause-specific 12-month risks, where each row sums to all-reason risk.
+cause_order=['Method failure','Wanted pregnancy','Other fertility','Bleeding changes','Other health','More effective','Access/cost/convenience','Partner disapproval','Other recorded']
+fig,ax=figaxes();yy=np.arange(len(METHODS))[::-1];left=np.zeros(len(METHODS))
+cols=[R,G,'#C6A267','#78B5BA','#B1D7D7',T,'#4A9AA5','#BB6F89',S]
+for cause,color in zip(cause_order,cols):
+ vals=np.array([allreason[(allreason.method==m)&(allreason.reason==cause)].risk_pct.sum() for m in METHODS])
+ ax.barh(yy,vals,left=left,color=color,height=.58,label=cause)
+ for y,l,vv in zip(yy,left,vals):
+  if vv>0:
+   ax.text(l+vv/2,y,f'{vv:.1f}',ha='center',va='center',color='black',
+           fontsize=6.5 if vv<4 else 8,rotation=90 if vv<4 else 0)
+ left+=vals
+ax.set_yticks(yy);ax.set_yticklabels(METHODS);ax.set_xlim(-1,80);ax.set_xlabel('Cause-specific 12-month discontinuation probability (%)');basic(ax)
+fig.legend(loc='lower center',bbox_to_anchor=(.5,.01),ncol=3,frameon=False,fontsize=8.7)
+fig.subplots_adjust(left=.16,right=.97,bottom=.34,top=.96);save(13,fig)
+
+# 14: fully adjusted all-reason subgroup probabilities, grouped by covariate.
+sub=sub[~sub.covariate.isin(['method_group'])].copy();sub['category']=sub.category.fillna('None');sub['label']=sub.covariate.str.replace('_group','').str.title()+': '+sub.category
+fig,ax=figaxes();y=np.arange(len(sub))[::-1]
+for yy,row in zip(y,sub.itertuples()):
+ ax.plot([row.ci_low,row.ci_high],[yy,yy],color=N,lw=1.4,zorder=2)
+ ax.text(76,yy,f'{row.adjusted_12mo_pct:.1f} ({row.ci_low:.1f}–{row.ci_high:.1f})',va='center',fontsize=8.3,color=N)
+ax.scatter(sub.adjusted_12mo_pct,y,c=T,s=40,zorder=3)
+ax.set_yticks(y);ax.set_yticklabels(sub.label,fontsize=9);ax.set_xlim(0,100)
+ax.set_xlabel('Fully adjusted 12-month all-reason discontinuation (%)');basic(ax)
+fig.subplots_adjust(left=.27,right=.96,bottom=.16,top=.98);save(14,fig)
+
+# 15: provincial all-reason risk, split into two readable 13-row panels.
+def province_dot(n,values,low=None,high=None,reference=None,second=None,labels=None,xmax=75,xlabel='12-month probability (%)'):
+ fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+ for j,ax in enumerate(axes):
+  ps=provinces[j*13:(j+1)*13];y=np.arange(len(ps))[::-1]
+  ax.scatter([values.get(p,np.nan) for p in ps],y,c=T,s=31,zorder=3)
+  if low is not None:
+   for yy,p in zip(y,ps):
+    if np.isfinite(low.get(p,np.nan)) and np.isfinite(high.get(p,np.nan)):
+     ax.plot([low[p],high[p]],[yy,yy],color=T,lw=1,zorder=2)
+  if second is not None:ax.scatter([second.get(p,np.nan) for p in ps],y-.12,c=G,s=22,zorder=4)
+  if reference is not None:ax.axvline(reference,color=N,ls=':',lw=1)
+  ax.set_yticks(y);ax.set_yticklabels([p+('*' if labels is not None and labels.get(p,False) else '') for p in ps],fontsize=9.5)
+  ax.set_xlim(0,xmax);ax.set_ylim(-.6,12.8);ax.set_xlabel(xlabel);basic(ax)
+  ax.set_title('Provinces 1–13' if j==0 else 'Provinces 14–26',color=N,fontsize=11)
+ fig.subplots_adjust(left=.16,right=.98,wspace=.42,bottom=.16,top=.91)
+ save(n,fig)
+allp=times[(times.scope.isin(provinces))&(times.month==12)].set_index('scope')
+province_dot(15,allp.all_reason_pct.to_dict(),allp.all_reason_ci_low.to_dict(),allp.all_reason_ci_high.to_dict(),50.075651,xmax=85)
+
+# 17: province mCPR versus all-reason discontinuation.
+q=mcpr.set_index('province').join(allp[['all_reason_pct','eligible_episodes_n']],how='inner')
+fig,ax=figaxes();ax.scatter(q.mcpr_all_women_pct,q.all_reason_pct,s=34,c=T)
+for p in ['Kinshasa','Nord-Kivu','Haut-Katanga','Kongo Central']:
+ if p in q.index:ax.annotate(p,(q.loc[p,'mcpr_all_women_pct'],q.loc[p,'all_reason_pct']),xytext=(3,4),textcoords='offset points',fontsize=8)
+ax.set_xlabel('All-women mCPR (%)');ax.set_ylabel('All-reason 12-month modern-method discontinuation (%)')
+ax.spines[['top','right']].set_visible(False);ax.grid(color=GRID,lw=.7)
+fig.subplots_adjust(left=.11,right=.96,bottom=.18,top=.96);save(17,fig)
+
+# 29: actionable provincial 12-month probability, two panels.
+ad=adjusted[adjusted.zone!='National'].set_index('zone');small=ad.small_actionable_cell.to_dict()
+province_dot(29,ad.unadjusted_pct.to_dict(),ad.unadjusted_low.to_dict(),ad.unadjusted_high.to_dict(),
+ float(adjusted.loc[adjusted.zone=='National','unadjusted_pct'].iloc[0]),labels=small,xmax=60)
+
+# Combine the overall provincial risk and reason distribution in the same
+# slide slot. Two 14/13-row panels retain all 26 provinces plus national.
+from matplotlib.patches import Rectangle
+fig,axes=plt.subplots(1,2,figsize=(12,5.25))
+labels=['12-month risk','Failure','More effective','Bleeding','Other health','Access/cost']
+for j,ax in enumerate(axes):
+ ps=(['National']+provinces[:13]) if j==0 else provinces[13:]
+ for r,p in enumerate(ps):
+  row=adjusted[adjusted.zone==p]
+  risk=float(row.unadjusted_pct.iloc[0]) if len(row) else np.nan
+  z=reason[reason.scope==p].set_index('reason')
+  vals=[risk]+[float(z.loc[k,'share_among_actionable_pct']) if k in z.index else np.nan for k in REASONS]
+  for c,v in enumerate(vals):
+   intensity=min(max(v/(55 if c==0 else 70),0),1) if np.isfinite(v) else 0
+   color=plt.cm.YlOrBr(.08+.63*intensity) if c==0 else cmap(.08+.75*intensity)
+   if p=='National':color='#F2D48B'
+   ax.add_patch(Rectangle((c-.48,r-.47),.96,.94,facecolor=color,edgecolor='white',lw=.4))
+   ax.text(c,r,f'{v:.0f}' if np.isfinite(v) else '—',ha='center',va='center',fontsize=8.4,color='black')
+ ax.set_xlim(-.5,5.5);ax.set_ylim(len(ps)-.5,-.5)
+ ax.set_yticks(range(len(ps)));ax.set_yticklabels([p+('*' if small.get(p,False) else '') for p in ps],fontsize=8.4)
+ ax.set_xticks(range(6));ax.set_xticklabels(labels,fontsize=8.3,rotation=18,ha='right');ax.tick_params(length=0)
+ for spine in ax.spines.values():spine.set_visible(False)
+fig.subplots_adjust(left=.13,right=.99,wspace=.43,bottom=.19,top=.96);save(29,fig)
+
+# 30: 3/6/9/12 month risk and share of first-year risk occurring by month 3.
+fig,axes=plt.subplots(1,2,figsize=(12,5.25));cols=[3,6,9,12,'Early share']
+for j,ax in enumerate(axes):
+ ps=provinces[j*13:(j+1)*13];mat=[]
+ for p in ps:
+  z=times[times.scope==p].set_index('month');v=[float(z.loc[t,'actionable_pct']) for t in [3,6,9,12]]
+  mat.append(v+[100*v[0]/v[-1] if v[-1]>0 else np.nan])
+ arr=np.array(mat);ax.imshow(arr,cmap=cmap,vmin=0,vmax=50,aspect='auto')
+ ax.set_yticks(range(13));ax.set_yticklabels([p+('*' if small.get(p,False) else '') for p in ps],fontsize=9)
+ ax.set_xticks(range(5));ax.set_xticklabels(['3-month','6-month','9-month','12-month','First 3 / 12'],fontsize=9)
+ for r in range(13):
+  for c in range(5):ax.text(c,r,f'{arr[r,c]:.0f}' if np.isfinite(arr[r,c]) else '—',ha='center',va='center',fontsize=8,color='black')
+ ax.tick_params(length=0)
+fig.subplots_adjust(left=.14,right=.98,wspace=.44,bottom=.11,top=.96);save(30,fig)
+
+# 31: initiation mix by province, two columns of 13 stacked bars.
+fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+cats=['Injectables','Implants','Pill','IUD','Emergency contraception','Other modern','Non-modern methods']
+for j,ax in enumerate(axes):
+ ps=provinces[j*13:(j+1)*13];y=np.arange(13)[::-1];left=np.zeros(13)
+ for cat in cats:
+  vals=np.array([mix[(mix.scope==p)&(mix.method==cat)].share_of_all_starts_pct.sum() for p in ps])
+  ax.barh(y,vals,left=left,color=PALETTE[cat],height=.63,label=cat);left+=vals
+ ax.set_yticks(y);ax.set_yticklabels(ps,fontsize=8.5);ax.set_xlim(0,100);ax.set_xticks([0,25,50,75,100]);basic(ax)
+fig.legend(cats,loc='lower center',ncol=4,frameon=False,fontsize=8,bbox_to_anchor=(.5,-.015))
+fig.subplots_adjust(left=.14,right=.99,wspace=.37,bottom=.25,top=.95);save(31,fig)
+
+# 32–34: method-specific start shares and actionable risks, 26 provinces.
+for n,m in [(32,'Injectables'),(33,'Implants'),(34,'Pill')]:
+ fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+ for j,ax in enumerate(axes):
+  ps=provinces[j*13:(j+1)*13];y=np.arange(13)[::-1]
+  vals=[times[(times.scope==scope_method(p,m))&(times.month==12)].actionable_pct.iloc[0] if len(times[(times.scope==scope_method(p,m))&(times.month==12)]) else np.nan for p in ps]
+  shares=[mix[(mix.scope==p)&(mix.method==m)].share_of_all_starts_pct.sum() for p in ps]
+  ax.barh(y+.17,vals,height=.27,color=N,label='12-month actionable');ax.barh(y-.17,shares,height=.27,color=G,label='Share of starts')
+  ax.set_yticks(y);ax.set_yticklabels([p+('*' if n_for(scope_method(p,m))<30 else '') for p in ps],fontsize=8.5)
+  ax.set_xlim(0,80);ax.set_xticks([0,20,40,60,80]);basic(ax)
+ fig.legend(['12-month actionable','Share of starts'],loc='lower center',ncol=2,frameon=False,fontsize=10,bbox_to_anchor=(.5,.01))
+ fig.subplots_adjust(left=.15,right=.98,wspace=.39,bottom=.22,top=.95);save(n,fig)
+
+# 35–39: reason shares among actionable endings; rows sum to 100 when estimable.
+for n,m in [(35,'Injectables'),(36,'Implants'),(37,'Pill'),(38,'IUD'),(39,'Other modern')]:
+ fig,axes=plt.subplots(1,2,figsize=(12,5.25))
+ for j,ax in enumerate(axes):
+  ps=(['National']+provinces[:13]) if j==0 else provinces[13:]
+  arr=np.full((len(ps),5),np.nan);stars=[]
+  for r,p in enumerate(ps):
+   z=reason[reason.scope==scope_method(p,m)].set_index('reason')
+   sparse=(not len(z)) or int(z.actionable_endings_n.iloc[0])<30
+   stars.append(sparse)
+   if len(z) and (p=='National' or int(z.actionable_endings_n.iloc[0])>=5):
+    arr[r,:]=[z.loc[c,'share_among_actionable_pct'] if c in z.index else np.nan for c in REASONS]
+  ax.imshow(arr,cmap=cmap,vmin=0,vmax=65,aspect='auto')
+  if j==0:ax.add_patch(Rectangle((-.5,-.5),5,1,facecolor='#F2D48B',edgecolor='white',alpha=.78,zorder=2))
+  ax.set_yticks(range(len(ps)));ax.set_yticklabels([p+('*' if star else '') for p,star in zip(ps,stars)],fontsize=8.5)
+  ax.set_xticks(range(5));ax.set_xticklabels(SHORT,fontsize=8)
+  for r in range(len(ps)):
+   for c in range(5):
+    if np.isfinite(arr[r,c]):ax.text(c,r,f'{arr[r,c]:.0f}',ha='center',va='center',fontsize=7.5,color='black',zorder=3)
+  ax.tick_params(length=0)
+ fig.subplots_adjust(left=.14,right=.98,wspace=.44,bottom=.12,top=.96);save(n,fig)
+
+# 40: observed and fully adjusted provincial probabilities with CIs.
+fig,axes=plt.subplots(1,2,figsize=(12,5.25),sharex=True)
+for j,ax in enumerate(axes):
+ ps=provinces[j*13:(j+1)*13];y=np.arange(13)[::-1]
+ for yy,p in zip(y,ps):
+  row=ad.loc[p]
+  ax.plot([row.unadjusted_low,row.unadjusted_high],[yy+.14,yy+.14],color=G,lw=1.2)
+  ax.plot([row.model_2_low,row.model_2_high],[yy-.14,yy-.14],color=N,lw=1.2)
+ ax.scatter([ad.loc[p,'unadjusted_pct'] for p in ps],y+.14,c=G,s=24,zorder=3)
+ ax.scatter([ad.loc[p,'model_2_common_mix_pct'] for p in ps],y-.14,c=N,s=24,zorder=3)
+ ax.set_yticks(y);ax.set_yticklabels([p+('*' if small.get(p,False) else '') for p in ps],fontsize=8.5)
+ ax.set_xlim(0,60);ax.set_xticks([0,10,20,30,40,50,60]);basic(ax)
+fig.legend(['Observed','Fully adjusted'],loc='lower center',ncol=2,frameon=False,fontsize=10,bbox_to_anchor=(.5,.01))
+fig.subplots_adjust(left=.15,right=.99,wspace=.4,bottom=.21,top=.95);save(40,fig)
+
+# 43–45: familywise pairwise comparisons across 325 provincial pairs.
+pairs=pd.read_csv(sup/'drc_actionable_adjusted_pairwise.csv')
+for n,stage in [(43,'Fully adjusted'),(44,'Method adjusted')]:
+ q=pairs[(pairs.stage==stage)&(pairs.significant_05==True)&(pairs.small_cell==False)].copy()
+ q=q.sort_values('p_holm').head(12)
+ fig,ax=figaxes();y=np.arange(len(q))[::-1]
+ labs=[f'{r.province_1} vs {r.province_2}' for r in q.itertuples()]
+ ax.scatter(q.difference_pp,y,c=T,s=33,zorder=3)
+ for yy,r in zip(y,q.itertuples()):ax.plot([r.ci_low,r.ci_high],[yy,yy],color=T,lw=1.2)
+ ax.axvline(0,color=N,lw=.9);ax.set_yticks(y);ax.set_yticklabels(labs,fontsize=9)
+ ax.set_xlabel('Adjusted gap in 12-month actionable discontinuation (pp)');basic(ax)
+ fig.subplots_adjust(left=.35,right=.96,bottom=.16,top=.96);save(n,fig)
+raw=pd.read_csv(sup/'drc_actionable_raw_pairwise_12month.csv')
+counts=[int(raw.significant_05.sum()),int(pairs[(pairs.stage=='Method adjusted')].significant_05.sum()),int(pairs[(pairs.stage=='Fully adjusted')].significant_05.sum())]
+fig,ax=figaxes();ax.bar(['Observed','Same method mix','Fully adjusted'],counts,color=[G,T,N],width=.55)
+for i,v in enumerate(counts):ax.text(i,v+.4,str(v),ha='center',color=N,fontweight='bold',fontsize=16)
+ax.set_ylabel('Province pairs with Holm-adjusted p < 0.05');ax.set_ylim(0,max(counts)+5)
+ax.spines[['top','right']].set_visible(False);ax.yaxis.grid(True,color=GRID);ax.set_axisbelow(True)
+fig.subplots_adjust(left=.15,right=.95,bottom=.18,top=.96);save(45,fig)
+
+# 46: injectable province-level descriptive rates; sparse cells flagged.
+inj=times[(times.scope.str.endswith(': Injectables'))&(times.month==12)].copy()
+inj['province']=inj.scope.str.replace(': Injectables','',regex=False);inj=inj.set_index('province')
+province_dot(46,inj.actionable_pct.to_dict(),inj.actionable_ci_low.to_dict(),inj.actionable_ci_high.to_dict(),
+ float(times[(times.scope=='National: Injectables')&(times.month==12)].actionable_pct.iloc[0]),
+ labels={p:int(inj.loc[p,'actionable_endings_n'])<30 if p in inj.index else True for p in provinces},xmax=90)
+
+# 83–84 are inserted immediately after the all-reason subgroup and province
+# slides in the shortened final deck.
+action_sub=pd.read_csv(sup/'drc_actionable_adjusted_subgroups.csv')
+action_sub['category']=action_sub.category.fillna('None')
+action_sub['label']=action_sub.covariate.str.replace('_group','').str.title()+': '+action_sub.category
+fig,ax=figaxes();y=np.arange(len(action_sub))[::-1]
+for yy,row in zip(y,action_sub.itertuples()):
+ ax.plot([row.ci_low,row.ci_high],[yy,yy],color=N,lw=1.4,zorder=2)
+ ax.text(42,yy,f'{row.adjusted_12mo_pct:.1f} ({row.ci_low:.1f}–{row.ci_high:.1f})',
+         va='center',fontsize=8.3,color=N)
+ax.scatter(action_sub.adjusted_12mo_pct,y,c=T,s=40,zorder=3)
+ax.set_yticks(y);ax.set_yticklabels(action_sub.label,fontsize=9);ax.set_xlim(0,65)
+ax.set_xlabel('Fully adjusted 12-month actionable discontinuation (%)');basic(ax)
+fig.subplots_adjust(left=.27,right=.96,bottom=.16,top=.98);save(83,fig)
+province_dot(84,ad.unadjusted_pct.to_dict(),ad.unadjusted_low.to_dict(),
+ ad.unadjusted_high.to_dict(),
+ float(adjusted.loc[adjusted.zone=='National','unadjusted_pct'].iloc[0]),
+ labels=small,xmax=60,xlabel='12-month actionable discontinuation (%)')
+print('Generated reference-sequence figures in',out)
+)----------------------"
+REPORT_FILES[["src/report/31_drc_selected_pathway_figures.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Pre-actionable pathway slides use selected-reason endings, as in Ethiopia."""
+import argparse
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.path import Path as MplPath
+from matplotlib.patches import PathPatch
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True)
+a=ap.parse_args();root=a.project_root
+sup=root/'output/Supporting_data';out=root/'output/assets/ethiopia_sequence';out.mkdir(parents=True,exist_ok=True)
+data=pd.read_csv(sup/'drc_selected_reason_post_ending_pathways.csv')
+trans=pd.read_csv(sup/'drc_selected_reason_post_ending_transitions.csv')
+order=['No method recorded','Pregnant, birth or termination','Different modern method','Same modern method','Traditional/other method','Other/unknown']
+colors={'No method recorded':'#8796A2','Different modern method':'#118C90','Same modern method':'#173F5B',
+ 'Pregnant, birth or termination':'#DA9A25','Traditional/other method':'#E65A4F','Other/unknown':'#CDD5DA'}
+for month,n in [(1,18),(12,19)]:
+ d=data[data.month_after_ending==month].set_index('status').reindex(order).fillna(0)
+ fig,ax=plt.subplots(figsize=(12,5.25),dpi=220)
+ y=np.arange(len(order))[::-1];vals=d.percent.to_numpy()
+ ax.barh(y,vals,color=[colors[k] for k in order],height=.65)
+ for yy,v in zip(y,vals):
+  if v>=.1:ax.text(v+.45,yy,f'{v:.1f}%',va='center',fontsize=12,color='#173F5B')
+ ax.set_yticks(y);ax.set_yticklabels(order,fontsize=12);ax.set_xlim(0,84)
+ ax.set_xlabel('Weighted share among eligible first-year endings (%)',fontsize=12)
+ ax.spines[['top','right','left']].set_visible(False);ax.xaxis.grid(True,color='#DFE8EC');ax.set_axisbelow(True);ax.tick_params(length=0)
+ fig.subplots_adjust(left=.25,right=.96,bottom=.19,top=.95)
+ fig.savefig(out/f'slide_{n:02d}.png',dpi=220,facecolor='white');plt.close(fig)
+
+order=['No method recorded','Different modern method','Same modern method','Pregnant, birth or termination','Traditional/other method','Other/unknown']
+m=trans.pivot(index='month_1',columns='month_12',values='weighted_events').reindex(index=order,columns=order).fillna(0)
+m=m/m.values.sum();left=m.sum(axis=1);right=m.sum(axis=0)
+fig,ax=plt.subplots(figsize=(12,5.25),dpi=220);ax.set_xlim(-.30,1.30);ax.set_ylim(0,1);ax.axis('off')
+lc=left.cumsum()-left;rc=right.cumsum()-right
+lpos={s:lc[s] for s in order};rpos={s:rc[s] for s in order}
+for src in order:
+ for dst in order:
+  v=m.loc[src,dst]
+  if v<=0:continue
+  y1=lpos[src];y2=rpos[dst];lpos[src]+=v;rpos[dst]+=v
+  verts=[(.08,y1),(.35,y1),(.65,y2),(.92,y2),(.92,y2+v),(.65,y2+v),(.35,y1+v),(.08,y1+v),(.08,y1)]
+  codes=[MplPath.MOVETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.LINETO,MplPath.CURVE4,MplPath.CURVE4,MplPath.CURVE4,MplPath.CLOSEPOLY]
+  ax.add_patch(PathPatch(MplPath(verts,codes),facecolor=colors[src],edgecolor='none',alpha=.37))
+for s in order:
+ if left[s]>0:
+  ax.bar(.06,left[s],bottom=lc[s],width=.045,color=colors[s]);ax.text(.01,lc[s]+left[s]/2,s,ha='right',va='center',fontsize=9)
+ if right[s]>0:
+  ax.bar(.94,right[s],bottom=rc[s],width=.045,color=colors[s]);ax.text(.99,rc[s]+right[s]/2,s,ha='left',va='center',fontsize=9)
+ax.text(.06,1.015,'1 month',ha='center',fontsize=12,color='#173F5B',fontweight='bold')
+ax.text(.94,1.015,'12 months',ha='center',fontsize=12,color='#173F5B',fontweight='bold')
+fig.tight_layout();fig.savefig(out/'slide_21.png',dpi=220,facecolor='white');plt.close(fig)
+print('Created selected-reason pathway figures')
+)----------------------"
+REPORT_FILES[["src/report/35_build_drc_clean_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Build a DRC report in the full Ethiopia HTML section sequence.
+
+All input locations are arguments. The output contains project-relative media
+links and DRC-derived estimates only.
+"""
+import argparse
+import html as htmlmod
+import json
+import shutil
+from pathlib import Path
+from lxml import html
+import pandas as pd
+import fitz
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+ap.add_argument('--section-index',type=Path,required=True)
+ap.add_argument('--drc-html',type=Path,required=True)
+ap.add_argument('--deck-pdf',type=Path,required=True)
+ap.add_argument('--output-dir',type=Path,required=True)
+a=ap.parse_args()
+root=a.project_root;sup=root/'output/Supporting_data';out=a.output_dir
+out.mkdir(parents=True,exist_ok=True)
+shutil.copytree(root/'output/assets',out/'assets',dirs_exist_ok=True)
+if (out/'assets/drc_figures').exists():shutil.rmtree(out/'assets/drc_figures')
+(out/'assets/ethiopia_sequence').rename(out/'assets/drc_figures')
+(out/'assets/slides').mkdir(parents=True,exist_ok=True)
+pdf=fitz.open(a.deck_pdf)
+for i,page in enumerate(list(pdf)[:30],1):
+ path=out/'assets/slides'/f'slide_{i:03d}.webp'
+ if not path.exists():
+  pix=page.get_pixmap(matrix=fitz.Matrix(1.2,1.2),alpha=False)
+  from PIL import Image
+  Image.frombytes('RGB',[pix.width,pix.height],pix.samples).save(path,'WEBP',quality=78)
+
+src=html.fromstring(a.drc_html.read_text())
+import csv
+with a.section_index.open() as index:
+ sections=[(r['section_id'],r['title']) for r in csv.DictReader(index,delimiter='\t')]
+old={x.get('id'):x for x in src.xpath('//section')}
+def old_body(key):
+ x=old[key]
+ body=''.join(html.tostring(c,encoding='unicode') for c in x if c.tag not in ('h1','h2'))
+ return body.replace('The adjusted estimates below are exploratory point estimates; design-aware intervals for these predictions and pairwise comparisons have not yet been completed.',
+  'Design-aware intervals and pairwise tests are reported in the updated province section below; small cells remain exploratory.')
+def read(name):return pd.read_csv(sup/f'drc_{name}.csv')
+def p(s):return '<p>'+s+'</p>'
+def note(s):return '<div class="note">'+s+'</div>'
+def h3(s):return '<h3>'+htmlmod.escape(s)+'</h3>'
+def h4(s):return '<h4>'+htmlmod.escape(s)+'</h4>'
+def img(path,caption):
+ return f'<figure><img src="assets/{htmlmod.escape(path)}" alt="{htmlmod.escape(caption)}" loading="lazy"><figcaption>{htmlmod.escape(caption)}</figcaption></figure>'
+def table(df,cols=None,rename=None,digits=1,limit=None):
+ d=df.copy()
+ if cols:d=d[cols]
+ if rename:d=d.rename(columns=rename)
+ if limit is not None:d=d.head(limit)
+ for c in d.columns:
+  if pd.api.types.is_float_dtype(d[c]):d[c]=d[c].map(lambda v:'—' if pd.isna(v) else f'{v:,.{digits}f}')
+  elif pd.api.types.is_integer_dtype(d[c]):d[c]=d[c].map(lambda v:f'{v:,}')
+ return '<div class="table-wrap">'+d.to_html(index=False,escape=True,border=0,classes='analysis-table')+'</div>'
+def clean_name(s):return str(s).replace('::',' · ')
+
+mix=read('method_start_mix');year=read('method_start_mix_by_year')
+times=read('modern_timepoints');ac=read('all_cause_method_reason_cif')
+recorded=read('all_cause_recorded_reason_shares');reasons=read('actionable_reasons')
+sub=read('selected_reason_subgroups');adjsub=read('actionable_adjusted_subgroups')
+adj=read('actionable_province_adjusted_rates');mcpr=read('province_mcpr')
+detail=read('first_year_detailed_reason_counts');classes=read('duration_class_12mo_rates')
+short=read('short_acting_selected_reason_shares');bridge=read('duration_aware_current_user_bridge')
+landmarks=read('duration_landmark_support_and_risks')
+scenarios=read('2026_planning_scenarios');by_method=read('2026_planning_by_method')
+by_cause=read('2026_planning_by_method_cause');bundle=json.loads((sup/'drc_2026_planning_bundle.json').read_text())
+national=times[times.scope=='National'].set_index('month')
+methods=['Injectables','Implants','Pill','IUD','Other modern']
+time_methods=times[times.scope.isin(['National: '+m for m in methods])]
+show_time=time_methods[time_methods.month.isin([3,6,9,12])].copy()
+show_time['Method']=show_time.scope.str.replace('National: ','',regex=False)
+show_time=show_time[['Method','month','eligible_episodes_n','all_reason_pct','actionable_pct','all_reason_ci_low','all_reason_ci_high','actionable_ci_low','actionable_ci_high']]
+sub0=sub[sub.group.apply(lambda x:x=='National' or x.count('::')==1)].copy()
+sub0['Group']=sub0.group.map(clean_name)
+comp=[]
+for m in ['National']+['National: '+x for x in methods]:
+ z=times[(times.scope==m)&(times.month==12)].iloc[0]
+ sel=sub[sub.group==('National' if m=='National' else 'method_group::'+m.split(': ')[1])]
+ comp.append({'Method':m.replace('National: ','').replace('National','All modern'),
+              'All reasons (%)':z.all_reason_pct,
+              'Excluding pregnancy/partner (%)':float(sel.selected_12_month_pct.iloc[0]) if len(sel) else None,
+              'Potentially actionable (%)':z.actionable_pct,'Eligible episodes':z.eligible_episodes_n})
+comp=pd.DataFrame(comp)
+
+content={}
+content['overview']=old_body('scope')+note('Rates use modern-method episodes; current-use projections use women aged 15–49. Emergency contraception appears in current mCPR but is excluded as an ongoing method at risk of discontinuation.')
+content['initiation']=(p('The denominator for a method-specific discontinuation probability is episodes that started that method. The initiation mix below uses all observed contraceptive starts, including non-modern methods and EC.')+
+ img('ethiopia_sequence/slide_05.png','Method initiation mix overall and by calendar year')+
+ table(mix[mix.scope=='National'],['method','observed_starts_n','weighted_starts','share_of_all_starts_pct'],{'method':'Method','observed_starts_n':'Observed starts','weighted_starts':'Weighted starts','share_of_all_starts_pct':'Share of all starts (%)'})+
+ h3('Initiation mix by calendar year')+table(year,['year','group','share_pct'],{'year':'Year','group':'Method','share_pct':'Share of starts (%)'})+
+ h3('Weighting and survey design')+p('Start shares use the DHS woman survey weight. Confidence intervals elsewhere account for stratification and clustered primary sampling units.'))
+content['table711']=(p('The published DRC DHS 2023–24 Table 7.13 “All methods” row includes non-modern methods; the all-modern estimate elsewhere in this report excludes them and excludes EC as an ongoing method.')+
+ table(read('table_7_13_replicated')))
+content['time']=(p(f'Among all modern-method episodes, the 12-month probability of ending the original method for any recorded reason is {national.loc[12,"all_reason_pct"]:.1f}%; the probability for potentially actionable reasons is {national.loc[12,"actionable_pct"]:.1f}%.')+
+ img('drc_all_reason_method_timing.png','Cumulative all-reason discontinuation by method and month')+
+ img('drc_actionable_method_timing.png','Cumulative potentially actionable discontinuation by method and month')+
+ h3('Three-, six-, nine-, and twelve-month life-table estimates')+
+ table(show_time,rename={'month':'Month','eligible_episodes_n':'Eligible episodes','all_reason_pct':'Any reason (%)','actionable_pct':'Actionable (%)','all_reason_ci_low':'All-reason CI low','all_reason_ci_high':'All-reason CI high','actionable_ci_low':'Actionable CI low','actionable_ci_high':'Actionable CI high'})+
+ h3('Cause-specific monthly cumulative incidence and DHS switching')+
+ p('The DHS switching column identifies direct changes to another method after an original-method ending. It is a subset of discontinuation, not a competing alternative to discontinuation.')+
+ table(read('table_7_13_monthly')[lambda d:d.month.isin([3,6,9,12])]))
+content['reasons712']=(p('Recorded reasons are mutually exclusive competing endings. A reason-specific 12-month risk uses all eligible episodes of that method at the start of the life table, with other endings treated as competing events.')+
+ img('ethiopia_sequence/slide_10.png','Distribution of recorded reasons among first-year modern-method endings')+
+ img('ethiopia_sequence/slide_12.png','Distribution of broad reason groups by method')+
+ img('ethiopia_sequence/slide_13.png','Cause-specific 12-month discontinuation risk by method')+
+ table(ac.rename(columns={'method':'Method','reason':'Reason','risk_pct':'12-month risk (%)','share_of_12mo_endings_pct':'Share of 12-month endings (%)'}))+
+ h3('Reasons among endings other than wanted pregnancy or partner disapproval')+
+ table(recorded[~recorded.reason.isin(['Wanted pregnancy','Partner disapproval'])])+
+ h3('Detailed recorded reason categories')+table(detail)+
+ h3('Five-year distribution of recorded reasons by method')+
+ p('This distribution uses all observed modern-method endings in the retrospective calendar, regardless of the duration at ending. Its denominator is recorded endings of each method, unlike the 12-month life table.')+
+ table(read('five_year_reason_distribution_by_method')))
+content['transitions']=(p('These charts follow observed first-year endings for reasons other than wanted pregnancy or partner disapproval. They describe modern use after the original method ended; they do not change the original-method discontinuation probability.')+
+ img('ethiopia_sequence/slide_18.png','Method-use state one month after a selected-reason ending')+
+ img('ethiopia_sequence/slide_19.png','Method-use state twelve months after a selected-reason ending')+
+ img('ethiopia_sequence/slide_21.png','Alluvial paths from month one to month twelve after selected-reason endings')+
+ table(read('selected_reason_post_ending_transitions')))
+content['action-pathways']=(old_body('pathways')+
+ img('drc_actionable_month1_to_month12_alluvial.png','Actionable ending pathways from month one to month twelve')+
+ h3('Injectables: stated reason and state one month later')+
+ p('Among 202 observed actionable injectable endings with one subsequent calendar month, the cells show weighted shares within each stated reason. Sparse reason cells should not be ranked.')+
+ img('drc_injectable_reason_destination_timing.png','Injectable actionable reason, month-one status, and timing of the ending')+
+ table(read('injectable_reason_month1_destinations'))+
+ h3('Injectables: timing and immediate destination')+
+ table(read('injectable_reason_timing_destinations')))
+content['standardized-current-users']=(p('The current-user bridge starts with the projected number using a continuing modern method, excluding EC. It conditions the next 12-month actionable-ending risk on time already spent using that method and then distinguishes an original-method ending from leaving modern use at year end. The flow diagram shows only the subset projected to have an actionable ending; uninterrupted users and endings for other reasons are outside this flow.')+
+ img('drc_current_user_pathway.png','Current-user actionable endings and modern use at year end')+
+ table(bridge))
+content['methods']=old_body('scope')+p('Survey weights and clustered, stratified variance estimation are used where confidence intervals or model tests are reported. Province-by-method-by-reason cells with few observed endings are flagged and should not be ranked.')
+content['validation']=old_body('validation')
+content['future']=p('Program decisions can use the sequence: identify where actionable risk is high, inspect the reasons and method mix, estimate how many current users are affected, and compare realistic continuation scenarios. The mCPR illustrations are descriptive ceilings rather than causal program effects.')
+
+# The reference HTML has a presentation-figure chapter. Reproduce the full
+# current DRC deck as an HTML gallery, with all slide art stored locally.
+gallery='<div class="slide-gallery">'
+for i in range(1,min(30,len(pdf))+1):gallery+=f'<figure id="deck-slide-{i}"><img src="assets/slides/slide_{i:03d}.webp" alt="DRC presentation slide {i}" loading="lazy"><figcaption>Presentation slide {i}</figcaption></figure>'
+gallery+='</div>'
+content['presentation-figures']=p('The figures below reproduce the current DRC presentation, in slide order.')+gallery
+content['dhs-711-presentation-table']=table(ac.pivot(index='method',columns='reason',values='risk_pct').reset_index().fillna(0).rename(columns={'method':'Method'}))
+content['twelve-month-three-column-comparison']=p('The three columns answer different questions: any recorded ending, an ending other than wanted pregnancy or partner disapproval, and an ending for one of the five potentially actionable reasons.')+table(comp)
+other=detail[detail.reason.str.contains('Infrequent|Difficulty|Marital|Other recorded',case=False)]
+content['other-reasons-count-breakdown']=p('“Other fertility” comprises infrequent sex or husband away, marital dissolution or separation, and difficulty becoming pregnant or menopause. “Other recorded” contains fatalistic, other, unknown, missing, or unclassified responses.')+table(other)+h3('Five-year recorded endings in those categories')+table(read('five_year_reason_distribution_by_method')[lambda d:d.reason.str.contains('Infrequent|Difficulty|Marital|Other recorded',case=False)])
+content['other-reason-followup']=p('A separate follow-up by each detailed “Other” code uses endings with 12 subsequent calendar months observed. Sparse rows are descriptive and should not be ranked as reliable differences.')+table(read('other_reason_followup'))
+
+# Selected-reason subgroup and reason profile chapters.
+part=[]
+for v in ['method_group','age_group','parity_group','marital_group','education','wealth','residence','zone_name']:
+ z=sub[sub.group.str.startswith(v+'::') & (sub.group.str.count('::')==1)].copy()
+ if z.empty:continue
+ z['Category']=z.group.str.split('::').str[-1]
+ part.append(h3(v.replace('_group','').replace('_',' ').title())+
+  table(z,['Category','eligible_episodes_n','selected_endings_n','selected_3_month_pct','selected_6_month_pct','selected_9_month_pct','selected_12_month_pct','ci_low','ci_high'],
+   {'eligible_episodes_n':'Eligible episodes','selected_endings_n':'Selected endings','selected_3_month_pct':'3 months (%)','selected_6_month_pct':'6 months (%)','selected_9_month_pct':'9 months (%)','selected_12_month_pct':'12 months (%)','ci_low':'95% CI low','ci_high':'95% CI high'}))
+for pair in ['age_group::parity_group','age_group::method_group','parity_group::method_group']:
+ z=sub[sub.group.str.startswith(pair+'::')].copy()
+ if z.empty:continue
+ z['Combination']=z.group.str.replace(pair+'::','',regex=False).str.replace('::',' × ',regex=False)
+ part.append(h3(pair.replace('::',' × ').replace('_group','').title())+
+  table(z,['Combination','eligible_episodes_n','selected_endings_n','selected_12_month_pct','ci_low','ci_high'],
+   {'eligible_episodes_n':'Eligible episodes','selected_endings_n':'Selected endings','selected_12_month_pct':'12-month selected-reason risk (%)','ci_low':'CI low','ci_high':'CI high'}))
+content['selected-reason-descriptive-subgroups']=p('The outcome excludes endings due to wanted pregnancy and partner disapproval; all eligible modern-method episodes remain in the life-table denominator. Estimates are descriptive and use survey-design intervals where shown.')+''.join(part)
+content['selected-reason-descriptive-subgroups'] += (h3('Fully adjusted all-reason subgroup model for comparison')+
+ img('drc_figures/slide_14.png','Fully adjusted all-reason 12-month discontinuation by subgroup')+
+ table(read('all_reason_adjusted_subgroups')))
+
+cause_cols=['share_method_failure','share_want_more_effective','share_bleeding','share_other_health','share_access_cost_convenience']
+reason_rows=sub0[['Group','selected_endings_n',*cause_cols]].copy()
+reason_rows['actionable_share_total']=reason_rows[cause_cols].sum(axis=1)
+for c in cause_cols:reason_rows[c]=100*reason_rows[c]/reason_rows.actionable_share_total
+content['method-experience-subgroup-reasons']=(p('Among the five potentially actionable reason groups, each displayed row sums to 100% before rounding. These are reason shares among recorded selected-reason endings, not risks among all episodes.')+
+ table(reason_rows.drop(columns='actionable_share_total').rename(columns={'selected_endings_n':'Observed selected endings','share_method_failure':'Method failure (%)','share_want_more_effective':'More effective (%)','share_bleeding':'Bleeding (%)','share_other_health':'Other health (%)','share_access_cost_convenience':'Access/cost (%)'})))
+top=[]
+names={'share_method_failure':'Method failure','share_want_more_effective':'Want more effective','share_bleeding':'Bleeding changes','share_other_health':'Other health','share_access_cost_convenience':'Access/cost'}
+for row in reason_rows.itertuples():
+ vals=sorted([(names[c],getattr(row,c)) for c in cause_cols],key=lambda z:-z[1])
+ top.append({'Group':row.Group,'Selected endings':row.selected_endings_n,**{f'Rank {j+1}':f'{k} ({v:.1f}%)' for j,(k,v) in enumerate(vals[:3])}})
+content['top-three-reasons-by-subgroup-method']=p('The top three entries are shares of potentially actionable reasons within each subgroup; they do not add to 100% because two other actionable reasons remain.')+table(pd.DataFrame(top))
+content['selected-reason-risk-strata']=(p('The full selected-reason competing-risk model predicts each observed-start episode’s 12-month discontinuation probability using its own method, province, and measured characteristics. Weighted tertiles form lower, middle, and higher predicted-risk bands. These bands are exploratory model summaries, not latent clusters or causal groups.')+
+ h3('Predicted-risk bands')+table(read('selected_reason_predicted_risk_bands'))+
+ h3('Characteristics within each band')+table(read('selected_reason_risk_band_characteristics')))
+content['method-duration-class-discontinuation']=p('The short-acting reversible group contains injectables and pills; the long-acting reversible group contains implants and IUDs. Other continuing modern methods are shown separately.')+table(classes)
+content['short-acting-selected-reason-distribution']=p('Distribution among observed first-year short-acting modern-method endings other than wanted pregnancy or partner disapproval.')+table(short)
+
+content['subnational-discontinuation-analysis-extension']=(p('National results can conceal province variation in all-reason discontinuation, method mix, and reason composition. The 26-province results below are descriptive when the observed cell size is small.')+
+ img('ethiopia_sequence/slide_15.png','All-reason 12-month discontinuation across 26 provinces')+
+ img('ethiopia_sequence/slide_17.png','Province mCPR alongside all-reason discontinuation')+
+ table(mcpr)+table(mix[mix.scope!='National'])+
+ h3('All-reason recorded reason shares by province')+
+ table(read('all_reason_province_reason_shares')))
+zone=sub[sub.group.str.startswith('zone_name::')].copy();zone['Province']=zone.group.str.split('::').str[-1]
+content['selected-reason-regional-analysis']=(p('Selected-reason discontinuation excludes wanted pregnancy and partner disapproval. The regional row remains based on modern-method episodes, not on the number of women currently using a method.')+
+ table(zone,['Province','eligible_episodes_n','selected_endings_n','selected_12_month_pct','ci_low','ci_high'],{'eligible_episodes_n':'Eligible episodes','selected_endings_n':'Selected endings','selected_12_month_pct':'12-month selected-reason risk (%)','ci_low':'CI low','ci_high':'CI high'})+
+ h3('Observed, method-adjusted, and fully adjusted selected-reason risks')+
+ p('The two adjusted columns compare provinces after accounting for method mix and then measured population composition; all 26 provinces are evaluated over the same observed-start reference episodes. Small cells are flagged.')+
+ img('drc_selected_reason_province_raw_adjusted.png','Observed, method-adjusted, and fully adjusted selected-reason discontinuation across DRC provinces')+
+ table(read('selected_reason_province_adjusted_rates'))+
+ h3('Survey-bootstrap pairwise province comparisons')+
+ table(read('selected_reason_adjusted_pairwise')))
+content['regional-episode-mix-and-risk']=(p('The method-start share and the within-method 12-month probability have different denominators. Start shares are among all contraceptive starts in a province; within-method risks are among episodes that started the named method.')+
+ img('ethiopia_sequence/slide_31.png','Method initiation mix for each province')+
+ table(mix[mix.scope!='National'],['scope','method','observed_starts_n','share_of_all_starts_pct'],{'scope':'Province','method':'Method','observed_starts_n':'Observed starts','share_of_all_starts_pct':'Share of starts (%)'}))
+content['regional-method-paired-bars']=(p('For each method, compare its share of all starts with its own actionable 12-month discontinuation probability; the panels contain all 26 provinces.')+''.join(img(f'ethiopia_sequence/slide_{j:02d}.png',f'Method starts and actionable risk across provinces, panel {j-31}') for j in range(32,35))+
+ img('drc_iud_start_risk_1.png','IUD starts and actionable discontinuation by province, first half')+
+ img('drc_iud_start_risk_2.png','IUD starts and actionable discontinuation by province, second half')+
+ img('drc_other_modern_start_risk_1.png','Other-modern starts and actionable discontinuation by province, first half')+
+ img('drc_other_modern_start_risk_2.png','Other-modern starts and actionable discontinuation by province, second half'))
+content['expected-user-calculations']=note('The tables immediately below are the earlier 2024-to-2025 illustration. The later 2026 scenario chapters use the projected 2025 current-user stock and projected 2026 women aged 15–49.')+old_body('planning')
+selected_projection=[]
+for m in methods:
+ users=next(x['projected_2025_current_users'] for x in bundle['methods'] if x['approach']=='First-year life table' and x['method']==m)
+ for row in ac[(ac.method==m)&(~ac.reason.isin(['Wanted pregnancy','Partner disapproval']))].itertuples():
+  selected_projection.append({'Method':m,'Reason':row.reason,'2025 projected current users':users,
+    '12-month cause-specific risk (%)':row.risk_pct,
+    'Illustrative original-method endings':users*row.risk_pct/100})
+content['current-user-reason-planning']=(p('Illustrative first-year current-user original-method endings for causes other than wanted pregnancy or partner disapproval. The probabilities are first-year life-table quantities and do not condition on time already used.')+
+ table(comp[['Method','Excluding pregnancy/partner (%)','Eligible episodes']])+
+ table(pd.DataFrame(selected_projection)))
+content['current-user-actionable-projection']=note('Earlier 2024-to-2025 illustration; the 2026 planning sequence later in this report uses the projected 2025 user stock.')+old_body('planning')
+content['duration-adjusted-reason-planning']=(p('Current users have already spent varying lengths of time on their methods. Historical landmarks and the AFT survival model condition the next 12 months on that elapsed duration; observed switching and restarting pathways then inform modern-use status at year end.')+
+ table(landmarks)+note('The detailed tables immediately below are the earlier 2024-to-2025 illustration. The 2026 duration-aware scenarios are shown later using a consistent 2026 population denominator.')+old_body('duration'))
+content['updated-subnational-heterogeneity-analyses']=(old_body('provinces')+old_body('adjusted')+
+ img('ethiopia_sequence/slide_83.png','Fully adjusted actionable discontinuation by subgroup')+
+ img('ethiopia_sequence/slide_84.png','Observed actionable discontinuation across 26 provinces')+
+ img('ethiopia_sequence/slide_40.png','Observed and adjusted actionable province probabilities')+
+ img('ethiopia_sequence/slide_43.png','Fully adjusted significant provincial comparisons')+
+ img('ethiopia_sequence/slide_44.png','Method-adjusted provincial comparisons')+
+ img('ethiopia_sequence/slide_45.png','Pairwise comparison counts across adjustment stages')+
+ h3('Fully adjusted actionable subgroup probabilities')+table(adjsub)+
+ h3('Model odds ratios')+table(read('actionable_province_model_odds_ratios'))+
+ h3('All provincial pairwise tests')+table(read('actionable_adjusted_pairwise')))
+content['mcpr-2026-retention-scenarios']=(p('The 2026 denominator is 26,146,676.5 projected women aged 15–49 from the UN World Population Prospects 2024 medium variant. The survey 2024 all-women mCPR is carried to 2025 with a +0.4 percentage-point planning increment; 2026 scenarios use no further growth, UN +0.5 points, or Track20 +0.4 points.')+
+ table(scenarios)+old_body('planning-2026'))
+content['mcpr-2026-method-detail']=table(by_method)
+content['actionable-cause-mcpr-ceiling']=p('Each cause-specific percentage-point equivalent divides the number of users counted at year end by the same projected 2026 population of women aged 15–49. The categories add to the all-actionable equivalent before rounding.')+table(by_cause)
+
+for key,approach in [('historical-duration-aware-planning','Historical duration-aware'),('aft-duration-aware-planning','AFT plus observed pathways')]:
+ content[key]=(p('The approach estimates the next 12 months for current users conditional on method duration and then applies observed post-ending pathways to identify users outside modern use at year end.')+
+  h3('Methods and reasons')+table(by_method[by_method.approach==approach])+
+  table(by_cause[by_cause.approach==approach])+
+  h3('Three 2026 growth scenarios')+table(scenarios[scenarios.approach==approach]))
+content['duration-planning-appendix']=p('Earlier duration-aware diagnostics are retained as supporting analyses. They describe original-method endings separately from the modern-use status at year end.')+table(landmarks)
+content['switching-2026-bridge']=p('Immediate modern-to-modern switching is an original-method ending but does not immediately remove a woman from the modern-use numerator. Later restarting can also restore modern use before year end.')+table(read('actionable_post_ending_transitions'))
+content['duration-modern-use-2026-bridge']=table(bridge)+table(read('survival_model_duration_by_method'))
+content['duration-aware-cause-pp-matrices']=table(by_cause)
+content['aft-switching-sensitivity']=p('The AFT estimates of original-method endings are combined with observed switching and restarting patterns. IUD modeling has limited precision and uses an other-modern proxy.')+table(read('survival_model_duration_by_method_cause'))+table(read('actionable_post_ending_transitions'))
+
+missing=[sid for sid,_ in sections if sid not in content]
+if missing:raise RuntimeError('Unfilled reference sections: '+', '.join(missing))
+style='''
+:root{--navy:#173f5b;--teal:#118c90;--gold:#da9a25;--grey:#607480}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:#253c4c;font:15px/1.55 Arial,Helvetica,sans-serif;background:white}
+aside{position:fixed;inset:0 auto 0 0;width:274px;overflow:auto;background:#f3f7f9;border-right:1px solid #d7e4e9;padding:24px 18px}
+aside strong{display:block;font:700 21px Georgia,serif;color:var(--navy);margin-bottom:10px}
+aside input{width:100%;padding:8px;border:1px solid #c3d4db;border-radius:4px;margin-bottom:10px}
+aside a{display:block;color:var(--navy);text-decoration:none;font-size:12.5px;padding:5px 2px;line-height:1.25}
+aside a:hover{background:#e3eef1}main{max-width:1260px;margin-left:274px;padding:32px 42px 100px}
+h1,h2,h3,h4{font-family:Georgia,serif;color:var(--navy)}h1{font-size:35px;line-height:1.1}
+h2{font-size:26px;border-bottom:3px solid var(--gold);padding-bottom:7px;margin-top:58px}
+h3{font-size:20px;margin-top:28px}h4{font-size:16px}p{max-width:92ch}
+.lede{font-size:18px;color:var(--navy)}.note{background:#f2f7f9;border-left:4px solid var(--teal);padding:13px 16px;margin:14px 0}
+.table-wrap{max-height:620px;overflow:auto;border:1px solid #dce5e9;margin:14px 0 25px}
+table{border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap}th{position:sticky;top:0;background:var(--navy);color:white;text-align:left}
+td,th{padding:7px 9px;border-bottom:1px solid #dce5e9}tbody tr:nth-child(even){background:#f5f9fa}
+figure{margin:22px 0 30px}figure img{display:block;width:100%;height:auto;max-height:780px;object-fit:contain;border:1px solid #e1e9ed}
+figcaption{font-size:12px;color:var(--grey);margin-top:5px}.slide-gallery{display:grid;grid-template-columns:1fr 1fr;gap:18px}.slide-gallery figure{margin:0 0 12px}
+@media(max-width:900px){aside{position:relative;width:100%;height:250px}main{margin-left:0;padding:22px}.slide-gallery{grid-template-columns:1fr}}
+@media print{aside{display:none}main{margin:0}.table-wrap{max-height:none;overflow:visible}}
+'''
+nav=''.join(f'<a href="#{htmlmod.escape(sid)}">{htmlmod.escape(title)}</a>' for sid,title in sections)
+body=''.join(f'<section id="{htmlmod.escape(sid)}"><h2>{htmlmod.escape(title)}</h2>{content[sid]}</section>' for sid,title in sections)
+script='''<script>const q=document.getElementById('toc-search');q.addEventListener('input',()=>{for(const a of document.querySelectorAll('aside a'))a.hidden=!a.textContent.toLowerCase().includes(q.value.toLowerCase())})</script>'''
+doc='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DRC contraceptive discontinuation analysis</title><style>'+style+'</style></head><body><aside><strong>DRC analysis</strong><input id="toc-search" type="search" placeholder="Find a section" aria-label="Find a section">'+nav+'</aside><main><h1>Contraceptive discontinuation in the Democratic Republic of the Congo</h1><p class="lede">DRC DHS 2023–24: national and provincial analysis, post-ending pathways, current users, and illustrative 2026 mCPR.</p>'+body+'</main>'+script+'</body></html>'
+doc=doc.replace('assets/ethiopia_sequence/','assets/drc_figures/')
+doc=doc.replace('Revised Table 7.11','DRC DHS Table 7.13').replace('Revised Table 7.12: reasons for discontinuation','DRC DHS Table 7.13: reasons for discontinuation')
+doc=doc.replace('DHS Table 7.11: 12-month discontinuation by method and reason','DRC DHS Table 7.13: 12-month discontinuation by method and reason')
+target=out/'DRC_discontinuation_analysis.html';target.write_text(doc)
+print('Wrote',target,'sections',len(sections),'tables',doc.count('<table'),'images',doc.count('<img'))
+)----------------------"
+REPORT_FILES[["src/report/39_drc_injectable_heatmap.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Create DRC injectable reason and immediate-destination heatmaps."""
+import os
+import argparse
+from pathlib import Path
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+ap.add_argument('--output',type=Path,default=Path(os.environ['DRC_PROJECT_ROOT'])/'output/assets/drc_injectable_reason_destination_timing.png')
+a=ap.parse_args()
+sup=a.project_root/'output/Supporting_data'
+dest=pd.read_csv(sup/'drc_injectable_reason_month1_destinations.csv')
+time=pd.read_csv(sup/'drc_injectable_reason_timing_destinations.csv')
+reasons=['Method failure','Wanted more effective','Bleeding changes',
+         'Other side effects/health','Access/cost/convenience']
+states=['No method recorded','Same modern method','Different modern method',
+        'Traditional/other method','Pregnant, birth or termination','Other/unknown']
+periods=['Months 1–3','Months 4–6','Months 7–12']
+left=dest.pivot_table(index='reason',columns='destination',values='share_within_reason_pct',fill_value=0).reindex(index=reasons,columns=states,fill_value=0)
+right=time.groupby(['reason','timing']).weighted_endings.sum().unstack(fill_value=0).reindex(index=reasons,columns=periods,fill_value=0)
+right=right.div(right.sum(axis=1),axis=0).mul(100).fillna(0)
+cmap=LinearSegmentedColormap.from_list('drc',['#F3F7F8','#9BCFD0','#118C90'])
+fig,axes=plt.subplots(1,2,figsize=(13.0,5.2),gridspec_kw={'width_ratios':[1.55,1]})
+for ax,data,title in zip(axes,[left,right],['Status one month after ending','When the original method ended']):
+ ax.imshow(data,cmap=cmap,vmin=0,vmax=max(left.to_numpy().max(),right.to_numpy().max()),aspect='auto')
+ ax.set_xticks(range(len(data.columns)));ax.set_xticklabels(data.columns,rotation=35,ha='right',fontsize=8.5)
+ ax.set_yticks(range(len(reasons)));ax.set_yticklabels(reasons,fontsize=9)
+ ax.set_title(title,fontsize=13,fontweight='bold',color='#173F5B')
+ for i in range(len(reasons)):
+  for j in range(len(data.columns)):
+   v=data.iloc[i,j];ax.text(j,i,f'{v:.0f}' if v>=.5 else '0',ha='center',va='center',fontsize=9,color='#173F5B')
+ for spine in ax.spines.values():spine.set_visible(False)
+ ax.set_xticks(np.arange(-.5,len(data.columns),1),minor=True)
+ ax.set_yticks(np.arange(-.5,len(reasons),1),minor=True)
+ ax.grid(which='minor',color='white',linewidth=2);ax.tick_params(which='both',length=0)
+fig.subplots_adjust(left=.18,right=.98,bottom=.28,top=.86,wspace=.62)
+a.output.parent.mkdir(parents=True,exist_ok=True)
+fig.savefig(a.output,dpi=220,facecolor='white');plt.close(fig)
+print('Wrote',a.output)
+)----------------------"
+REPORT_FILES[["src/report/42_drc_selected_reason_province_figure.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Observed and adjusted selected-reason discontinuation across DRC provinces."""
+import os
+import argparse
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+ap=argparse.ArgumentParser()
+ap.add_argument('--project-root',type=Path,required=True)
+ap.add_argument('--output',type=Path,default=Path(os.environ['DRC_PROJECT_ROOT'])/'output/assets/drc_selected_reason_province_raw_adjusted.png')
+a=ap.parse_args()
+d=pd.read_csv(a.project_root/'output/Supporting_data/drc_selected_reason_province_adjusted_rates.csv')
+colors=[('#DA9A25','observed_pct','observed_low','observed_high','Observed'),
+        ('#118C90','method_adjusted_pct','method_adjusted_low','method_adjusted_high','Method-adjusted'),
+        ('#173F5B','fully_adjusted_pct','fully_adjusted_low','fully_adjusted_high','Fully adjusted')]
+fig,axes=plt.subplots(1,2,figsize=(14,8.2),sharex=True)
+for j,ax in enumerate(axes):
+ x=d.iloc[j*13:(j+1)*13].copy();y=np.arange(len(x))[::-1]
+ for k,(color,v,lo,hi,label) in enumerate(colors):
+  offset=(1-k)*.18
+  for yy,row in zip(y,x.itertuples()):
+   a0=getattr(row,lo);a1=getattr(row,hi)
+   if np.isfinite(a0) and np.isfinite(a1):ax.plot([a0,a1],[yy+offset,yy+offset],color=color,lw=1)
+  ax.scatter(x[v],y+offset,s=23,color=color,label=label,zorder=3)
+ ax.set_yticks(y);ax.set_yticklabels([r.province+('*' if r.small_cell else '') for r in x.itertuples()],fontsize=9)
+ ax.set_xlim(0,70);ax.set_ylim(-.6,12.6)
+ ax.set_xlabel('12-month selected-reason discontinuation (%)')
+ ax.xaxis.grid(True,color='#DFE8EC');ax.set_axisbelow(True)
+ ax.spines[['top','right','left']].set_visible(False);ax.tick_params(length=0)
+ ax.set_title('Provinces 1–13' if j==0 else 'Provinces 14–26',color='#173F5B',fontsize=13)
+handles,labels=axes[0].get_legend_handles_labels()
+fig.legend(handles,labels,ncol=3,loc='upper center',bbox_to_anchor=(.5,.99),frameon=False)
+fig.subplots_adjust(left=.16,right=.98,top=.90,bottom=.08,wspace=.48)
+a.output.parent.mkdir(parents=True,exist_ok=True)
+fig.savefig(a.output,dpi=220,facecolor='white');plt.close(fig)
+print('Wrote',a.output)
+)----------------------"
+REPORT_FILES[["src/report/43_drc_current_user_pathway.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""DRC current-user stock to actionable ending and year-end use diagram."""
+import os
+import argparse,json
+from pathlib import Path
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch,FancyArrowPatch
+
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True)
+ap.add_argument('--output',type=Path,default=Path(os.environ['DRC_PROJECT_ROOT'])/'output/assets/drc_current_user_pathway.png');a=ap.parse_args()
+b=json.loads((a.project_root/'output/Supporting_data/drc_2026_planning_bundle.json').read_text())
+x=[z for z in b['methods'] if z['approach']=='Historical duration-aware']
+stock=sum(z['projected_2025_current_users'] for z in x)
+all_modern=b['scenarios'][0]['projected_current_users_2025']
+ending=sum(z['projected_actionable_original_method_endings'] for z in x)
+nonmodern=sum(z['retained_modern_users_2026_illustration'] for z in x)
+modern=ending-nonmodern
+fig,ax=plt.subplots(figsize=(13,4.8));fig.patch.set_facecolor('white');ax.set_xlim(0,13);ax.set_ylim(0,5);ax.axis('off')
+def box(x,y,w,h,color,title,value,subtitle=''):
+ p=FancyBboxPatch((x,y),w,h,boxstyle='round,pad=0.04,rounding_size=.08',facecolor=color,edgecolor='none')
+ ax.add_patch(p);ax.text(x+w/2,y+h*.68,title,ha='center',va='center',color='white',fontsize=13,fontweight='bold')
+ ax.text(x+w/2,y+h*.36,f'{value:,.0f}',ha='center',va='center',color='white',fontsize=19,fontweight='bold')
+ if subtitle:ax.text(x+w/2,y-.22,subtitle,ha='center',va='top',color='#607480',fontsize=10)
+def arrow(x1,y1,x2,y2):
+ ax.add_patch(FancyArrowPatch((x1,y1),(x2,y2),arrowstyle='-|>',mutation_scale=16,
+  linewidth=2,color='#9CB4BE',connectionstyle='arc3,rad=0'))
+box(.3,1.75,3.0,1.5,'#173F5B','Current method users',stock,'Projected 2025; excludes EC')
+box(4.35,1.75,3.0,1.5,'#118C90','Actionable method endings',ending,'Next 12 months, duration-aware')
+box(9.0,2.85,3.4,1.25,'#173F5B','Modern at year end',modern)
+box(9.0,.70,3.4,1.25,'#DA9A25','Nonmodern at year end',nonmodern)
+arrow(3.32,2.5,4.28,2.5);arrow(7.4,2.55,8.93,3.47);arrow(7.4,2.43,8.93,1.33)
+ax.text(6.9,.25,f'Only the actionable-ending subset is shown downstream. All-modern mCPR stock including EC: {all_modern:,.0f}.',ha='center',color='#607480',fontsize=10.5)
+fig.tight_layout(pad=.7);a.output.parent.mkdir(parents=True,exist_ok=True)
+fig.savefig(a.output,dpi=220,facecolor='white');plt.close(fig)
+print('Wrote',a.output)
+)----------------------"
+
 if (sys.nframe() == 0L) main()

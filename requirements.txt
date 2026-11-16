@@ -1,2 +1,8 @@
-# Required by the incremental HTML builders.
-lxml>=5
+# Report rendering and independent document validation.
+lxml==6.0.2
+pillow==12.0.0
+matplotlib==3.10.7
+numpy==2.3.4
+pandas==2.3.3
+reportlab==4.4.5
+pymupdf==1.26.6

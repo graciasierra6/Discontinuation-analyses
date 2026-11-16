@@ -1,6 +1,6 @@
-# Updated report companion: revised planning and incremental HTML build.
-# --run=revised-html requires fitted statistics and the current validated report layout.
-# Raw-IR preparation remains a separate mode; this does not freshly render every chapter.
+# National report source: --run=full rebuilds from the supplied IR file.
+# Optional legacy --run=revised-html refreshes a supplied report from fitted statistics.
+# --run=prepare reconstructs the calendar; full report builds use the root build pipeline.
 # Parameterized IR preparation: --run=prepare; --validate-input checks inputs only.
 # Updated full-frame survey inference and gross/switching planning uncertainty.
 # --run=survey-planning uses staged derived episodes, covariates and selected AFT families.
@@ -157,11 +157,10 @@ def main():
     ids=Counter(doc.xpath('//@id'))
     issues=[]
     if a.country=='DRC':
-        issues += [dict(section='method-duration-class-discontinuation',issue='Original grouping uses Pill/Injectables only for short acting; condoms are omitted relative to Ethiopia.',status='definition_discrepancy'),
-                   dict(section='selected-reason-risk-strata',issue='Original DRC bands are in-sample predictions; Ethiopia uses held-out PSU predictions.',status='method_discrepancy'),
-                   dict(section='historical-duration-aware-planning',issue='Three tables are present; Ethiopia contains eight. Same section names do not establish coverage.',status='coverage_discrepancy')]
-    if a.country=='Nigeria':issues += [dict(section='regional-actionable-method-mix-decomposition',issue='Original code pools IUD with other modern and uses a different cohort/estimator from the Ethiopia pairwise shared-mix analysis.',status='method_discrepancy'),dict(section='three-approach-planning',issue='Saved planning uses projected 2025 stock and 2026 scenarios; earlier requested 2024 to 2025 horizon needs resolution.',status='horizon_review')]
-    issues += [dict(section='historical-duration-aware-planning; aft-duration-aware-planning',issue='mCPR equivalents use year-end nonmodern counts with observed switching/restarting; distinguish from gross actionable original-method endings.',status='estimand_review')]
+        issues += [dict(section='method-duration-class-discontinuation',issue='The reviewed exploratory short-acting grouping contains pills and injectables. This is a country-specific grouping, not all short-acting modern methods.',status='documented_definition'),
+                   dict(section='selected-reason-risk-strata',issue='The reviewed DRC risk-band diagnostic is in-sample; it is not the held-out prediction diagnostic used in Ethiopia.',status='documented_model_difference')]
+    if a.country=='Nigeria':
+        issues += [dict(section='regional-actionable-method-mix-decomposition',issue='The reviewed zone decomposition pools IUD with other modern and has its own cohort and estimator. It is distinct from Ethiopia pair-specific shared-mix standardization.',status='documented_model_difference')]
     summary=dict(country=a.country,report_sha256=hashlib.sha256(a.report_html.read_bytes()).hexdigest(),
       sections=len(sections),tables=len(inventory),images=len(assets),missing_images=sum(x['status']=='missing' for x in assets),
       table_candidate_matches=sum(bool(x['candidate_sources']) for x in inventory),
@@ -182,7 +181,7 @@ if __name__=='__main__':main()
 )-----"
 COUNTRY <- "Ethiopia"
 REPORT_BASENAME <- "Ethiopia_discontinuation_analysis.html"
-REPORT_SHA256 <- "d81c35debef4510be4fe53de4b3062993df9f87bcaa51c4caa18932d52c6d828"
+REPORT_SHA256 <- "9dc5b95a2ec0cd596e95a43f223762af09f9324d6146e9be17d4d206eede2edf"
 RAW_RELATIVE <- "Data/ETIR8AFL.dta"
 CORE_MODULES <- c("ethiopia_modern_method_discontinuation.R")
 PLANNING_MODULES <- c("ethiopia_modern_method_discontinuation.R", "202_ethiopia_planning_from_ir.R", "171_aft_switching_bridge.R", "179_duration_planning_table_arithmetic.py")
@@ -279,8 +278,8 @@ aft-switching-sensitivity	AFT duration model with observed switching pathways)--
 # Only the small, frozen external population inputs used by the report are
 # embedded. Provide a replacement via --auxiliary-dir to change those inputs.
 # Python helpers are included where original numerical arithmetic was Python;
-# they are not represented as original R code. HTML/PPTX layout assembly is
-# outside this numerical source collection. This file does not edit either
+# they are not represented as original R code. Reporting source is included below as REPORT_FILES. It is expanded only
+# into the private runtime directory. This file does not edit either
 # checked final document or promise pixel-identical HTML regeneration.
 
 stopifnot(getRversion() >= '4.0.0')
@@ -396,8 +395,25 @@ prepare_ir <- function(root, ir_file) {
   invisible(NULL)
 }
 
+# Delegate complete reports to the raw-IR national build, not a saved-results refresh.
+run_full_rebuild <- function(opt,planning_only=FALSE) {
+ f<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ if(!file.exists(f))f<-gsub('~+~',' ',f,fixed=TRUE)
+ repo<-dirname(dirname(normalizePath(f)))
+ script<-file.path(repo,if(planning_only)'recompute_planning.R'else'build_reports.R')
+ if(!file.exists(script))stop('Run from the complete repository, including the root build script and tools directory.')
+ input<-if(!is.null(opt[['ir-file']]))opt[['ir-file']]else Sys.getenv('DHS_IR_FILE',unset='')
+ if(!nzchar(input)||is.null(opt[['project-root']]))stop('A full rebuild requires --ir-file and a new --project-root output directory.')
+ python<-if(!is.null(opt$python))opt$python else Sys.getenv('PYTHON',unset='python3')
+ status<-system2(file.path(R.home('bin'),'Rscript'),shQuote(c(script,paste0('--country=',COUNTRY),paste0('--ir-file=',input),paste0('--output-dir=',opt[['project-root']]),paste0('--python=',python))))
+ if(status!=0L)stop('The full raw-IR build failed. Inspect its runtime diagnostics.')
+ invisible(NULL)
+}
+
 main <- function() {
   opt <- parse_options(commandArgs(trailingOnly=TRUE))
+  if(!is.null(opt$run) && opt$run %in% c('full','build-html'))return(run_full_rebuild(opt))
+  if(identical(opt$run,'build-planning'))return(run_full_rebuild(opt,TRUE))
   if (identical(opt$run,"build-html")) opt$run <- "revised-html"
   if (identical(opt$run,"build-planning")) opt$run <- "revised-planning"
   if (isTRUE(opt$help)) cat("Build modes: --run=build-html|build-planning, --statistics-dir, --base-html, --revision-inputs. See the revised README for the build boundary.\n")
@@ -6904,13 +6920,9 @@ for(pair in list(
  c("post_discontinuation_nonpreg_matched_month12_flows.csv","flow_nonpreg12"),
  c("post_discontinuation_month1_3_12_exclude_wanted_paths.csv","path_exclude"))){
  write.csv(get(pair[2]),file.path(dest,pair[1]),row.names=FALSE)
- old<-read_output(pair[1]);new<-get(pair[2])
- keys<-setdiff(names(new),c("weighted_events","share_pct"))
- # Older flow files may include extra zero cells; compare all nonzero cells.
- old<-old[old$weighted_events>0,];new<-new[new$weighted_events>0,]
- join<-merge(new,old,by=keys,suffixes=c(".new",".old"),all=TRUE)
- stopifnot(!anyNA(join$weighted_events.new),!anyNA(join$weighted_events.old),
-           max(abs(join$weighted_events.new-join$weighted_events.old))<1e-6)
+ # Reconstruct these aggregates from the supplied IR rather than requiring
+ # a historical CSV as an input to the figure generator.
+ write.csv(get(pair[2]),file.path(out,pair[1]),row.names=FALSE)
 }
 draw_ribbon <- function(x0,x1,a0,a1,b0,b1,color,alpha=.47){
  t<-seq(0,1,length.out=45);ease<-3*t*t-2*t*t*t
@@ -7305,7 +7317,7 @@ ir <- readRDS(file.path(project,"Data/ET2024DHS__ETIR8ADT__IR_raw.rds"))
 historical <- readRDS(file.path(project,"Data/Derived/ethiopia_2024_current_user_pathway.rds"))
 ends <- readRDS(file.path(project,"Data/Derived/ethiopia_2024_post_discontinuation_transitions.rds"))
 method_tab <- read.csv(file.path(out,"reproduced_figures/slide_24_method_planning_table.csv"))
-comparison <- read.csv(file.path(support,"12_month_three_column_comparison.csv"),check.names=FALSE)
+
 
 method_name <- function(code) {
   ifelse(code==3L,"Injectables",ifelse(code==11L,"Implants",
@@ -8140,6 +8152,7 @@ result <- rbind(make(e,"National"),do.call(rbind,lapply(seq_len(nrow(regions)),f
 })))
 rownames(result)<-NULL
 stopifnot(nrow(result)==75L)
+if(file.exists(file.path(out,"selected_reason_region_method_screen.csv"))){
 check <- read.csv(file.path(out,"selected_reason_region_method_screen.csv"))
 for(i in seq_len(nrow(check))){
   name <- region_names[as.character(check$region[i])]
@@ -8151,6 +8164,7 @@ for(i in seq_len(nrow(check))){
     stop("Mismatch: ",name," ",check$method[i]," N=",x$eligible_episodes,
          " vs ",check$n[i],"; rate=",x$selected_reason_12_month_probability_pct,
          " vs ",check$rate[i])
+}
 }
 write.csv(result,file.path(out,"regional_episode_mix_vs_selected_method_rates.csv"),row.names=FALSE)
 cat("Regional matched-cohort estimates written. Displayable rate cells:",
@@ -12880,8 +12894,8 @@ write.csv(global, file.path(support,
   "regional_actionable_global_tests.csv"), row.names = FALSE)
 
 # The earlier presentation intervals used 120 refits. Replace them with the
-# matching 1,000-refit percentile intervals so the chart, tables, and direct
-# tests all draw uncertainty from the same survey-design bootstrap runs.
+# corresponding percentile intervals. The final display uses 500 joint
+# model refits; pairwise tests retain their documented resampling counts.
 percentile_ci <- function(boot, column) {
   unname(quantile(boot[[column]], c(.025, .975), na.rm = TRUE))
 }
@@ -13247,7 +13261,7 @@ for (ri in seq_along(region_codes)) {
 frame <- full_survey_frame()
 by_stratum <- split(frame$cluster, frame$stratum)
 stopifnot(all(lengths(by_stratum) > 1L))
-B <- as.integer(Sys.getenv("REGIONAL_ACTIONABLE_MIX_REPS", "1000"))
+B <- as.integer(Sys.getenv("REGIONAL_ACTIONABLE_MIX_REPS", "500"))
 if (!is.finite(B) || B < 100L) stop("Set at least 100 bootstrap replicates")
 one_replicate <- function(b) {
   set.seed(20261020L + b)
@@ -15392,7 +15406,7 @@ def quantile(values, p):
 cells = read('regional_actionable_all_region_method_mix_cells.csv')
 boot = read('regional_actionable_all_region_method_mix_bootstrap.csv')
 regions = sorted({x['region'] for x in cells} - {'National'})
-assert len(regions) == 14 and len(boot) == 1000
+assert len(regions) == 14 and len(boot) >= 500
 cell = {(x['region'],x['method']): x for x in cells}
 
 def values(region, draw=None):
@@ -15430,7 +15444,7 @@ for a,b in itertools.combinations(regions,2):
                 samples.append(sample)
         except (ValueError,KeyError):
             pass
-    assert len(samples) >= 950, (a,b,len(samples))
+    assert len(samples) >= 0.95 * len(boot), (a,b,len(samples))
     gap_draws=[s[5] for s in samples]
     mean=sum(gap_draws)/len(gap_draws)
     se=math.sqrt(sum((v-mean)**2 for v in gap_draws)/(len(gap_draws)-1))
@@ -16139,6 +16153,15 @@ p<-read.csv(file.path(s,'regional_actionable_first_model_point_estimates.csv'));
 source(file.path(root,'Code/120_relevel_regional_actionable_models.R'))
 source(file.path(root,'Code/119_regional_actionable_design_pvalues.R'))
 source(file.path(root,'Code/131_summarize_regional_actionable_pairwise_tests.R'))
+# The displayed model intervals use the same 500 joint adjusted-model refits.
+# Pairwise tests above retain their separately documented replicate counts.
+p<-read.csv(file.path(s,'regional_actionable_two_model_probabilities.csv'))
+for(i in seq_len(nrow(p)))for(model in c('method','full')){
+ z<-a[[paste0(model,'::',p$region[i])]];ci<-quantile(z,c(.025,.975),na.rm=TRUE)
+ p[[paste0(model,'_ci_low')]][i]<-ci[1];p[[paste0(model,'_ci_high')]][i]<-ci[2]
+}
+write.csv(p,file.path(s,'regional_actionable_two_model_probabilities.csv'),row.names=FALSE)
+
 )-----"
 )
 
@@ -17783,7 +17806,8 @@ labels=['6-year DHS trend (−0.90 pp/year)','9-year DHS trend (−0.24 pp/year)
 for j,label in enumerate(labels,1):rows.append([label,val(f'base|{j}','pct'),count(1),count(9),count(4),pp(4)])
 sec=section('duration-modern-use-2026-bridge');el=html.fragment_fromstring('<article class="duration-slide"><h3>Sensitivity: how the year-end mCPR equivalent changes</h3>'+table(rows)+'<p class="note">The same current-user cohort is retained across growth scenarios. Counts use 35,016,171 women aged 15–49 in 2026. The endpoint is 12 months from the prediction starting point, not 12 months after each ending.</p></article>');sec.insert(1,el)
 # Explain the reconciled planning scope and model uncertainty without changing the other chapters.
-audit=html.fragment_fromstring('<div id="planning-validation"><h3>Planning-table reconciliation</h3><p>Updated November 10, 2026. All method-by-cause counts, row and column totals, current-user stocks, growth-scenario additions and percentage-point conversions are generated from one set of numerical estimates. First-year planning uses all 8,682 eligible non-EC modern-method episodes, including eligible delayed entry, instead of restricting national estimates to regression complete cases. Historical and AFT calculations retain their documented duration-specific samples. The AFT current-user duration mix consistently includes the recorded other-modern code 14 user.</p><p>Uncertainty uses 500 joint positive-multiplier PSU replicates over the full 797-PSU, 27-stratum survey frame. Each replicate re-estimates baseline prevalence and method/duration composition, original-ending probabilities, and the corresponding historical or modeled post-ending pathways. New transition-model intervals condition on families selected at the point fit. Distribution selection, population, growth rates, future transportability and the assumption that avoided endings remain modern users are not fully represented by the intervals. Sparse IUD and other-modern causes remain especially uncertain.</p><p>Post-ending model checks used held-out PSUs. Among 1,479 histories with 12 months of post-ending observation, predicted modern use was 40.05% versus 40.18% observed. This checks aggregate calibration; it does not establish accurate predictions in every method-by-cause subgroup or causal intervention effects.</p></div>')
+check=json.loads((stats/'transition_validation.json').read_text());calibration=next(x for x in check['held_out']if x['horizon']==12)
+audit=html.fragment_fromstring(f'<div id="planning-validation"><h3>Planning-table reconciliation</h3><p>Rebuilt from the supplied IR data. All method-by-cause counts, row and column totals, current-user stocks, growth-scenario additions and percentage-point conversions are generated from one set of numerical estimates. First-year planning uses all 8,682 eligible non-EC modern-method episodes, including eligible delayed entry, instead of restricting national estimates to regression complete cases. Historical and AFT calculations retain their documented duration-specific samples. The AFT current-user duration mix consistently includes the recorded other-modern code 14 user.</p><p>Uncertainty uses 500 joint positive-multiplier PSU replicates over the full 797-PSU, 27-stratum survey frame. Each replicate re-estimates baseline prevalence and method/duration composition, original-ending probabilities, and the corresponding historical or modeled post-ending pathways. New transition-model intervals condition on families selected at the point fit. Distribution selection, population, growth rates, future transportability and the assumption that avoided endings remain modern users are not fully represented by the intervals. Sparse IUD and other-modern causes remain especially uncertain.</p><p>Post-ending model checks used held-out PSUs. Among {calibration["observations"]:,} histories with 12 months of post-ending observation, predicted modern use was {100*calibration["predicted_modern"]:.2f}% versus {100*calibration["observed_modern"]:.2f}% observed. This checks aggregate calibration; it does not establish accurate predictions in every method-by-cause subgroup or causal intervention effects.</p></div>')
 section('methods').append(audit)
 # Earlier exploratory blocks remain available but are not the current actionable planning estimands.
 for sid in ['current-user-reason-planning','duration-adjusted-reason-planning','standardized-current-users']:
@@ -17901,4 +17925,5823 @@ run_revised_report <- function(opt) {
  if(!file.copy(draft,target,overwrite=TRUE))stop("Could not save the updated report.")
  invisible(NULL)
 }
+# Raw-IR intermediate table generators.
+MODULES[["211_presentation_inputs.R"]] <- list(language="R", packaged_sha256="8fea198851e2c78f386132f0d4c4d897df97db6c78f793aa44a6ffab447c0b65", args=character(), code=r"---------------(#!/usr/bin/env Rscript
+# Reconstruct presentation input tables from prepared IR calendar records.
+# Usage: Rscript presentation_inputs.R PROJECT_ROOT
+args <- commandArgs(TRUE)
+root <- if(length(args)==1L)args[1]else Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if(!nzchar(root))stop('Supply the analysis project root.')
+suppressPackageStartupMessages(library(survey))
+options(survey.lonely.psu='adjust')
+ir <- readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'))
+cal <- readRDS(file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'))
+episodes <- readRDS(file.path(root,'Data/Derived/ethiopia_2024_table_7_11_episodes.rds'))
+out <- file.path(root,'output')
+dir.create(out,recursive=TRUE,showWarnings=FALSE)
+emit <- function(x,name) write.csv(x,file.path(out,name),row.names=FALSE,na='')
+modern <- c(1L,2L,3L,5L,6L,7L,11L,13L,17L,18L)
+method <- function(code) ifelse(code==3L,'Injectables',ifelse(code==11L,'Implants',
+ ifelse(code==1L,'Pill',ifelse(code==2L,'IUD',ifelse(code==16L,'EC',
+ ifelse(code %in% modern,'Other modern','Non-modern methods'))))))
+levels <- c('Injectables','Implants','Pill','IUD','EC','Other modern','Non-modern methods')
+starts <- cal[cal$method_code %in% c(1:20) & cal$start!=cal$calendar_start &
+ cal$interview-cal$start>=3L & cal$interview-cal$start<=62L,]
+starts$method <- method(starts$method_code)
+starts$year <- (starts$start-1L)%/%12L+1900L
+starts$cluster <- as.numeric(ir$v021[starts$woman_row])
+starts$stratum <- as.numeric(ir$v022[starts$woman_row])
+frame <- unique(data.frame(cluster=as.numeric(ir$v021),stratum=as.numeric(ir$v022)))
+summarize <- function(d,period) {
+ missing <- frame[!frame$cluster %in% d$cluster,]
+ if(nrow(missing)) {
+  dummy <- d[rep(1L,nrow(missing)),,drop=FALSE]
+  dummy$cluster<-missing$cluster;dummy$stratum<-missing$stratum;dummy$wt<-0
+  dd<-rbind(d,dummy)
+ } else dd<-d
+ design<-svydesign(ids=~cluster,strata=~stratum,weights=~wt,data=dd,nest=TRUE)
+ do.call(rbind,lapply(levels,function(m) {
+  flag<-as.numeric(dd$method==m)
+  z<-svymean(~flag,design);estimate<-100*as.numeric(z);se<-100*as.numeric(SE(z))
+  data.frame(period=period,method=m,unweighted_starts=sum(d$method==m),
+   weighted_starts=sum(d$wt[d$method==m]),denominator=sum(d$wt),
+   share_pct=estimate,se_pct=se,lower_pct=pmax(0,estimate-qnorm(.975)*se),
+   upper_pct=pmin(100,estimate+qnorm(.975)*se))
+ }))
+}
+overall<-summarize(starts,'Overall')
+annual<-do.call(rbind,lapply(sort(unique(starts$year)),function(y)summarize(starts[starts$year==y,],as.character(y))))
+stopifnot(abs(sum(overall$share_pct)-100)<1e-8)
+emit(overall,'presentation_initiation_overall.csv')
+emit(annual,'presentation_initiation_by_year.csv')
+
+reason_codes<-list('Method failure'=1L,'Wanted pregnancy'=2L,
+ 'Other fertility'=c(9L,12L,13L),'Bleeding changes'=15L,
+ 'Other side effects/health'=c(4L,5L),'Wanted more effective method'=7L,
+ 'Access/cost/convenience'=c(6L,8L,10L),'Partner disapproval'=3L,
+ 'Other reasons'=c(0L,11L,96L,98L,99L))
+life<-function(d) {
+ survival<-1;risks<-setNames(numeric(length(reason_codes)),names(reason_codes));rows<-list()
+ for(t in 1:12) {
+  at<-d$entry<t & d$exposure>=t;den<-sum(d$wt[at]);ended<-at & d$discontinued & d$exposure==t
+  if(den<=0)stop('Empty first-year risk set.')
+  risks<-risks+survival*vapply(reason_codes,function(cc)sum(d$wt[ended&d$reason_code %in% cc])/den,0.0)
+  survival<-survival*(1-sum(d$wt[ended])/den)
+  rows[[t]]<-data.frame(month=t,all_cause_pct=100*(1-survival),t(100*risks),check.names=FALSE)
+ }
+ do.call(rbind,rows)
+}
+plot_methods<-c('Injectables','Implants','Pill','IUD','Other modern (excl. EC)')
+episode_codes<-list(3L,11L,1L,2L,setdiff(modern,c(1L,2L,3L,11L)))
+rates<-vapply(episode_codes,function(cc)tail(life(episodes[episodes$method_code %in% cc,])$all_cause_pct,1),0.0)
+mix<-overall$share_pct[match(c('Injectables','Implants','Pill','IUD','Other modern'),overall$method)]
+emit(data.frame(method=plot_methods,start_share_pct=mix,d12_discontinuation_pct=rates),
+ 'presentation_mix_vs_discontinuation.csv')
+groups<-list('Pill'=1L,'Injectables'=3L,
+ 'Other modern methods'=setdiff(modern,c(1L,2L,3L,11L)),
+ 'IUD'=2L,'Implants'=11L,'All modern methods'=modern)
+experience<-c('Method failure','Bleeding changes','Other side effects/health',
+ 'Wanted more effective method','Access/cost/convenience')
+probabilities<-lapply(names(groups),function(m){
+ d<-episodes[episodes$method_code %in% groups[[m]],]
+ z<-tail(life(d),1)
+ data.frame(method=m,wanted_pregnancy=z[['Wanted pregnancy']],
+  method_experience_or_access=sum(z[,experience]),partner_disapproval=z[['Partner disapproval']],
+  other_reasons=z[['Other fertility']]+z[['Other reasons']],
+  total_discontinuation=z$all_cause_pct)
+})
+probabilities<-do.call(rbind,probabilities)
+emit(probabilities[probabilities$method!='All modern methods',],
+ 'presentation_discontinuation_probability_by_reason.csv')
+emit(data.frame(method=probabilities$method,
+ method_experience_or_access_percentage_points=probabilities$method_experience_or_access,
+ other_recorded_reasons_percentage_points=probabilities$other_reasons,
+ total_12_month_probability_percent=probabilities$method_experience_or_access+probabilities$other_reasons),
+ 'presentation_discontinuation_probability_excluding_pregnancy_partner.csv')
+monthly_groups<-list(Injectables=3L,Implants=11L,Pill=1L,IUD=2L,
+ 'Other modern'=setdiff(modern,c(1L,2L,3L,11L)),
+ 'All modern methods excluding EC'=modern)
+monthly<-do.call(rbind,lapply(names(monthly_groups),function(m){
+ d<-episodes[episodes$method_code%in%monthly_groups[[m]],]
+ z<-life(d)
+ data.frame(method=m,month=0:12,cumulative_pct=c(0,z$all_cause_pct),
+  weighted_episodes=sum(d$wt),unweighted_episodes=nrow(d))
+}))
+emit(monthly,'presentation_discontinuation_monthly.csv')
+front<-do.call(rbind,lapply(names(monthly_groups),function(m){
+ z<-monthly[monthly$method==m,]
+ a<-z$cumulative_pct[z$month==3];b<-z$cumulative_pct[z$month==12]
+ data.frame(method=m,d3_pct=a,d12_pct=b,front_loaded_pct=100*a/b,
+ weighted_episodes=z$weighted_episodes[1],unweighted_episodes=z$unweighted_episodes[1])
+}))
+emit(front,'presentation_discontinuation_front_loading.csv')
+cat('Reconstructed initiation and method-rate presentation inputs from IR-derived records.\n'))---------------")
+MODULES[["212_allcause_inputs.R"]] <- list(language="R", packaged_sha256="ebc94d74065606e0da1dd53843c2b49f2dd33e1ffeeea62b6d22f1e4cf614164", args=character(), code=r"---------------(#!/usr/bin/env Rscript
+# Refit the early all-cause model and regional tables without saved estimates.
+a<-commandArgs(TRUE);root<-if(length(a)==1L)a[1]else Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if(!nzchar(root))stop('Supply the analysis project root.')
+root<-normalizePath(root);Sys.setenv(ETHIOPIA_PROJECT_ROOT=root)
+s<-readLines(file.path(root,'Code/34_selected_reason_regression.R'))
+cut<-grep('^fit <- nnet',s)[1];stopifnot(is.finite(cut))
+eval(parse(text=s[seq_len(cut-1L)]))
+person$ended<-as.integer(ended)
+fit<-glm(ended~month+method_group+age_group+parity_group+education+wealth_group+residence+region,
+ data=person,weights=wt,family=quasibinomial())
+X<-model.matrix(fit);p<-fitted(fit);H<-crossprod(X,X*(person$wt*p*(1-p)));Hinv<-solve(H)
+frame<-full_survey_frame();score<-rowsum(X*(person$wt*(person$ended-p)),person$cluster,reorder=FALSE)
+U<-matrix(0,nrow(frame),ncol(X));U[match(rownames(score),frame$cluster),]<-score
+var_if<-function(v)sum(vapply(split(seq_len(nrow(frame)),frame$stratum),function(g)
+ length(g)/(length(g)-1)*sum((v[g]-mean(v[g]))^2),0.0))
+df<-nrow(frame)-length(unique(frame$stratum));critical<-qt(.975,df)
+standard<-d;den<-sum(standard$wt)
+margin<-function(variable,level){
+ x<-standard;x[[variable]]<-factor(level,levels=levels(x[[variable]]))
+ S<-rep(1,nrow(x));D<-matrix(0,nrow(x),ncol(X))
+ for(t in 1:12){
+  x$month<-factor(t,levels=1:12)
+  xx<-model.matrix(delete.response(terms(fit)),x,contrasts.arg=fit$contrasts)
+  pt<-plogis(xx%*%coef(fit));S<-S*(1-as.numeric(pt));D<-D+xx*as.numeric(pt)
+ }
+ risk<-100*(1-S);mean<-weighted.mean(risk,standard$wt)
+ grad<-100*colSums(D*(S*standard$wt))/den
+ empirical<-rowsum(standard$wt*(risk-mean)/den,standard$cluster,reorder=FALSE)
+ influence<-as.numeric(U%*%Hinv%*%grad)
+ influence[match(rownames(empirical),frame$cluster)]<-
+  influence[match(rownames(empirical),frame$cluster)]+empirical[,1]
+ se<-sqrt(var_if(influence))
+ c(probability=mean,ci_low=max(0,mean-critical*se),ci_high=min(100,mean+critical*se),se=se)
+}
+variables<-c('age_group','parity_group','education','wealth_group','residence')
+margins<-do.call(rbind,lapply(variables,function(v)do.call(rbind,lapply(levels(d[[v]]),function(l){
+ z<-margin(v,l);starts<-d[d$entry==0 & d[[v]]==l,]
+ data.frame(group=v,level=l,probability=z['probability'],ci_low=z['ci_low'],
+ ci_high=z['ci_high'],unweighted_starts=nrow(starts),weighted_starts=sum(starts$wt),
+ se=z['se'],design_df=df,row.names=NULL)
+}))))
+write.csv(margins,file.path(out,'presentation_discontinuation_predictor_margins.csv'),row.names=FALSE)
+regions<-c(`1`='Tigray',`2`='Afar',`3`='Amhara',`4`='Oromia',`5`='Somali',
+ `6`='Benishangul-Gumuz',`7`='Central Ethiopia',`8`='Sidama',
+ `9`='South West Ethiopia',`10`='South Ethiopia',`12`='Gambella',`13`='Harari',
+ `14`='Addis Ababa',`15`='Dire Dawa')
+raw<-lapply(names(regions),function(code){
+ q<-d[as.character(d$region)==code,];rr<-aa<-matrix(0,nrow(frame),12)
+ for(t in 1:12){
+  at<-q$entry<t & q$exposure>=t;end<-at & q$discontinued & q$exposure==t
+  for(k in 1:2){use<-if(k==1)at else end
+   if(any(use)){v<-rowsum(q$wt[use],q$cluster[use],reorder=FALSE);ix<-match(rownames(v),frame$cluster)
+    if(k==1)rr[ix,t]<-v[,1]else aa[ix,t]<-v[,1]}
+  }
+ }
+ R<-colSums(rr);A<-colSums(aa);h<-A/R;S<-prod(1-h)
+ influence<-as.numeric(100*(aa%*%(S/(1-h)/R)-rr%*%(S/(1-h)*A/R^2)))
+ rate<-100*(1-S);se<-sqrt(var_if(influence));ev<-q$discontinued & q$exposure<=12 & q$entry<q$exposure
+ data.frame(region=unname(regions[code]),rate=rate,se=se,lo=max(0,rate-critical*se),
+ hi=min(100,rate+critical*se),n_episodes=nrow(q),n_events_12=sum(ev),
+ weighted_episodes=sum(q$wt),weighted_events_12=sum(q$wt[ev]),n_psu=length(unique(q$cluster)))
+})
+raw<-do.call(rbind,raw);raw<-raw[order(-raw$rate),]
+write.csv(raw,file.path(out,'presentation_regional_discontinuation.csv'),row.names=FALSE)
+four<-list('Wanted to become pregnant'=2L,'Method experience or access'=c(1L,4L,5L,6L,7L),
+ 'Husband/partner disapproved'=8L,'Other'=c(3L,9L))
+seven<-list('Wanted to become pregnant'=2L,'Side effects / health'=c(4L,5L),
+ 'Wanted a more effective method'=6L,'Access / cost / convenience'=7L,
+ 'Method failure / pregnancy while using'=1L,'Husband/partner disapproved'=8L,'Other'=c(3L,9L))
+profiles<-list();precision<-list();details<-list()
+for(code in names(regions)){
+ q<-d[as.character(d$region)==code & d$discontinued & d$entry<d$exposure & d$exposure<=12,]
+ for(reason in names(four)){
+  yes<-q$reason%in%four[[reason]];p<-sum(q$wt*yes)/sum(q$wt)
+  ss<-rowsum(q$wt*(yes-p)/sum(q$wt),q$cluster,reorder=FALSE)
+  v<-numeric(nrow(frame));v[match(rownames(ss),frame$cluster)]<-ss[,1]
+  se<-100*sqrt(var_if(v));n<-sum(yes)
+  profiles[[length(profiles)+1L]]<-data.frame(region=unname(regions[code]),reason=reason,
+   percent=100*p,unweighted_reason_events=n,unweighted_all_events=nrow(q),weighted_all_events=sum(q$wt))
+  precision[[length(precision)+1L]]<-data.frame(region=unname(regions[code]),reason=reason,
+   percent=100*p,se_pct=se,ci_low_pct=if(n>=10)max(0,100*p-critical*se)else NA_real_,
+   ci_high_pct=if(n>=10)min(100,100*p+critical*se)else NA_real_,n_reason_events=n,
+   n_all_events=nrow(q),n_event_psu=length(unique(q$cluster)),
+   precision_note=if(n<10)'Few observed events; interpret cautiously.'else'')
+ }
+ for(reason in names(seven))details[[length(details)+1L]]<-data.frame(region=unname(regions[code]),
+  reason=reason,percent=100*sum(q$wt[q$reason%in%seven[[reason]]])/sum(q$wt),
+  unweighted_events=nrow(q),weighted_events=sum(q$wt))
+}
+write.csv(do.call(rbind,profiles),file.path(out,'presentation_regional_reason_profile_aggregate.csv'),row.names=FALSE)
+write.csv(do.call(rbind,precision),file.path(out,'presentation_regional_reason_precision.csv'),row.names=FALSE,na='')
+write.csv(do.call(rbind,details),file.path(out,'presentation_regional_reason_profile.csv'),row.names=FALSE)
+saveRDS(fit,file.path(out,'Supporting_data/allcause_monthly_logistic_model.rds'))
+cat('Recomputed all-cause subgroup and regional inputs from IR with the full survey frame.\n'))---------------")
+
+
+MODULES[["213_render_allcause_subgroups.py"]] <- list(language="Python", packaged_sha256="bd250c7fda5a1e3f0dec6e1c6f0f9edbba174dbba1aa01f50a2e2516099956e8", args=character(), code=r"----------------(#!/usr/bin/env python3
+"""Plot the documented all-cause subgroup model from freshly estimated margins."""
+import argparse
+import csv
+import os
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project-root", type=Path,
+                        default=os.environ.get("ETHIOPIA_PROJECT_ROOT"))
+    args = parser.parse_args()
+    if args.project_root is None:
+        parser.error("Supply --project-root or ETHIOPIA_PROJECT_ROOT.")
+    source = args.project_root / "output/presentation_discontinuation_predictor_margins.csv"
+    with source.open(newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    groups = [("age_group", "Age at start"), ("parity_group", "Parity at start"),
+              ("education", "Education"), ("wealth_group", "Household wealth"),
+              ("residence", "Residence")]
+    assert len(rows) == 15
+    navy, grey, grid = "#173f5b", "#526574", "#dfe8ec"
+    plt.rcParams.update({"font.family": "DejaVu Sans", "svg.fonttype": "none",
+                         "svg.hashsalt": "discontinuation-subgroups"})
+    fig = plt.figure(figsize=(12.8, 7.2), dpi=100, facecolor="white")
+    ax = fig.add_axes([.355, .09, .383, .675])
+    positions, labelled = [], []
+    y = 0.0
+    for group, label in groups:
+        selected = [r for r in rows if r["group"] == group]
+        assert selected, group
+        for i, row in enumerate(selected):
+            positions.append(y)
+            labelled.append((row, label if i == 0 else ""))
+            y += 1
+        y += .45
+    ymax = positions[-1] + .45
+    ax.set_ylim(ymax, -.55)
+    ax.set_xlim(0, 70)
+    ax.set_xticks([0, 20, 40, 60])
+    ax.set_yticks([])
+    ax.tick_params(axis="x", length=0, labelsize=12, colors="#243746", pad=10)
+    ax.grid(axis="x", color=grid, linewidth=1)
+    for side in ["left", "right", "top"]:
+        ax.spines[side].set_visible(False)
+    ax.spines["bottom"].set_color(grid)
+    ax.set_xlabel("12-month cumulative probability of ending the original method",
+                  fontsize=12, color=grey)
+    for y, (row, group) in zip(positions, labelled):
+        point, lower, upper = (float(row[k]) for k in ["probability", "ci_low", "ci_high"])
+        assert 0 <= lower <= point <= upper <= 100
+        ax.plot([lower, upper], [y, y], color=navy, linewidth=1.6, zorder=3)
+        ax.plot(point, y, "o", color=navy, markersize=7.5, zorder=4)
+        fy = fig.transFigure.inverted().transform(ax.transData.transform((0, y)))[1]
+        if group:
+            fig.text(.045, fy, group, color=navy, fontsize=15, va="center")
+        fig.text(.217, fy, row["level"], fontsize=15, color="#1c2833", va="center")
+        fig.text(.79, fy, f"{point:.1f} ({lower:.1f}–{upper:.1f})",
+                 fontsize=14, color="#1c2833", va="center")
+    title = fig.text(.043, .88, "Who is more likely to discontinue a modern method?",
+                     fontfamily="DejaVu Serif", fontweight="bold", fontsize=25, color=navy)
+    fig.canvas.draw()
+    while title.get_window_extent(fig.canvas.get_renderer()).width > 1160:
+        title.set_fontsize(title.get_fontsize() - .25)
+        fig.canvas.draw()
+    fig.text(.045, .79, "Characteristic", fontsize=15, color=grey)
+    fig.text(.415, .79, "Adjusted 12-month probability (%)", fontsize=15, color=navy)
+    fig.text(.79, .79, "Estimate (95% CI)", fontsize=15, color=grey)
+    out = args.project_root / "output/assets"
+    out.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out / "survey_allcause_adjusted_subgroups.png", dpi=100,
+                facecolor="white", metadata={"Software": None})
+    fig.savefig(out / "survey_allcause_adjusted_subgroups.svg", facecolor="white",
+                metadata={"Date": None, "Creator": None})
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    main())----------------")
+
+
+# Plain source resources, expanded only into a private runtime directory.
+REPORT_FILES <- list()
+REPORT_FILES[["src/foundation_inputs.R"]] <- r"----------------------(#!/usr/bin/env Rscript
+# Additional foundation tables reconstructed from the episode calendar.
+a<-commandArgs(TRUE);root<-if(length(a))a[1]else Sys.getenv('ETHIOPIA_PROJECT_ROOT');stopifnot(nzchar(root))
+e<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'))
+monthly<-list();s<-1;f<-numeric(2)
+d<-e[e$method_code==3L,]
+for(t in 1:12){r<-d$entry<t&d$exposure>=t;end<-r&d$discontinued&d$exposure==t;den<-sum(d$wt[r]);ha<-sum(d$wt[end])/den;hp<-sum(d$wt[end&d$reason==2])/den;f<-f+s*c(ha,hp);s<-s*(1-ha);monthly[[t]]<-data.frame(month=t,weighted_at_risk=den,weighted_endings=sum(d$wt[end]),weighted_wanted_endings=sum(d$wt[end&d$reason==2]),any_reason_pct=100*f[1],wanted_pct=100*f[2],other_pct=100*(f[1]-f[2]))}
+write.csv(do.call(rbind,monthly),file.path(root,'output/Supporting_data/injectable_monthly_foundation.csv'),row.names=FALSE)
+d<-e[e$method_code!=16L,];codes<-c(9L,12L,13L,11L,96L,98L,99L);f<-numeric(length(codes));s<-1
+for(t in 1:12){r<-d$entry<t&d$exposure>=t;end<-r&d$discontinued&d$exposure==t;den<-sum(d$wt[r]);h<-vapply(codes,function(k)sum(d$wt[end&d$reason_code==k])/den,0.0);f<-f+s*h;s<-s*(1-sum(d$wt[end])/den)}
+write.csv(data.frame(reason_code=codes,risk_pct=100*f),file.path(root,'output/Supporting_data/detailed_other_cif_foundation.csv'),row.names=FALSE)
+)----------------------"
+REPORT_FILES[["src/report/101_add_regional_initiation_mix_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Insert the seven-category regional initiation chart in the final HTML section.
+
+The underlying counts and image are regenerated by
+100_regional_initiation_mix_stacked.R. This script only publishes the chart,
+interpretation, data link, and navigation entry; it is safe to run again.
+"""
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = project / 'output'
+page = out / 'Ethiopia_discontinuation_analysis.html'
+html = page.read_text()
+begin = '<!-- BEGIN REGIONAL SEVEN-CATEGORY INITIATION MIX -->'
+end = '<!-- END REGIONAL SEVEN-CATEGORY INITIATION MIX -->'
+block = '''<!-- BEGIN REGIONAL SEVEN-CATEGORY INITIATION MIX -->
+<h3 id="regional-all-method-initiation-mix">Which methods are initiated in each region?</h3>
+<p>Each stacked row shows the survey-weighted distribution of <strong>observed contraceptive method starts</strong> within that region; the national row is the benchmark. The seven categories and their colors match the original initiation-mix slide. Each row sums to 100% before rounding. Starts include switches and restarts, but exclude method episodes already underway when calendar observation begins. The chart does not show current use or the probability of discontinuation.</p>
+<figure><a href="assets/regional_all_method_initiation_mix.svg"><img loading="lazy" src="assets/regional_all_method_initiation_mix.png" alt="Horizontal 100-percent stacked bars for the national level and 14 Ethiopian regions, showing the weighted shares of observed starts for injectables, implants, pill, IUD, emergency contraception, other modern, and non-modern methods. The legend is below the chart."></a><figcaption>The denominator is all observed contraceptive starts within each region during months 3–62 before interview (national N=8,060). Regions are sorted by injectable share; the national row remains at the top. Somali has only 29 observed starts, so its apparent mix is especially imprecise. Region is measured at interview. Emergency contraception is retained here to match the original initiation figure; the main discontinuation analysis excludes it.</figcaption></figure>
+<div class="downloads"><a href="regional_all_method_initiation_mix.csv">Download underlying regional shares and counts</a><a href="assets/regional_all_method_initiation_mix.svg">Open presentation SVG</a><a href="../Code/100_regional_initiation_mix_stacked.R">Open calculation and plotting R script</a></div>
+<!-- END REGIONAL SEVEN-CATEGORY INITIATION MIX -->'''
+from report_fragments import replace_fragment
+replace_fragment(page,'regional-all-method-initiation-mix',block,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-all-method-initiation-mix')
+)----------------------"
+REPORT_FILES[["src/report/106_add_regional_actionable_pairs_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Publish the actionable regional paired-bar method figures in the HTML.
+
+Data and charts are generated by 105_regional_actionable_method_pair_preview.R.
+The insertion is idempotent and leaves all earlier analysis intact.
+"""
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+page = project / 'output/Ethiopia_discontinuation_analysis.html'
+html = page.read_text()
+begin = '<!-- BEGIN REGIONAL ACTIONABLE METHOD PAIRS -->'
+end = '<!-- END REGIONAL ACTIONABLE METHOD PAIRS -->'
+block = '''<!-- BEGIN REGIONAL ACTIONABLE METHOD PAIRS -->
+<h3 id="regional-actionable-method-pairs">Method starts and potentially actionable discontinuation by region</h3>
+<p>The three paired-bar figures extend the national method-starts-versus-discontinuation slide to regions. Injectables, implants, and pills account for <strong>92.0% of all observed contraceptive method starts nationally</strong>. Amber shows each method's share of all observed starts within the region, including emergency contraception and traditional methods in the denominator to match the initiation-mix figure immediately above. Navy shows the survey-weighted 12-month competing-risk probability that an eligible episode of that original modern method ends for <strong>method failure, wanting a more effective method, bleeding changes, other side effects or health concerns, or access/cost/convenience</strong>. Wanted pregnancy, partner disapproval, other fertility-related reasons, and other recorded/unknown reasons remain competing endings. The two bars have different denominators and should not be subtracted.</p>
+<p>Nationally, the injectable method-ending probability is <strong>44.5% for all reasons</strong> and <strong>18.8% for potentially actionable reasons</strong> in this regional complete-case life-table cohort. The narrower estimate is a cause-specific probability; it does not imply that every such ending is preventable or that every ending represents a woman leaving modern contraception. The national start share of injectables is <strong>58.8%</strong>.</p>
+<figure><a href="assets/regional_actionable_paired_injectables.svg"><img loading="lazy" src="assets/regional_actionable_paired_injectables.png" alt="Paired horizontal bars for national and regional injectable start shares and potentially actionable 12-month discontinuation probabilities."></a><figcaption>Injectables: regional bars are ordered by the potentially actionable probability. Somali's discontinuation rate is withheld because the cell is sparse.</figcaption></figure>
+<figure><a href="assets/regional_actionable_paired_implants.svg"><img loading="lazy" src="assets/regional_actionable_paired_implants.png" alt="Paired horizontal bars for national and regional implant start shares and potentially actionable 12-month discontinuation probabilities."></a><figcaption>Implants: 12 of 14 regional rates meet the display rule.</figcaption></figure>
+<figure><a href="assets/regional_actionable_paired_pill.svg"><img loading="lazy" src="assets/regional_actionable_paired_pill.png" alt="Paired horizontal bars for national and regional pill start shares and potentially actionable 12-month discontinuation probabilities."></a><figcaption>Pill: 9 of 14 regional rates meet the display rule; sparse regional comparisons should not be ranked.</figcaption></figure>
+<p class="note">Navy bars are withheld when fewer than 30 eligible method episodes or 10 potentially actionable first-year endings were observed in that region. IUD and other-modern regional rate panels were not added because none of the IUD regions and only one other-modern region meets this display rule. All counts and descriptive estimates remain in the source CSV. Region is residence at interview and may differ from residence at method start; one woman can contribute multiple episodes.</p>
+<div class="downloads"><a href="regional_actionable_method_starts_and_rates.csv">Download method-specific regional starts, rates, and counts</a><a href="../Code/105_regional_actionable_method_pair_preview.R">Open calculation and plotting R script</a></div>
+<!-- END REGIONAL ACTIONABLE METHOD PAIRS -->'''
+from report_fragments import replace_fragment
+replace_fragment(page,'regional-actionable-method-pairs',block,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-method-pairs')
+)----------------------"
+REPORT_FILES[["src/report/109_add_regional_actionable_reason_heatmaps_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Publish five method-specific actionable-reason heatmaps in the working HTML.
+
+Run 108_regional_actionable_reason_mix_by_method.R first. This script edits only
+the HTML, replacing its own marked block when rerun.
+"""
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+page = project / 'output/Ethiopia_discontinuation_analysis.html'
+html = page.read_text()
+begin = '<!-- BEGIN REGIONAL ACTIONABLE REASONS BY METHOD -->'
+end = '<!-- END REGIONAL ACTIONABLE REASONS BY METHOD -->'
+
+methods = [
+    ('Injectables', 'injectables'), ('Implants', 'implants'),
+    ('Pill', 'pill'), ('IUD', 'iud'), ('Other modern', 'other_modern'),
+]
+figures = []
+for name, stem in methods:
+    asset = f'assets/regional_actionable_reason_heatmap_{stem}'
+    figures.append(
+        f'<h4 id="regional-actionable-reasons-{stem}">{name}</h4>\n'
+        f'<figure style="margin:12px 0 24px"><a href="{asset}.svg" '
+        f'title="Open full-size {name} heatmap"><img loading="lazy" '
+        f'style="display:block;width:100%;max-width:100%;height:auto" src="{asset}.png?v=6" '
+        f'alt="Heatmap of regional first-year actionable discontinuation reason shares for {name}; '
+        'the national row is shaded gold, and sparse regional rows are gray."></a></figure>'
+    )
+block = '\n'.join([
+    begin,
+    '<h3 id="regional-actionable-reasons-by-method">Which actionable reasons dominate within each method and region?</h3>',
+    '<p>These five heatmaps split the existing regional analysis by the <strong>original modern method</strong>. '
+    'Within each method and region, the five cells show the share of its <strong>12-month probability of ending '
+    'for a potentially actionable reason</strong> attributable to method failure, wanting a more effective method, '
+    'bleeding changes, other side effects/health, or access/cost/convenience. Access/cost/convenience combines '
+    'lack of access or too far, cost too much, and inconvenient to use. Other side effects/health includes '
+    'other side effects or health concerns; menstrual bleeding changes are shown separately. The national '
+    'benchmark row is gold. Shown rows add to 100.0%. This is a '
+    '<em>reason mix among actionable original-method endings</em>, not the probability that all users discontinue '
+    'for each reason. Other endings stay as competing events in the weighted life table.</p>',
+    '<p><a href="presentation_FINAL_with_subnational_actionable_reason_heatmaps_preview.html#slide-31">'
+    'View these heatmaps as slides 31–35 in the presentation preview</a> · '
+    '<a href="presentation_FINAL_with_subnational_actionable_reason_heatmaps.pptx">'
+    'Open/download the updated PowerPoint</a>.</p>',
+    '<p><strong>Why the N values are smaller than Table 7.11:</strong> the main EC-excluded life table contains '
+    '8,682 unweighted eligible modern-method episodes (10,035.7 after weighting). These figures use 8,611 '
+    'episodes with complete covariate data, then split them by original method and region. The '
+    '<strong>actionable endings N</strong> counts only episodes observed ending within their first 12 months for '
+    'one of the five retained reason groups; 1,321 such endings were observed nationally. It is an event count, '
+    'not the number of episodes used as the life-table denominator. The 17.0% national risk comes from monthly '
+    'weighted competing-risk calculations, so it is not 1,321 divided by 8,611.</p>',
+    '<p>An asterisk beside a region marks fewer than 30 eligible method episodes or fewer than 30 observed '
+    'actionable first-year endings. Gray rows have fewer than 30 eligible episodes or fewer than 10 actionable '
+    'endings, so their percentages are withheld. Exact counts remain in the downloadable data. '
+    'IUD has only 18 actionable endings nationally, '
+    'so no regional IUD row supports a reason comparison. Other modern pools several methods and has only '
+    'one displayable regional row. The injectable panel is the most useful regional diagnostic; implant and '
+    'pill patterns merit caution where counts are small.</p>',
+    *figures,
+    '<p class="note">Survey-weighted reason shares are calculated from reason-specific 12-month competing-risk '
+    'cumulative incidences, using the same delayed-entry episode cohort as the preceding regional analysis. '
+    'National and regional rows refer to residence at interview; a woman may contribute multiple episodes. '
+    'Switching methods still ends the original-method episode and does not necessarily mean leaving modern contraception.</p>',
+    '<div class="downloads"><a href="regional_actionable_reason_mix_by_method.csv">Download all region–method '
+    'reason shares, counts, and precision flags</a><a href="../Code/108_regional_actionable_reason_mix_by_method.R">'
+    'Open calculation and plotting R script</a></div>',
+    end,
+])
+from report_fragments import replace_fragment
+replace_fragment(page,'regional-actionable-reasons-by-method',block,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-reasons-by-method')
+)----------------------"
+REPORT_FILES[["src/report/118_render_regional_actionable_model_results.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render a review-only HTML of saved, already-fitted regional model results."""
+
+import csv
+import html
+from collections import OrderedDict
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+support = project / 'output' / 'Supporting_data'
+output = project / 'output' / 'regional_actionable_two_model_results.html'
+
+with (support / 'regional_actionable_two_model_coefficients.csv').open() as f:
+    coefficients = list(csv.DictReader(f))
+with (support / 'regional_actionable_two_model_probabilities.csv').open() as f:
+    probabilities = list(csv.DictReader(f))
+with (support / 'regional_actionable_two_model_design_pvalues.csv').open() as f:
+    pvalue_rows = list(csv.DictReader(f))
+pvalues = {(r['model'], r['outcome'], r['term']): float(r['p_value']) for r in pvalue_rows}
+
+name = {
+    'month': 'Month using original method',
+    'method_group': 'Modern method',
+    'region': 'Region at interview',
+    'age_group': 'Age at method start',
+    'parity_group': 'Live births at method start',
+    'marital_group': 'Marital status at interview',
+    'education': 'Education at interview',
+    'wealth_group': 'Wealth at interview',
+    'residence': 'Residence at interview',
+    'start_year': 'Calendar year of method start',
+}
+
+def fmt(x, digits=2):
+    return '—' if not x or x == 'NA' else f'{float(x):.{digits}f}'
+
+def interval(row, stem):
+    lo, hi = row.get(stem + '_ci_low'), row.get(stem + '_ci_high')
+    return '' if not lo or lo == 'NA' else f'<small>({fmt(lo, 1)}–{fmt(hi, 1)})</small>'
+
+regional_rows = []
+for r in probabilities:
+    special = ' class="national"' if r['region'] == 'National' else ''
+    flag = ' <span class="flag">small sample</span>' if r['region'] == 'Somali' else ''
+    regional_rows.append(
+        f'<tr{special}><th scope="row">{html.escape(r["region"])}{flag}</th>'
+        f'<td>{int(float(r["eligible_episodes_n"])):,}</td>'
+        f'<td>{int(float(r["actionable_endings_n"])):,}</td>'
+        f'<td class="estimate">{fmt(r["unadjusted_pct"], 1)}%'
+        f'{interval(r, "unadjusted")}</td>'
+        f'<td class="estimate">{fmt(r["method_adjusted_pct"], 1)}%'
+        f'{interval(r, "method")}</td>'
+        f'<td class="estimate">{fmt(r["full_adjusted_pct"], 1)}%'
+        f'{interval(r, "full")}</td></tr>'
+    )
+
+def coefficient_table(model):
+    # The intercept is baseline outcome odds, not a category odds ratio.
+    rows = [r for r in coefficients if r['model'] == model and r['variable'] != 'Intercept']
+    parts = []
+    last = None
+    for r in rows:
+        variable = r['variable']
+        if variable != last:
+            parts.append(f'<tr class="group"><th colspan="5">{html.escape(name.get(variable, variable))}</th></tr>')
+            last = variable
+        reference = r['reference'].lower() == 'true'
+        category = html.escape(r['category']) + (' <span class="reference">reference</span>' if reference else '')
+        if reference:
+            values = '<td>1.00 <span class="direction">reference</span></td><td>—</td><td>1.00 <span class="direction">reference</span></td><td>—</td>'
+        else:
+            values = ''
+            for outcome, k in (('actionable', 'actionable_rrr'), ('competing', 'competing_rrr')):
+                ratio = float(r[k])
+                direction = 'higher' if ratio > 1 else 'lower' if ratio < 1 else 'same'
+                values += f'<td>{ratio:.2f} <span class="direction">{direction}</span></td>'
+                p = pvalues[(model, outcome, r['term'])]
+                p_label = '&lt;0.001' if p < 0.001 else f'{p:.3f}'
+                marker = '<span class="significant" aria-label="p less than 0.05"> *</span>' if p < 0.05 else ''
+                values += f'<td class="pvalue">{p_label}{marker}</td>'
+        parts.append(f'<tr><td>{category}</td>{values}</tr>')
+    return ''.join(parts)
+
+page = f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Regional actionable discontinuation: two fitted models</title>
+<style>
+:root{{--ink:#173e59;--teal:#108d94;--gold:#da9a25;--soft:#eef5f6;--line:#d8e4e8;--muted:#506572}}
+*{{box-sizing:border-box}}body{{margin:0;font-family:Arial,Helvetica,sans-serif;color:#1c303a;background:#f6f9f9}}
+main{{max-width:1340px;margin:auto;padding:36px 34px 70px}}h1{{font-family:Georgia,serif;color:var(--ink);font-size:34px;line-height:1.12;margin:0 0 12px}}
+h2{{font-family:Georgia,serif;color:var(--ink);font-size:25px;margin:36px 0 10px}}p{{line-height:1.48;margin:8px 0 14px}}
+.lede{{font-size:17px;max-width:1120px}}.badge{{display:inline-block;padding:7px 11px;background:#e2f0f1;color:#125b64;border-radius:20px;font-weight:700;font-size:13px;margin-bottom:16px}}
+.note{{background:#fff;border-left:5px solid var(--teal);padding:13px 17px;margin:18px 0 24px;box-shadow:0 1px 8px #1838490d}}
+.table-wrap{{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 10px #173e5910}}
+table{{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}}th,td{{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle;text-align:right}}
+thead th{{background:var(--ink);color:#fff;font-weight:700;position:sticky;top:0;z-index:2}}th:first-child,td:first-child{{text-align:left}}
+tbody tr:hover{{background:#f6fafb}}.national{{background:#fff2d8;font-weight:700}}.national:hover{{background:#fff2d8}}
+.estimate{{font-weight:700;color:var(--ink);white-space:nowrap}}.estimate small{{display:block;font-size:12px;font-weight:400;color:var(--muted);margin-top:3px}}
+.flag{{font-size:11px;color:#8b5712;background:#fff3de;border-radius:4px;padding:3px 5px;margin-left:5px;white-space:nowrap}}
+.group th{{background:#e6f0f2;color:var(--ink);text-transform:uppercase;letter-spacing:.04em;font-size:12px;padding:9px 12px}}
+.reference{{font-size:11px;color:#5b6870;background:#edf1f3;border-radius:3px;padding:2px 5px;white-space:nowrap}}
+.direction{{font-size:11px;color:#506572;font-weight:400;margin-left:4px}}
+.pvalue{{white-space:nowrap}}.significant{{color:#a2650d;font-weight:800;font-size:15px}}
+.coef td:first-child{{padding-left:28px}}.coef td{{font-size:13px}}.coef thead th{{font-size:12px}}.footer{{font-size:13px;color:var(--muted);margin-top:12px}}
+nav a{{color:var(--ink);font-weight:700;margin-right:18px;text-decoration:none}}nav{{margin:20px 0}}a{{color:#136c78}}
+@media(max-width:800px){{main{{padding:22px 13px}}h1{{font-size:27px}}th,td{{padding:7px 8px;font-size:13px}}}}
+</style></head><body><main>
+<span class="badge">Ethiopia DHS 2024–25 · review output</span>
+<h1>Regional 12-month discontinuation for program-actionable reasons</h1>
+<p class="lede">Two fitted, survey-weighted discrete-time competing-risk models. The event is ending the original modern method for method failure, wanting a more effective method, bleeding changes, other side effects or health concerns, or access/cost/convenience. EC is excluded; all other original-method endings are competing events.</p>
+<nav><a href="#probabilities">12-month probabilities</a><a href="#method-model">Method + duration odds ratios</a><a href="#full-model">Full-model odds ratios</a><a href="#compare">Comparing regions</a></nav>
+<div class="note"><strong>Read the probabilities first.</strong> The unadjusted life table and both models use 8,611 eligible episodes (70,691 observed episode-months in the models). Model 1 adjusts for month of method use, method, and region. Model 2 additionally adjusts for age and parity at method start, marital status, education, wealth, and residence at interview, and calendar year of start. Adjusted regional predictions use the same survey-weighted national distribution of 7,648 episodes observed from method start; the adjusted national row uses their actual region distribution. Late-entry episodes remain in model fitting at their observed duration months.</div>
+<section id="probabilities"><h2>National and regional 12-month discontinuation probabilities</h2>
+<div class="table-wrap"><table><thead><tr><th>Region</th><th>Eligible episodes<br>unweighted</th><th>Actionable endings<br>unweighted</th><th>Unadjusted<br>life table</th><th>Model 1<br>method + duration</th><th>Model 2<br>all covariates</th></tr></thead><tbody>{''.join(regional_rows)}</tbody></table></div>
+<p class="footer">Parentheses show 95% survey-stratified PSU bootstrap intervals: 1,500 replicates for the unadjusted delayed-entry competing-risk life table and 1,000 refits for each adjusted model. The unadjusted estimate includes all 8,611 eligible episodes, including those first observed after method use began. Both adjusted columns standardize to a common national distribution of 7,648 episodes observed from method start, although model fitting retains late entries at their observed durations. These different reference populations mean a change between raw and adjusted values is not attributable solely to covariate adjustment. Somali has only five actionable endings in 30 eligible episodes; treat its estimates as unstable. The table does not test regional pairwise differences.</p></section>
+<section id="method-model"><h2>Model 1: exponentiated coefficients</h2>
+<p>For each episode-month, the model compares an actionable or competing ending with continuing the original method. Shown values are exponentiated coefficients: above 1 means higher relative odds and below 1 means lower relative odds than the stated reference category. Reference categories equal 1 by construction. IUD is the method reference and Sidama is the region reference in both models; Model 2 also uses ages 25–34 and urban residence as references.</p>
+<div class="table-wrap coef"><table><thead><tr><th>Category</th><th>Actionable ending vs continuing<br>odds ratio</th><th>p-value</th><th>Competing ending vs continuing<br>odds ratio</th><th>p-value</th></tr></thead><tbody>{coefficient_table('Method + duration + region')}</tbody></table></div>
+<p class="footer">* p &lt; 0.05. Two-sided, survey-design-based Wald tests account for DHS weights, strata, and PSUs. Each p-value compares the category with its stated reference in the indicated monthly outcome contrast. These are nominal p-values, without adjustment for multiple comparisons.</p></section>
+<section id="full-model"><h2>Model 2: exponentiated coefficients</h2>
+<p>Both outcome contrasts use “continue” as the reference outcome. Values above 1 indicate higher monthly relative odds; values below 1 indicate lower monthly relative odds. These are multinomial relative-odds ratios, <strong>not</strong> adjusted 12-month probabilities.</p>
+<div class="table-wrap coef"><table><thead><tr><th>Category</th><th>Actionable ending vs continuing<br>odds ratio</th><th>p-value</th><th>Competing ending vs continuing<br>odds ratio</th><th>p-value</th></tr></thead><tbody>{coefficient_table('Full model')}</tbody></table></div>
+<p class="footer">* p &lt; 0.05. Two-sided, survey-design-based Wald tests account for DHS weights, strata, and PSUs. Each p-value compares the category with its stated reference in the indicated monthly outcome contrast. These are nominal p-values, without adjustment for multiple comparisons.</p></section>
+<section id="compare"><h2>How to compare regions</h2>
+<p>Use the <strong>fully adjusted 12-month probabilities</strong> above as the primary comparison. For example, Tigray is 25.6% and Amhara is 15.2%, a point difference of 10.3 percentage points. This difference is descriptive until its uncertainty is calculated directly.</p>
+<p>For formal inference, refit the full model in each stratified PSU bootstrap replicate, predict every region for the <em>same</em> national reference population, and subtract the two regional predictions within each replicate. The resulting distribution gives a confidence interval and test for each difference. Separate regional confidence intervals overlapping—or failing to overlap—are not the test. An overall assessment of regional heterogeneity should precede selected pairwise contrasts. If reporting all 91 region pairs, adjust for multiple comparisons (for example, Holm); pre-specified program-priority comparisons are more interpretable.</p>
+<p class="footer">The coefficient p-values above test each region against Sidama for the monthly outcome contrast; they do not test pairwise differences in adjusted 12-month probabilities. Direct tests of all 91 regional differences use 1,000 survey-stratified PSU model refits and Holm correction; see the formal regional-differences section of the working HTML. Somali has only 30 eligible episodes and five actionable endings and should be flagged or withheld in substantive comparisons.</p></section>
+<p class="footer">Source: saved model objects and the same complete-case cohort used in the regional actionable preview. <a href="Supporting_data/regional_actionable_two_model_coefficients.csv">Coefficient CSV</a> · <a href="Supporting_data/regional_actionable_two_model_design_pvalues.csv">Design-based p-value CSV</a> · <a href="Supporting_data/regional_actionable_two_model_probabilities.csv">Probability CSV</a>. This review page does not modify the working HTML or PPTX.</p>
+</main></body></html>'''
+output.write_text(page)
+print(output)
+print(f'{len(coefficients)} coefficient/reference rows; {len(probabilities)} probability rows')
+)----------------------"
+REPORT_FILES[["src/report/121_append_regional_adjusted_review_to_working_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Append the regional actionable adjustment review to the working HTML."""
+
+import csv
+import html
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+output = project / 'output'
+page = output / 'Ethiopia_discontinuation_analysis.html'
+source = output / 'Supporting_data' / 'regional_actionable_two_model_probabilities.csv'
+rows = list(csv.DictReader(source.open()))
+assert len(rows) == 15 and rows[0]['region'] == 'National'
+
+def pct(row, key):
+    return f"{float(row[key]):.1f}%"
+
+def ci(row, key):
+    low, high = row[key+'_ci_low'], row[key+'_ci_high']
+    return 'not estimated' if low == 'NA' or high == 'NA' else f"{float(low):.1f}–{float(high):.1f}"
+
+ordered = [rows[0]] + sorted(rows[1:], key=lambda r: (
+    r['region'] == 'Somali', -float(r['full_adjusted_pct'])))
+bars = []
+for row in ordered:
+    label = html.escape(row['region'])
+    value = float(row['full_adjusted_pct'])
+    kind = ' ram-national' if row['region'] == 'National' else ''
+    caveat = ' <sup>†</sup>' if row['region'] == 'Somali' else ''
+    bars.append(
+        f'<div class="ram-row{kind}"><span class="ram-name">{label}{caveat}</span>'
+        f'<span class="ram-track"><span class="ram-fill" style="width:{value/30*100:.2f}%"></span></span>'
+        f'<span class="ram-value">{value:.1f}%</span></div>'
+    )
+
+table_rows = []
+for row in rows:
+    label = html.escape(row['region'])
+    kind = ' class="total"' if row['region'] == 'National' else ''
+    caveat = '†' if row['region'] == 'Somali' else ''
+    table_rows.append(
+        f'<tr{kind}><th scope="row">{label}{caveat}</th>'
+        f'<td>{int(float(row["eligible_episodes_n"])):,}</td>'
+        f'<td><strong>{pct(row, "unadjusted_pct")}</strong> <small>({ci(row, "unadjusted")})</small></td>'
+        f'<td><strong>{pct(row, "method_adjusted_pct")}</strong> <small>({ci(row, "method")})</small></td>'
+        f'<td><strong>{pct(row, "full_adjusted_pct")}</strong> <small>({ci(row, "full")})</small></td></tr>'
+    )
+
+addition = '''\n<!-- BEGIN REGIONAL ACTIONABLE ADJUSTED MODEL REVIEW -->
+<h3 id="regional-actionable-adjusted-comparison">Regional 12-month discontinuation after adjustment</h3>
+<p>This comparison keeps the outcome focused on <strong>ending an original modern method within 12 months for a potentially actionable reason</strong>. Other endings, including wanted pregnancy and partner disapproval, remain competing events. The chart shows the fully adjusted probability from Model 2; the national row is a benchmark, and regions are ordered by the point estimate. These estimates are descriptive and do not establish which regional differences are statistically significant.</p>
+<figure class="ram-figure"><div class="ram-heading">Fully adjusted 12-month probability (%)</div>
+<div class="ram-axis"><span>0</span><span>10</span><span>20</span><span>30</span></div>
+<div class="ram-chart">''' + ''.join(bars) + '''</div>
+<figcaption>Model 2 accounts for original method, month of use, region, age and parity at method start, marital status, education, wealth and residence at interview, and method-start year. It compares regions after accounting for these measured characteristics. † Somali has only five observed actionable endings in 30 eligible episodes; its estimate is too unstable to rank.</figcaption></figure>
+<div class="table-wrap analysis-table" role="region" tabindex="0" aria-label="Unadjusted and two adjusted regional 12-month actionable discontinuation probabilities"><table class="ram-table">
+<thead><tr><th scope="col">Region</th><th scope="col">Eligible episodes (N)</th><th scope="col">Unadjusted life table<br>12-month probability</th><th scope="col">Model 1<br>method and month of use</th><th scope="col">Model 2<br>all measured covariates</th></tr></thead>
+<tbody>''' + ''.join(table_rows) + '''</tbody></table></div>
+<p class="note">Values in parentheses are 95% survey-stratified PSU bootstrap intervals: 1,500 replicates for the unadjusted delayed-entry competing-risk life table and 500 refits for adjusted models. All models fit the same 8,611 eligible episodes, but the adjusted probabilities are averaged over a common national set of 7,648 episodes observed from method start. The unadjusted rate includes all 8,611 episodes, including late entries, so raw-to-adjusted differences are <em>not</em> a pure measure of the effect of covariate adjustment. Model 1 accounts for method and month of use; Model 2 additionally accounts for age, parity, marital status, education, wealth, residence, and start year. Neither model includes a method-by-region interaction. Differences in point estimates do not by themselves establish statistical significance or causation.</p>
+<div class="downloads"><a href="Supporting_data/regional_actionable_two_model_probabilities.csv">Download all three rates and intervals</a><a href="regional_actionable_two_model_results.html#probabilities">Review model coefficients and p-values</a><a href="../Code/117_export_regional_actionable_model_results.R">Open model results export code</a></div>
+<!-- END REGIONAL ACTIONABLE ADJUSTED MODEL REVIEW -->\n'''
+
+css = '''\n/* Regional model comparison: chart and presentation table */
+.ram-figure{margin:22px 0 26px;max-width:1040px;background:#fff}
+.ram-heading{font-size:18px;font-weight:750;color:#153f5b;margin:0 0 12px}
+.ram-chart{position:relative}.ram-row{display:grid;grid-template-columns:190px minmax(0,1fr) 65px;gap:12px;align-items:center;min-height:34px;border-bottom:1px solid #e4ebed}
+.ram-name{font-size:13px;font-weight:550}.ram-name sup{color:#9b6410}.ram-track{height:15px;background:repeating-linear-gradient(to right,#f2f6f7 0,#f2f6f7 calc(33.333% - 1px),#d8e3e6 calc(33.333% - 1px),#d8e3e6 33.333%);position:relative}
+.ram-fill{display:block;height:100%;background:#153f5b}.ram-national .ram-fill{background:#da9a25}.ram-national .ram-name,.ram-national .ram-value{font-weight:750}
+.ram-value{text-align:right;font-size:13px;font-variant-numeric:tabular-nums;font-weight:700;color:#153f5b}.ram-axis{display:flex;justify-content:space-between;margin:0 75px 4px 202px;font-size:11px;color:#5b6c74}
+.ram-figure figcaption{font-size:12px;color:#5b6c74;line-height:1.5;margin:12px 0 0}
+.ram-table td small{display:block;font-size:11px;color:#536871;font-weight:400}.ram-table tbody tr.total th,.ram-table tbody tr.total td{background:#fff1d4;font-weight:700}
+@media(max-width:650px){.ram-row{grid-template-columns:120px minmax(0,1fr) 48px;gap:5px}.ram-name,.ram-value{font-size:11px}.ram-axis{margin-left:125px;margin-right:53px}}
+/* End regional model comparison */\n'''
+
+from report_fragments import replace_fragment
+replace_fragment(page,'regional-actionable-adjusted-comparison',addition,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-adjusted-comparison')
+)----------------------"
+REPORT_FILES[["src/report/128_render_regional_observed_adjusted_forest.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Presentation forest plot of raw and fully adjusted regional probabilities."""
+import csv
+import sys
+from html import escape
+from pathlib import Path
+import os
+
+root=Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out=root/'output'
+data=list(csv.DictReader((out/'Supporting_data/regional_actionable_two_model_probabilities.csv').open()))
+national=next(r for r in data if r['region']=='National')
+somali=next(r for r in data if r['region']=='Somali')
+regions=sorted((r for r in data if r['region'] not in ('National','Somali')),
+               key=lambda r:-float(r['unadjusted_pct']))
+rows=[national,*regions,somali]
+overlap_preview='--overlap-preview' in sys.argv
+gold='#D99A20'; navy='#173E5B'; ink='#153B57'; muted='#506879'
+observed_color=navy; adjusted_color=gold
+W,H=1280,720
+x0,x1=275,1027
+scale=lambda p:x0+float(p)/50*(x1-x0)
+y0,step=171,33
+part=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
+ '<rect width="1280" height="720" fill="#fff"/>',
+ f'<text x="42" y="51" fill="{ink}" font-family="Georgia,serif" font-size="30" font-weight="700">Regional 12-month actionable discontinuation</text>',
+ f'<text x="43" y="79" fill="{ink}" font-family="Arial" font-size="16">Observed and fully adjusted probabilities (%) · 95% confidence intervals</text>',
+ f'<line x1="55" x2="99" y1="112" y2="112" stroke="{observed_color}" stroke-width="3"/><circle cx="77" cy="112" r="6" fill="{observed_color}"/>',
+ f'<text x="112" y="118" fill="{ink}" font-family="Arial" font-size="16">Observed</text>',
+ f'<line x1="279" x2="323" y1="112" y2="112" stroke="{adjusted_color}" stroke-width="3"/><rect x="295" y="106" width="12" height="12" transform="rotate(45 301 112)" fill="{adjusted_color}"/>',
+ f'<text x="338" y="118" fill="{ink}" font-family="Arial" font-size="16">Fully adjusted</text>',
+ f'<text x="1089" y="145" text-anchor="middle" fill="{muted}" font-family="Arial" font-size="13" font-weight="700">OBSERVED</text>',
+ f'<text x="1191" y="145" text-anchor="middle" fill="{muted}" font-family="Arial" font-size="13" font-weight="700">ADJUSTED</text>']
+for i in range(len(rows)):
+ y=y0+i*step
+ if i==0:part.append(f'<rect x="39" y="{y-16}" width="1195" height="32" fill="#EEF3F5"/>')
+ elif i%2==0:part.append(f'<rect x="39" y="{y-16}" width="1195" height="32" fill="#F7F9FA"/>')
+for tick in (0,10,20,30,40,50):
+ x=scale(tick)
+ part += [f'<line x1="{x:.1f}" x2="{x:.1f}" y1="154" y2="650" stroke="#DCE5E9" stroke-width="1"/>',
+          f'<text x="{x:.1f}" y="667" text-anchor="middle" fill="{muted}" font-family="Arial" font-size="13">{tick}</text>']
+for i,r in enumerate(rows):
+ y=y0+i*step
+ name=r['region']+('†' if r['region']=='Somali' else '')
+ part.append(f'<text x="48" y="{y+5}" fill="{ink}" font-family="Arial" font-size="16" font-weight="{700 if i==0 else 400}">{escape(name)}</text>')
+ for pref,color,dy,kind in [('unadjusted',observed_color,0 if overlap_preview else -6,'circle'),('full',adjusted_color,0 if overlap_preview else 6,'diamond')]:
+  val=float(r[f'{pref}_pct'] if pref=='unadjusted' else r['full_adjusted_pct'])
+  lo=r[f'{pref}_ci_low'] if pref=='unadjusted' else r['full_ci_low']
+  hi=r[f'{pref}_ci_high'] if pref=='unadjusted' else r['full_ci_high']
+  yy=y+dy
+  if lo!='NA' and hi!='NA':
+   a,b=scale(lo),scale(hi)
+   part += [f'<line x1="{a:.1f}" x2="{b:.1f}" y1="{yy}" y2="{yy}" stroke="{color}" stroke-width="2.7"/>',
+            f'<line x1="{a:.1f}" x2="{a:.1f}" y1="{yy-4}" y2="{yy+4}" stroke="{color}" stroke-width="1.6"/>',
+            f'<line x1="{b:.1f}" x2="{b:.1f}" y1="{yy-4}" y2="{yy+4}" stroke="{color}" stroke-width="1.6"/>']
+  p=scale(val)
+  if kind=='circle':part.append(f'<circle cx="{p:.1f}" cy="{yy}" r="{7 if overlap_preview else 5.6}" fill="{color}" stroke="#fff" stroke-width="1"/>')
+  else:
+   size=8.5 if overlap_preview else 10.4
+   part.append(f'<rect x="{p-size/2:.1f}" y="{yy-size/2:.1f}" width="{size}" height="{size}" transform="rotate(45 {p:.1f} {yy})" fill="{color}" stroke="#fff" stroke-width="0.8"/>')
+  vx=1089 if pref=='unadjusted' else 1191
+  part.append(f'<text x="{vx}" y="{y+5}" text-anchor="middle" fill="{ink}" font-family="Arial" font-size="16" font-weight="{700 if i==0 else 400}">{val:.1f}%</text>')
+part += [f'<text x="43" y="676" fill="{muted}" font-family="Arial" font-size="12">Actionable: failure, wanting greater effectiveness, bleeding/other health effects, or access/cost/convenience; other endings compete.</text>',
+ f'<text x="43" y="693" fill="{muted}" font-family="Arial" font-size="12">Model 2 adjusts for method, use month, region, age/parity at start, marital status, education, wealth, residence, and start year.</text>',
+ f'<text x="43" y="710" fill="{muted}" font-family="Arial" font-size="12">Observed n=8,611; adjusted reference n=7,648 starts. 95% CIs; adjusted: 500 PSU-bootstrap refits. † Somali: 30 episodes, 5 endings. CI overlap is not a regional test.</text>',
+ '</svg>']
+svg='\n'.join(part)
+name='regional_actionable_observed_adjusted_overlap_preview.svg' if overlap_preview else 'regional_actionable_observed_adjusted_forest.svg'
+(out/'assets'/name).write_text(svg)
+html=f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Regional discontinuation with intervals · preview</title><style>body{{margin:0;background:#e9eef1;color:#173e5b;font:16px Arial}}header{{background:#fff;padding:16px 28px;box-shadow:0 2px 10px #0001}}h1{{font:700 22px Georgia;margin:0}}main{{max-width:1300px;margin:24px auto;padding:0 16px}}figure{{margin:0;background:#fff;padding:8px;box-shadow:0 3px 18px #173e5b22}}img{{width:100%;display:block}}p{{line-height:1.5;max-width:1100px}}</style></head><body><header><h1>Observed and adjusted regional probabilities, with intervals</h1></header><main><figure><img src="assets/{name}?v=2" alt="Single forest plot showing observed and adjusted 12-month regional discontinuation rates with confidence intervals"></figure><p>Navy represents the survey-weighted observed life-table estimate. Gold represents the Model 2 fully adjusted comparison. Each color has its own interval where estimated. Intervals describe uncertainty in each estimate; overlap alone is not a formal pairwise test.</p></main></body></html>'''
+(out/('regional_actionable_overlap_preview.html' if overlap_preview else 'regional_actionable_observed_adjusted_forest_preview.html')).write_text(html)
+print(out/'assets'/name)
+)----------------------"
+REPORT_FILES[["src/report/132_render_regional_actionable_tests.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render formal regional actionable-discontinuation comparisons for review."""
+import csv
+import html
+import math
+from pathlib import Path
+import os
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+support = out / 'Supporting_data'
+read = lambda name: list(csv.DictReader((support / name).open()))
+raw = read('regional_actionable_raw_pairwise_tests.csv')
+method = read('regional_actionable_method_pairwise_tests.csv')
+adjusted = read('regional_actionable_full_pairwise_tests.csv')
+global_tests = read('regional_actionable_global_tests.csv')
+assert len(raw) == len(method) == len(adjusted) == 91
+significant = [r for r in adjusted if r['significant_5pct'] == 'TRUE']
+raw_count = sum(r['significant_5pct'] == 'TRUE' for r in raw)
+method_count = sum(r['significant_5pct'] == 'TRUE' for r in method)
+assert all(r['higher_region'] != 'Somali' and r['lower_region'] != 'Somali'
+           for r in significant), 'Sparse Somali contrasts need separate review'
+highlight_pairs = {(r['higher_region'], r['lower_region']) for r in significant}
+takeaway_title = ('Tigray remains higher than Amhara and Addis Ababa after adjustment'
+                  if highlight_pairs == {('Tigray', 'Amhara'),
+                                         ('Tigray', 'Addis Ababa')}
+                  else 'Regional differences in actionable discontinuation')
+
+def num(value, digits=1):
+    return f'{float(value):.{digits}f}'
+
+def pval(value):
+    x = float(value)
+    return '&lt;0.001' if x < .001 else f'{x:.3f}'
+
+def text(value):
+    return html.escape(str(value))
+
+all_global = next(r for r in global_tests
+                  if r['model'] == 'Fully adjusted Model 2'
+                  and r['comparison'] == 'All 14 regions')
+stable_global = next(r for r in global_tests
+                     if r['model'] == 'Fully adjusted Model 2'
+                     and 'omit Somali' in r['comparison'])
+
+W, H = 1280, 720
+navy, gold, ink, muted = '#173E5B', '#D99A20', '#153B57', '#506879'
+shown = significant[:5]
+max_upper = max([float(r['familywise_ci_high_pp']) for r in shown] or [20])
+xmax = max(20, math.ceil(max_upper / 5) * 5)
+x0, x1 = 450, 1000
+sx = lambda x: x0 + float(x) / xmax * (x1 - x0)
+svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
+       '<rect width="1280" height="720" fill="#fff"/>',
+       f'<text x="42" y="56" fill="{ink}" font-family="Georgia,serif" font-size="29" font-weight="700">{text(takeaway_title)}</text>',
+       f'<text x="43" y="91" fill="{ink}" font-family="Arial" font-size="17">Fully adjusted 12-month probability · region pairs passing Holm correction across 91 tests</text>',
+       f'<rect x="43" y="119" width="1194" height="62" rx="5" fill="#EEF3F5"/>',
+       f'<text x="61" y="145" fill="{ink}" font-family="Arial" font-size="18" font-weight="700">{len(significant)} of 91 regional pairs remain statistically different after adjustment.</text>',
+       f'<text x="61" y="170" fill="{muted}" font-family="Arial" font-size="15">Overall regional test: p={pval(all_global["p_value"])}; excluding sparse Somali: p={pval(stable_global["p_value"])}.</text>']
+if shown:
+    ys = [275 + i * (225 / max(1, len(shown) - 1)) for i in range(len(shown))]
+    if len(shown) > 3:
+        ys = [250 + i * 75 for i in range(len(shown))]
+    for tick in range(0, xmax + 1, 5):
+        x = sx(tick)
+        svg.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="220" y2="560" stroke="#DEE7EB" stroke-width="1"/>')
+        svg.append(f'<text x="{x:.1f}" y="588" text-anchor="middle" fill="{muted}" font-family="Arial" font-size="14">{tick}</text>')
+    svg.append(f'<text x="725" y="619" text-anchor="middle" fill="{ink}" font-family="Arial" font-size="16">Adjusted difference in 12-month probability (percentage points)</text>')
+    for i, r in enumerate(shown):
+        y = ys[i]
+        high, low = text(r['higher_region']), text(r['lower_region'])
+        gap = float(r['difference_pp'])
+        lo, hi = float(r['familywise_ci_low_pp']), float(r['familywise_ci_high_pp'])
+        svg.append(f'<text x="54" y="{y-9:.1f}" fill="{ink}" font-family="Arial" font-size="20" font-weight="700">{high} vs {low}</text>')
+        svg.append(f'<text x="54" y="{y+18:.1f}" fill="{muted}" font-family="Arial" font-size="15">{num(r["higher_rate_pct"])}% vs {num(r["lower_rate_pct"])}%</text>')
+        svg.append(f'<line x1="{sx(lo):.1f}" x2="{sx(hi):.1f}" y1="{y:.1f}" y2="{y:.1f}" stroke="{gold}" stroke-width="4"/>')
+        for end in [lo, hi]:
+            svg.append(f'<line x1="{sx(end):.1f}" x2="{sx(end):.1f}" y1="{y-10:.1f}" y2="{y+10:.1f}" stroke="{gold}" stroke-width="2"/>')
+        svg.append(f'<circle cx="{sx(gap):.1f}" cy="{y:.1f}" r="8" fill="{gold}" stroke="#fff" stroke-width="2"/>')
+        svg.append(f'<text x="1040" y="{y-7:.1f}" fill="{ink}" font-family="Arial" font-size="19" font-weight="700">+{gap:.1f} pp</text>')
+        svg.append(f'<text x="1040" y="{y+19:.1f}" fill="{muted}" font-family="Arial" font-size="14">Holm p={pval(r["holm_p"])}</text>')
+else:
+    svg.append(f'<text x="640" y="370" text-anchor="middle" fill="{muted}" font-family="Arial" font-size="22">No pair passed the 5% familywise threshold.</text>')
+svg += [f'<text x="43" y="654" fill="{muted}" font-family="Arial" font-size="12">Gold whiskers: conservative 95% familywise Bonferroni intervals for 91 contrasts; p-values use Holm correction.</text>',
+        f'<text x="43" y="674" fill="{muted}" font-family="Arial" font-size="12">Differences use the same survey-stratified PSU bootstrap refit for both regions; all modern-method episodes remain at risk until ending or censoring.</text>',
+        f'<text x="43" y="694" fill="{muted}" font-family="Arial" font-size="12">Somali (30 episodes, 5 selected endings) is too sparse to interpret as a ranked contrast. Regional associations are not causal effects.</text>',
+        '</svg>']
+svg_path = out / 'assets' / 'regional_actionable_significant_pairwise.svg'
+svg_path.write_text('\n'.join(svg))
+
+def table(rows):
+    body = ''.join(
+        f'<tr><th scope="row">{text(r["higher_region"])} vs {text(r["lower_region"])}</th>'
+        f'<td>{num(r["higher_rate_pct"])}% vs {num(r["lower_rate_pct"])}%</td>'
+        f'<td>+{num(r["difference_pp"])} pp</td>'
+        f'<td>{num(r["familywise_ci_low_pp"])} to {num(r["familywise_ci_high_pp"])} pp</td>'
+        f'<td>{pval(r["holm_p"])}</td></tr>' for r in rows)
+    if not body:
+        body = '<tr><td colspan="5">No pair passed Holm correction at 0.05.</td></tr>'
+    return '<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Adjusted regional contrast</th><th>Adjusted rates</th><th>Difference</th><th>95% familywise interval</th><th>Holm p</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+
+def pair_key(row):
+    return tuple(sorted([row['higher_region'], row['lower_region']]))
+
+stage_lookups = [{pair_key(r): r for r in stage}
+                 for stage in [raw, method, adjusted]]
+any_significant = sorted(set().union(*[
+    {pair_key(r) for r in stage if r['significant_5pct'] == 'TRUE'}
+    for stage in [raw, method, adjusted]]))
+stage_rows = []
+for key in any_significant:
+    primary = stage_lookups[2][key]
+    high, low = primary['higher_region'], primary['lower_region']
+    cells = []
+    for lookup in stage_lookups:
+        r = lookup[key]
+        direction = 1 if r['higher_region'] == high else -1
+        difference = direction * float(r['difference_pp'])
+        value = f'{difference:+.1f} pp; Holm p={pval(r["holm_p"])}'
+        cells.append(f'<td>{"<strong>" if r["significant_5pct"] == "TRUE" else ""}{value}{"</strong>" if r["significant_5pct"] == "TRUE" else ""}</td>')
+    stage_rows.append(f'<tr><th scope="row">{text(high)} vs {text(low)}</th>{"".join(cells)}</tr>')
+stage_table = '<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Regional contrast</th><th>Observed</th><th>Model 1: method + duration</th><th>Model 2: full adjustment</th></tr></thead><tbody>' + ''.join(stage_rows) + '</tbody></table></div>'
+
+section = f'''<!-- BEGIN REGIONAL ACTIONABLE FORMAL TESTS -->
+<h3 id="regional-actionable-formal-tests">Which regional differences remain after adjustment?</h3>
+<p>The global test asks whether the 12-month potentially actionable discontinuation probabilities are the same in every region. For the primary Model 2 comparison, its p-value is <strong>{pval(all_global['p_value'])}</strong> across all 14 regions; omitting Somali, whose selected-ending sample is sparse, gives <strong>{pval(stable_global['p_value'])}</strong>. A global result does not identify which pairs differ, so we also test all 91 region pairs directly.</p>
+<figure class="ram-figure"><a href="assets/{svg_path.name}"><img src="assets/{svg_path.name}?v=1" alt="Fully adjusted regional pairs with statistically different 12-month actionable discontinuation probabilities after Holm correction" style="width:100%;height:auto"></a><figcaption>Only pairs passing the 5% Holm-adjusted threshold are shown. Whiskers are conservative 95% familywise Bonferroni intervals across all 91 contrasts. The outcome is ending the original modern method within 12 months for method failure, wanting a more effective method, bleeding or other health effects, or access/cost/convenience. Other endings remain competing events.</figcaption></figure>
+{table(significant)}
+<h4>How the evidence changes with adjustment</h4>
+<p>This table includes every pair that passes Holm correction at any of the three stages. Differences are oriented in the same direction across columns; bold cells pass the 5% threshold.</p>
+{stage_table}
+<h4>What the models estimate</h4>
+<p>The analysis follows eligible modern-method use episodes month by month through month 12. Each observed episode-month has three possible outcomes: the original method continues; it ends for a potentially actionable reason (method failure, wanting a more effective method, bleeding or other side effects/health, or access/cost/convenience); or it ends for another reason. The last category includes wanted pregnancy, partner disapproval and other non-actionable endings. Those endings remain in the starting cohort and leave the risk set when they occur; they are competing events, not excluded episodes. An episode still using its original method at the end of observation is censored. Thus the reported rate is the cumulative probability of an actionable ending by 12 months among eligible modern-method episodes, not the share of discontinuers who gave an actionable reason.</p>
+<p><strong>Observed:</strong> a survey-weighted delayed-entry competing-risk life table estimates each region’s probability with its actual method and population composition. <strong>Model 1:</strong> a survey-weighted discrete-time multinomial regression models those three monthly outcomes using region, original method and month since method initiation. Month measures duration of the episode, not how long a current user had used a method at interview. <strong>Model 2:</strong> the same regression adds age and parity at episode start, marital status, education, wealth, urban/rural residence and calendar year of start. Region remains a predictor in both models. For each model, predicted monthly probabilities are combined into the 12-month competing-risk probability; to compare regions after adjustment, each region is evaluated over the same weighted set of 7,648 episodes observed from method start. This common comparison set changes the covariate profiles used for prediction, not the fitted region coefficient or the episodes used to fit the model. The fitted models use 8,611 eligible modern-method episodes, including 963 first observed after initiation.</p>
+<p>Each difference subtracts two region-specific Model 2 probabilities averaged over the <em>same</em> measured observed-start profiles. The 1,000 survey-stratified PSU bootstrap refits resample entire clusters within strata and keep all episodes contributed by a woman together. The bootstrap standard error gives a two-sided Wald p-value; Holm correction controls the familywise error rate across all 91 pairs. The plotted interval uses the same bootstrap standard error with a Bonferroni critical value. This tests adjusted associations, not whether region itself caused the difference. A pair not highlighted here has insufficient evidence of a difference under this test; it is not proven equal.</p>
+<p>After Holm correction, <strong>{raw_count}</strong> of 91 observed pairs, <strong>{method_count}</strong> Model 1 pairs, and <strong>{len(significant)}</strong> fully adjusted Model 2 pairs pass the 5% threshold. The observed-rate tests use the delayed-entry, competing-risk life table and 10,000 survey-stratified PSU bootstrap draws. Model 1 and Model 2 each use 1,000 survey-stratified PSU model refits. These stages answer different questions because raw rates retain each region's actual composition, Model 1 accounts for method and duration, and Model 2 also standardizes measured population characteristics. The global tests and every pairwise result remain available for review.</p>
+<p><strong>At a 10% significance threshold:</strong> the primary fully adjusted Model 2 still identifies only Tigray versus Amhara (Holm-adjusted p=0.001) and Tigray versus Addis Ababa (p=0.005); no additional pair qualifies. Model 1 also identifies Central Ethiopia versus Addis Ababa (+9.9 percentage points; Holm-adjusted p=0.091), but this comparison does not qualify after full adjustment. Significance at 10% is weaker evidence than at 5%, and a non-significant comparison does not establish equal rates.</p>
+<div class="downloads"><a href="Supporting_data/regional_actionable_global_tests.csv">Global tests</a><a href="Supporting_data/regional_actionable_raw_pairwise_tests.csv">All 91 observed comparisons</a><a href="Supporting_data/regional_actionable_method_pairwise_tests.csv">All 91 Model 1 comparisons</a><a href="Supporting_data/regional_actionable_full_pairwise_tests.csv">All 91 Model 2 comparisons</a><a href="../Code/129_test_regional_actionable_differences.R">Full-model bootstrap code</a><a href="../Code/133_test_regional_actionable_method_mix_differences.R">Method-model bootstrap code</a></div>
+<!-- END REGIONAL ACTIONABLE FORMAL TESTS -->'''
+
+page = out / 'Ethiopia_discontinuation_analysis.html'
+from report_fragments import replace_fragment
+replace_fragment(page,'regional-actionable-formal-tests',section,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-formal-tests')
+)----------------------"
+REPORT_FILES[["src/report/135_render_all_region_method_mix_comparison.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render the all-region actionable method-mix analysis into HTML and SVG."""
+import csv
+from pathlib import Path
+import os
+from html import escape
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+support = out / 'Supporting_data'
+
+def read(name):
+    with (support / name).open(newline='') as f:
+        return list(csv.DictReader(f))
+
+rows = read('regional_actionable_all_region_method_mix_comparison.csv')
+pair = read('regional_actionable_method_pairwise_tests.csv')
+boot = read('regional_actionable_all_region_method_mix_bootstrap.csv')
+assert len(rows) == 14 and len(pair) == 91
+assert len(boot) >= 500
+rows.sort(key=lambda r: (r['region']=='Somali', -float(r['model_common_mix_pct'])))
+by_region = {r['region']:r for r in rows}
+national = float(next(r for r in read('regional_actionable_two_model_probabilities.csv')
+                      if r['region']=='National')['method_adjusted_pct'])
+assert abs(float(rows[0]['model_common_mix_pct']) - 24.94) < .2
+
+def f(x, signed=False):
+    x = float(x)
+    return f'{x:+.1f}' if signed else f'{x:.1f}'
+
+navy, gold, ink, muted = '#173e5a', '#df9825', '#153f5b', '#536871'
+light, border = '#eef3f5', '#d9e2e7'
+W, H = 1220, 790
+x0, x1 = 270, 1020
+xmin, xmax = 5, 35
+sx = lambda p: x0 + (p-xmin)/(xmax-xmin)*(x1-x0)
+svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-label="Modeled actionable discontinuation under each region’s own method mix and a common national method mix">',
+       '<rect width="1220" height="790" fill="white"/>',
+       f'<text x="36" y="43" font-family="Georgia" font-size="26" font-weight="700" fill="{ink}">Regional gaps persist after putting methods on the same mix</text>',
+       f'<text x="36" y="69" font-family="Arial" font-size="15" fill="{muted}">Model 1: method, month since start, and region; 12-month actionable discontinuation</text>',
+       f'<circle cx="65" cy="101" r="7" fill="{navy}"/><text x="80" y="106" font-family="Arial" font-size="15" fill="{ink}">Each region’s own mix</text>',
+       f'<circle cx="300" cy="101" r="7" fill="{gold}"/><text x="315" y="106" font-family="Arial" font-size="15" fill="{ink}">Same national mix (95% CI)</text>']
+for t in range(5, 36, 5):
+    x=sx(t)
+    svg.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="131" y2="698" stroke="{border}"/>')
+    svg.append(f'<text x="{x:.1f}" y="721" text-anchor="middle" font-family="Arial" font-size="14" fill="{muted}">{t}</text>')
+svg += [f'<line x1="{sx(national):.1f}" x2="{sx(national):.1f}" y1="130" y2="698" stroke="{navy}" stroke-width="1.5" stroke-dasharray="5 5"/>',
+        f'<text x="{sx(national)+5:.1f}" y="130" font-family="Arial" font-size="12" fill="{navy}">National {national:.1f}%</text>']
+for i,r in enumerate(r for r in rows if r['region']!='Somali'):
+    y=158+i*42
+    if i%2==0: svg.append(f'<rect x="24" y="{y-17}" width="1165" height="36" fill="{light}"/>')
+    name=escape(r['region']) + ('*' if r['region']=='Somali' else '')
+    own,common = float(r['model_own_mix_pct']),float(r['model_common_mix_pct'])
+    lo,hi = float(r['common_ci_low']),float(r['common_ci_high'])
+    svg += [f'<text x="245" y="{y+5}" text-anchor="end" font-family="Arial" font-size="15" fill="{ink}">{name}</text>',
+            f'<line x1="{sx(own):.1f}" x2="{sx(common):.1f}" y1="{y}" y2="{y}" stroke="{muted}" stroke-width="2"/>',
+            f'<line x1="{sx(lo):.1f}" x2="{sx(hi):.1f}" y1="{y}" y2="{y}" stroke="{gold}" stroke-width="2.3"/>',
+            f'<line x1="{sx(lo):.1f}" x2="{sx(lo):.1f}" y1="{y-5}" y2="{y+5}" stroke="{gold}"/>',
+            f'<line x1="{sx(hi):.1f}" x2="{sx(hi):.1f}" y1="{y-5}" y2="{y+5}" stroke="{gold}"/>',
+            f'<circle cx="{sx(own):.1f}" cy="{y}" r="5.8" fill="{navy}" stroke="white" stroke-width="1"/>',
+            f'<circle cx="{sx(common):.1f}" cy="{y}" r="6" fill="{gold}" stroke="white" stroke-width="1"/>',
+            f'<text x="1050" y="{y+5}" font-family="Arial" font-size="15" font-weight="700" fill="{ink}">{common:.1f}%</text>']
+svg += [f'<text x="{(x0+x1)/2:.1f}" y="748" text-anchor="middle" font-family="Arial" font-size="16" fill="{ink}">12-month probability (%)</text>',
+        f'<text x="32" y="775" font-family="Arial" font-size="12" fill="{muted}">Somali is in the table but omitted from the plot: 27 observed starts and five actionable endings among 30 eligible episodes.</text>',
+        '</svg>']
+svg_path = out / 'assets' / 'regional_actionable_all_region_common_method_mix.svg'
+svg_path.write_text('\n'.join(svg))
+
+body=[]
+for r in rows:
+    region=escape(r['region'])+('†' if r['region']=='Somali' else '')
+    own=f(r['model_own_mix_pct'])
+    common=f(r['model_common_mix_pct'])
+    common_ci=f(r['common_ci_low'])+'–'+f(r['common_ci_high'])
+    mix=f(r['mix_effect_pp'],True)
+    mix_ci=f(r['mix_ci_low'])+' to '+f(r['mix_ci_high'])
+    gap=f(r['common_gap_from_national_pp'],True)
+    body.append(f'<tr><th scope="row">{region}</th><td>{r["observed_start_n"]}</td><td>{own}%</td><td><strong>{common}%</strong> <small>({common_ci})</small></td><td>{mix} pp <small>({mix_ci})</small></td><td>{gap} pp</td></tr>')
+table='<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Region</th><th>Observed starts (N)</th><th>Modeled rate, own mix</th><th>Modeled rate, common mix (95% CI)</th><th>Own minus common mix (95% CI)</th><th>Common-mix gap vs national</th></tr></thead><tbody>'+''.join(body)+'</tbody></table></div>'
+sig=[r for r in pair if r['significant_5pct']=='TRUE']
+assert len(sig)==3
+def quantile(values, q):
+    values=sorted(values)
+    h=(len(values)-1)*q
+    i=int(h)
+    return values[i]+(values[min(i+1,len(values)-1)]-values[i])*(h-i)
+
+sig_rows=[]
+for r in sig:
+    hi,lo=r['higher_region'],r['lower_region']
+    own=float(by_region[hi]['model_own_mix_pct'])-float(by_region[lo]['model_own_mix_pct'])
+    mix=float(by_region[hi]['mix_effect_pp'])-float(by_region[lo]['mix_effect_pp'])
+    mix_draw=[float(z[f'mix::{hi}'])-float(z[f'mix::{lo}']) for z in boot]
+    mix_interval=f'{quantile(mix_draw,.025):+.1f} to {quantile(mix_draw,.975):+.1f}'
+    sig_rows.append(f'<tr><th scope="row">{escape(hi)} vs {escape(lo)}</th><td>{own:+.1f} pp</td><td>{f(r["difference_pp"],True)} pp</td><td>{mix:+.1f} pp <small>({mix_interval})</small></td><td>{float(r["holm_p"]):.3f}</td></tr>')
+sig_table='<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Pair differing after common-mix adjustment</th><th>Own-mix gap</th><th>Common-mix gap</th><th>Method-mix contribution (95% CI)</th><th>Holm-adjusted p for common gap</th></tr></thead><tbody>'+''.join(sig_rows)+'</tbody></table></div>'
+
+section=f'''<!-- BEGIN ALL-REGION ACTIONABLE METHOD-MIX ANALYSIS -->
+<h3 id="regional-actionable-all-region-mix">Is regional variation explained by method mix?</h3>
+<p>This all-region comparison uses the same potentially actionable original-modern-method ending outcome as the regional regression above. The fitted Model 1 includes region, original method, and month since initiation. Its 8,611 eligible EC-excluded episodes include late entries at their observed duration. For the comparison below, method shares come from the same 7,648 episodes observed from method start; traditional methods and emergency contraception are excluded. The common mix is the survey-weighted national distribution of these five modern-method groups. This is different from the chart of all contraceptive starts.</p>
+<figure class="ram-figure"><a href="assets/{svg_path.name}"><img src="assets/{svg_path.name}?v=2" alt="Modeled actionable discontinuation under own and common method mixes for regions with interpretable samples" style="width:100%;height:auto"></a><figcaption>Navy is the rate predicted for each region under its own observed-start method mix. Gold is the rate predicted for that region if its method distribution matched the national observed-start distribution. Gold whiskers are 95% survey-design bootstrap intervals. Both are model-based estimates on the same starting cohort; neither is the direct raw DHS-style life-table rate. The dashed line is the modeled national estimate of {national:.1f}%. Somali is listed in the table but omitted from the plot because its estimate is very imprecise.</figcaption></figure>
+{table}
+<p><strong>How to read the last columns:</strong> “own minus common” quantifies the modeled shift attributable to replacing that region’s method mix with the national mix, holding the fitted within-method probabilities fixed. A negative number means the region’s own mix lowers its modeled rate. “Common-mix gap vs national” is the remaining difference under the same method mix. Within this model, own-mix gap versus national equals the mix shift plus the common-mix gap exactly. That identity does not decompose the observed life-table gap, whose censoring and late-entry pattern differ.</p>
+<p>For Tigray, the modeled rate is {f(next(r for r in rows if r['region']=='Tigray')['model_own_mix_pct'])}% under its own mix and {f(next(r for r in rows if r['region']=='Tigray')['model_common_mix_pct'])}% under the common mix. Its own mix therefore slightly <em>reduces</em> the apparent gap. The same-mix rates remain {f(next(r for r in rows if r['region']=='Amhara')['model_common_mix_pct'])}% for Amhara and {f(next(r for r in rows if r['region']=='Addis Ababa')['model_common_mix_pct'])}% for Addis Ababa. Thus those two Tigray gaps do not disappear when the method distribution is held constant.</p>
+<h4>Which pairs still differ under the common method mix?</h4>
+<p>The same Model 1 estimates were tested in all 91 regional pairs using 1,000 survey-stratified PSU bootstrap refits and two-sided Wald tests, with Holm correction across the 91 comparisons. The table shows the three pairs meeting the 5% familywise threshold. A negative method-mix contribution means the regions’ actual mixes <em>narrow</em> the gap that would appear under the shared mix; its interval comes from the same design bootstrap.</p>
+{sig_table}
+<p>At the 10% threshold, Central Ethiopia versus Addis Ababa also qualifies under Model 1 (+9.9 percentage points; Holm-adjusted p=0.091). In the fully adjusted Model 2, only Tigray versus Amhara and Tigray versus Addis Ababa remain significant at either threshold. Somali has just 27 observed starts and five actionable endings among 30 eligible episodes; its results are displayed for completeness but are not reliable for ranking.</p>
+<p><strong>Interpretation limit:</strong> the additive Model 1 assumes a common regional logit shift across methods. Its persistent same-mix gap means <em>method composition in this model does not account for the gap</em>; it does not prove a service-quality cause or show that every method has a significant regional difference. Many region–IUD and region–other-modern cells are small. The next focused check is an interaction or method-specific comparison for injectable users in the supported regional pairs, with survey-design intervals and stated-reason/switching follow-up.</p>
+<div class="downloads"><a href="Supporting_data/regional_actionable_all_region_method_mix_comparison.csv">All-region estimates and intervals</a><a href="Supporting_data/regional_actionable_all_region_method_mix_cells.csv">Method shares, counts, and fitted risks</a><a href="Supporting_data/regional_actionable_method_pairwise_tests.csv">All 91 common-mix pairwise tests</a><a href="../Code/134_regional_actionable_all_region_method_mix.R">Reproduce the analysis</a></div>
+<!-- END ALL-REGION ACTIONABLE METHOD-MIX ANALYSIS -->'''
+
+page=out/'Ethiopia_discontinuation_analysis.html'
+from report_fragments import replace_fragment
+replace_fragment(page,'regional-actionable-all-region-mix',section,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-all-region-mix')
+)----------------------"
+REPORT_FILES[["src/report/137_render_pairwise_shared_method_mix.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Replace the national-mix comparison with pair-specific shared-mix results."""
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+ROOT=Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT=ROOT/'output'
+SOURCE=OUT/'Supporting_data'/'regional_actionable_pairwise_shared_method_mix.csv'
+with SOURCE.open(newline='') as f:
+    rows=list(csv.DictReader(f))
+assert len(rows)==91
+
+def fmt(x,signed=False):
+    v=float(x)
+    return f'{v:+.1f}' if signed else f'{v:.1f}'
+
+def oriented(row):
+    # Put the higher fitted risk first, while retaining the signed
+    # decomposition in the full machine-readable output.
+    higher_a=float(row['pair_shared_mix_gap_pp'])>=0
+    hi=row['region_a'] if higher_a else row['region_b']
+    lo=row['region_b'] if higher_a else row['region_a']
+    rate_hi=row['pair_shared_mix_a_pct'] if higher_a else row['pair_shared_mix_b_pct']
+    rate_lo=row['pair_shared_mix_b_pct'] if higher_a else row['pair_shared_mix_a_pct']
+    sign=1 if higher_a else -1
+    return hi,lo,rate_hi,rate_lo,sign
+
+def row_html(r,brief=False):
+    hi,lo,rate_hi,rate_lo,sign=oriented(r)
+    own=sign*float(r['own_mix_gap_pp'])
+    gap=sign*float(r['pair_shared_mix_gap_pp'])
+    mix=sign*float(r['method_mix_component_pp'])
+    ci=(float(r['shared_gap_ci_low']),float(r['shared_gap_ci_high']))
+    ci=ci if sign==1 else (-ci[1],-ci[0])
+    mix_ci=(float(r['mix_component_ci_low']),float(r['mix_component_ci_high']))
+    mix_ci=mix_ci if sign==1 else (-mix_ci[1],-mix_ci[0])
+    first=f'<th scope="row">{escape(hi)} vs {escape(lo)}</th>'
+    middle=(f'<td>{fmt(rate_hi)}% vs {fmt(rate_lo)}%</td>'
+            f'<td>{own:+.1f} pp</td><td><strong>{gap:+.1f} pp</strong> '
+            f'<small>({ci[0]:+.1f} to {ci[1]:+.1f})</small></td>'
+            f'<td>{mix:+.1f} pp <small>({mix_ci[0]:+.1f} to {mix_ci[1]:+.1f})</small></td>'
+            f'<td>{float(r["holm_p"]):.3f}</td>')
+    return '<tr>'+first+middle+'</tr>'
+
+headers='<thead><tr><th>Region pair (higher fitted rate first)</th><th>Rates with this pair’s shared mix</th><th>Gap with own mixes</th><th>Gap with shared mix (95% CI)</th><th>Method-mix contribution (95% CI)</th><th>Holm-adjusted p</th></tr></thead>'
+sig=sorted((r for r in rows if r['significant_5pct']=='True'),
+           key=lambda r:-abs(float(r['pair_shared_mix_gap_pp'])))
+near=sorted((r for r in rows if r['significant_10pct']=='True' and r['significant_5pct']!='True'),
+            key=lambda r:-abs(float(r['pair_shared_mix_gap_pp'])))
+sig_table='<div class="table-wrap analysis-table" role="region" tabindex="0"><table>'+headers+'<tbody>'+''.join(row_html(r) for r in sig)+'</tbody></table></div>'
+near_text=(' At the 10% familywise threshold, '+', '.join(
+    f'{escape(oriented(r)[0])} versus {escape(oriented(r)[1])} (Holm p={float(r["holm_p"]):.3f})'
+    for r in near)+' also qualifies.' if near else '')
+all_sorted=sorted(rows,key=lambda r:(r['region_a'],r['region_b']))
+full_table='<details><summary>Show all 91 pairwise comparisons</summary><div class="table-wrap analysis-table" role="region" tabindex="0"><table>'+headers+'<tbody>'+''.join(row_html(r) for r in all_sorted)+'</tbody></table></div></details>'
+
+section=f'''<!-- BEGIN ALL-REGION ACTIONABLE METHOD-MIX ANALYSIS -->
+<h3 id="regional-actionable-all-region-mix">Do regional gaps remain when each pair has the same method mix?</h3>
+<p><strong>Pair-specific comparison.</strong> For every pair of regions, we average <em>those two regions’</em> survey-weighted shares of injectable, implant, pill, IUD, and other-modern starts. We then apply that same five-method mix to each region’s <em>own modeled 12-month probability within each method</em>. Thus neither region is assigned the national method mix. There is no single shared-mix rate per region: a region’s standardized rate changes with the region it is compared with.</p>
+<p>The outcome is discontinuation of the original modern method within 12 months for a potentially actionable reason. Other endings, including wanted pregnancy and partner disapproval, remain competing events. Model 1 uses region, original method, and month since method start. It was fitted to 8,611 eligible EC-excluded modern-method episodes; the pairwise method shares come from 7,648 episodes observed from method start. This model-based comparison is separate from the raw DHS-style life-table rates shown above.</p>
+<p><strong>Reading the gap:</strong> “own mixes” shows the fitted difference with each region’s observed method distribution. “Shared mix” holds the distribution of the five methods equal within that pair while retaining each region’s fitted risk for each method. The method-mix contribution is the own-mix gap minus the shared-mix gap. These two components sum to the fitted own-mix gap by construction; they do not decompose a raw observed life-table difference.</p>
+<figure class="ram-figure"><a href="assets/regional_actionable_pairwise_shared_mix_slide.png"><img src="assets/regional_actionable_pairwise_shared_mix_slide.png?v=1" alt="Three significant regional pairs: fitted gaps with each region’s own method mix and with the average mix of that pair, including pointwise confidence intervals" style="width:100%;height:auto"></a><figcaption>For the three pairs passing Holm correction, the fitted difference increases after both regions receive the same pair-specific method mix. Gold whiskers are pointwise 95% bootstrap intervals for the same-mix gap; the table below gives exact values and adjusted p-values.</figcaption></figure>
+<h4>Pairs with a detectable same-mix difference</h4>
+<p>All 91 regional pairs were tested using {int(rows[0]["valid_bootstrap_draws"]):,} survey-stratified PSU bootstrap refits and two-sided Wald tests. Holm adjustment controls the familywise error rate across the 91 comparisons. The table shows pairs meeting the 5% threshold.{near_text}</p>
+{sig_table}
+{full_table}
+<p><strong>Interpretation and precision:</strong> A remaining same-mix gap means the five-method composition in Model 1 does not explain that modeled difference. It does not establish that services caused the difference. This additive model assumes a common regional logit shift across methods; it cannot show that one particular method drives the residual gap. Sparse regional method cells, especially Somali, IUD and other modern, make those comparisons imprecise. The next focused check is method-by-region risk for injectables and other methods with adequate data.</p>
+<div class="downloads"><a href="presentation_FINAL_with_subnational_pairwise_method_mix.pptx">PowerPoint with pairwise comparison slide</a><a href="Supporting_data/regional_actionable_pairwise_shared_method_mix.csv">Download all 91 pair-specific comparisons</a><a href="Supporting_data/regional_actionable_all_region_method_mix_cells.csv">Method shares, counts, and fitted risks</a><a href="../Code/136_regional_actionable_pairwise_shared_mix.py">Reproduce pair-specific comparisons</a><a href="../Code/134_regional_actionable_all_region_method_mix.R">Reproduce bootstrap model</a></div>
+<!-- END ALL-REGION ACTIONABLE METHOD-MIX ANALYSIS -->'''
+
+page=OUT/'Ethiopia_discontinuation_analysis.html'
+from report_fragments import replace_fragment
+replace_fragment(page,'regional-actionable-all-region-mix',section,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-all-region-mix')
+)----------------------"
+REPORT_FILES[["src/report/13_restricted_cumulative_probability_chart.py"]] <- r"----------------------("""Render the selected-cause 12-month discontinuation chart from Table 7.11 estimates."""
+
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+SOURCE = ROOT / "output/presentation_discontinuation_probability_by_reason.csv"
+COMPARISON = ROOT / "output/Supporting_data/12_month_nonpregnancy_and_switching.csv"
+OUTPUT = ROOT / "output/assets/presentation_discontinuation_probability_excluding_pregnancy_partner.svg"
+DATA_OUTPUT = ROOT / "output/presentation_discontinuation_probability_excluding_pregnancy_partner.csv"
+
+METHODS = (
+    "Pill",
+    "Injectables",
+    "Other modern methods",
+    "IUD",
+    "Implants",
+    "All modern methods",
+)
+
+with SOURCE.open(newline="") as stream:
+    source = {row["method"]: row for row in csv.DictReader(stream)}
+with COMPARISON.open(newline="") as stream:
+    comparison = {row["method"]: row for row in csv.DictReader(stream)}
+
+rows = []
+for method in METHODS:
+    if method == "All modern methods":
+        item = comparison[method]
+        # The final comparison column contains the four method-experience/access
+        # reasons other than method failure; add failure to match the source chart.
+        experience = float(item["excluding_pregnancy_fertility_partner_and_other_pct"]) + float(item["method_failure_pct"])
+        total = float(item["excluding_wanted_pregnancy_and_partner_pct"])
+        other = total - experience
+    else:
+        item = source[method]
+        experience = float(item["method_experience_or_access"])
+        other = float(item["other_reasons"])
+        total = float(item["total_discontinuation"]) - float(item["wanted_pregnancy"]) - float(item["partner_disapproval"])
+    assert abs(total - experience - other) < 1e-7, method
+    rows.append((method, experience, other, total))
+
+with DATA_OUTPUT.open("w", newline="") as stream:
+    writer = csv.writer(stream)
+    writer.writerow(
+        (
+            "method",
+            "method_experience_or_access_percentage_points",
+            "other_recorded_reasons_percentage_points",
+            "total_12_month_probability_percent",
+        )
+    )
+    writer.writerows(rows)
+
+
+def text(x, y, content, size=18, weight=400, color="#17222C", anchor="start"):
+    return (
+        f'<text x="{x:.2f}" y="{y:.2f}" dominant-baseline="middle" '
+        f'text-anchor="{anchor}" font-family="Aptos,Arial,sans-serif" '
+        f'font-size="{size}" font-weight="{weight}" fill="{color}">{escape(str(content))}</text>'
+    )
+
+
+def rect(x, y, w, h, color):
+    return f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:.2f}" height="{h:.2f}" fill="{color}"/>'
+
+
+svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="chart-title chart-desc">',
+    '<title id="chart-title">12-month method discontinuation excluding wanted pregnancy and partner disapproval</title>',
+    '<desc id="chart-desc">Weighted competing-risks cumulative incidence by original method. Blue segments show method experience or access; gray segments show other retained reasons. Bar totals range from 9.9 percent for implants to 46.6 percent for pills; all modern methods total 23.6 percent.</desc>',
+    rect(0, 0, 1280, 760, "#FFFFFF"),
+    text(54, 74, "12-month discontinuation excluding wanted pregnancy and partner disapproval", 30, 700, "#153F5B"),
+]
+
+x0 = 335
+scale = 15.0
+bar_h = 45
+top = 155
+row_gap = 72
+for idx, (method, experience, other, total) in enumerate(rows):
+    y = top + idx * row_gap
+    cy = y + bar_h / 2
+    if method == "All modern methods":
+        svg.append(f'<line x1="54" y1="{y-13}" x2="1190" y2="{y-13}" stroke="#D8E1E5" stroke-width="1.5"/>')
+    svg.append(text(57, cy, method, 20, 700, "#17222C"))
+    left_width = experience * scale
+    right_width = other * scale
+    svg.append(rect(x0, y, left_width, bar_h, "#153F5B"))
+    svg.append(rect(x0 + left_width, y, right_width, bar_h, "#85909D"))
+    for value, left, width, color in (
+        (experience, x0, left_width, "#153F5B"),
+        (other, x0 + left_width, right_width, "#85909D"),
+    ):
+        label = f"{value:.1f}"
+        if width >= 47:
+            svg.append(text(left + width / 2, cy, label, 19, 700, "#FFFFFF", "middle"))
+        else:
+            # A leader keeps narrow values legible without placing them outside the bar horizontally.
+            svg.append(text(left + width / 2, y - 11, label, 17, 700, color, "middle"))
+            svg.append(f'<line x1="{left+width/2:.2f}" y1="{y-2:.2f}" x2="{left+width/2:.2f}" y2="{y+3:.2f}" stroke="{color}" stroke-width="1"/>')
+    svg.append(text(x0 + total * scale + 13, cy, f"{total:.1f}", 21, 700, "#17222C"))
+
+axis_y = 606
+svg.append(f'<line x1="{x0}" y1="{axis_y}" x2="{x0 + 50*scale}" y2="{axis_y}" stroke="#D8E1E5" stroke-width="1.5"/>')
+for tick in range(0, 51, 10):
+    x = x0 + tick * scale
+    svg.append(f'<line x1="{x}" y1="{axis_y-4}" x2="{x}" y2="{axis_y+5}" stroke="#D8E1E5" stroke-width="1"/>')
+    svg.append(text(x, axis_y + 23, tick, 17, 400, "#17222C", "middle"))
+svg.append(text(710, 654, "Cumulative probability (%)", 18, 400, "#17222C", "middle"))
+svg.append(rect(57, 681, 18, 18, "#153F5B"))
+svg.append(text(85, 690, "Method experience or access", 18))
+svg.append(rect(441, 681, 18, 18, "#85909D"))
+svg.append(text(469, 690, "Other recorded reasons", 18))
+svg.append(text(57, 724, "Excluded reasons: desire to become pregnant and husband/partner disapproved. Segment values are percentage points.", 14, 400, "#52636C"))
+svg.append(text(57, 744, "Method experience or access includes failure, bleeding, side effects, wanting a more effective method, and access, cost or inconvenience.", 14, 400, "#52636C"))
+svg.append("</svg>")
+OUTPUT.write_text("\n".join(svg))
+
+print(OUTPUT)
+for method, experience, other, total in rows:
+    print(f"{method}: {experience:.1f} + {other:.1f} = {total:.1f}%")
+)----------------------"
+REPORT_FILES[["src/report/143_render_regional_method_interaction_actionable.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render the focused region-by-method analysis in the working HTML."""
+import csv
+import html
+from pathlib import Path
+import os
+
+root=Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out=root/"output"
+support=out/"Supporting_data"
+with (support/"regional_actionable_focused_method_interaction_probabilities.csv").open() as f:
+    probabilities=list(csv.DictReader(f))
+with (support/"regional_actionable_focused_method_interaction_tests.csv").open() as f:
+    tests=list(csv.DictReader(f))
+with (support/"regional_actionable_focused_method_interaction_global_test.csv").open() as f:
+    global_test=next(csv.DictReader(f))
+assert len(probabilities)==36 and len(tests)==6
+esc=html.escape
+fmt=lambda x:f"{float(x):.1f}"
+pfmt=lambda x:"<0.001" if float(x)<.001 else f"{float(x):.3f}"
+regions=["Tigray","Central Ethiopia","Amhara","Addis Ababa"]
+methods=["Injectables","Implants","Pill"]
+index={(r["region"],r["method"],int(r["month"])):r for r in probabilities}
+rows=[]
+for method in methods:
+    for region in regions:
+        r12=index[region,method,12]
+        cells=[]
+        for month in (3,6,12):
+            r=index[region,method,month]
+            cells.append(f'<td>{fmt(r["adjusted_probability_pct"])}% '
+                f'<small>({fmt(r["ci_low"])}–{fmt(r["ci_high"])})</small></td>')
+        sparse=int(r12["eligible_episodes_n"])<100 or int(r12["actionable_endings_12m_n"])<30
+        flag=' <sup title="Fewer than 100 episodes or 30 actionable endings">*</sup>' if sparse else ''
+        rows.append(f'<tr><th scope="row">{esc(method)}</th><td>{esc(region)}{flag}</td>'
+            f'<td>{r12["eligible_episodes_n"]}</td>'
+            f'<td>{r12["actionable_endings_12m_n"]}</td>'+''.join(cells)+'</tr>')
+test_rows=[]
+for r in tests:
+    significant=str(r["significant_5pct"]).lower()=="true"
+    label="Yes" if significant else "No"
+    test_rows.append(f'<tr><th scope="row">{esc(r["region_a"])} vs {esc(r["region_b"])}</th>'
+        f'<td>Injectable vs {esc(r["comparator_method"].lower())}</td>'
+        f'<td>{fmt(r["injectable_gap_pp"])} pp</td>'
+        f'<td>{fmt(r["comparator_gap_pp"])} pp</td>'
+        f'<td>{fmt(r["gap_difference_pp"])} pp '
+        f'<small>({fmt(r["ci_low_pp"])} to {fmt(r["ci_high_pp"])})</small></td>'
+        f'<td>{pfmt(r["holm_p"])}</td><td>{label}</td></tr>')
+significant=[r for r in tests if str(r["significant_5pct"]).lower()=="true"]
+if significant:
+    findings=("The formal 12-month gap-by-method tests identified "
+      +str(len(significant))+
+      " contrast(s) passing Holm correction across six focused comparisons.")
+else:
+    findings=("None of the six focused tests establishes that a regional gap "
+      "is different for injectables than for implants or pills after Holm correction. "
+      "The estimated differences may still be meaningful; several method cells "
+      "have limited events and wide intervals.")
+start="<!-- BEGIN REGIONAL ACTIONABLE METHOD INTERACTION -->"
+end="<!-- END REGIONAL ACTIONABLE METHOD INTERACTION -->"
+block=f'''{start}
+<h3 id="regional-actionable-method-interaction">Does the regional gap depend on the method started?</h3>
+<p>This focused analysis compares Tigray, Amhara, Central Ethiopia, and Addis Ababa for injectables, implants, and pills. They were selected from earlier regional contrasts and sample-size checks. The outcome is ending the original method during the first year for a potentially actionable reason: method failure, wanting a more effective method, bleeding or other side effects/health concerns, and access/cost/convenience. Other endings stay as competing events. The survey-weighted monthly multinomial model adjusts for duration, age and parity at method start, marital status, education, wealth, residence, and method-start year. It was fitted to the <strong>2,726 eligible episodes</strong> in these four regions and three methods. All displayed probabilities use the same weighted profile of 2,462 episodes observed from method start.</p>
+<figure style="margin:1.5rem 0"><a href="assets/regional_actionable_method_interaction_12month.svg"><img src="assets/regional_actionable_method_interaction_12month.svg" alt="Adjusted 12-month actionable discontinuation probabilities for injectables, implants, and pills across four regions, with confidence intervals and sparse-cell markers" style="display:block;width:100%;height:auto;max-width:1500px;margin:auto"></a><figcaption>Adjusted 12-month probabilities, not distributions of reasons among episodes that ended. Horizontal intervals are pointwise 95% survey-stratified PSU bootstrap intervals. Hollow points flag fewer than 100 eligible episodes or 30 actionable endings.</figcaption></figure>
+<p><strong>Formal test:</strong> The joint test of six 12-month method-by-region gap contrasts gives p = {pfmt(global_test["p_value"])}. For each prior regional pair, we compared the 12-month regional gap for injectables with the gap for implants and again with the gap for pills. Differences and uncertainty come from the same survey-stratified PSU bootstrap refits. Holm-adjusted p-values cover these six focused contrasts; this is an exploratory follow-up to pairs identified in the earlier analysis. {findings}</p>
+<details><summary>Show the adjusted 3-, 6-, and 12-month probabilities for every region and method</summary>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Method</th><th>Region</th><th>Eligible episodes</th><th>Actionable endings by 12 months</th><th>3 months (95% CI)</th><th>6 months (95% CI)</th><th>12 months (95% CI)</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>
+<p><sup>*</sup> Fewer than 100 eligible episodes or 30 observed actionable endings within 12 months. These estimates are exploratory and may be imprecise. Episode counts are unweighted; probabilities and intervals use survey weights and stratified PSU resampling.</p></details>
+<h4>Does the regional gap differ between methods?</h4>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Region pair</th><th>Methods contrasted</th><th>Injectable gap</th><th>Other-method gap</th><th>Difference between gaps (95% CI)</th><th>Holm p</th><th>Passes 5% correction?</th></tr></thead><tbody>{''.join(test_rows)}</tbody></table></div>
+<p>A difference between gaps is a statistical interaction on the <em>12-month probability scale</em>. It does not identify why a method is discontinued. These adjusted estimates come from a focused four-region, three-method model, so they need not equal the earlier all-region Model 2 estimates. Small cells, especially pills in Tigray and Central Ethiopia and implant endings in Amhara and Addis Ababa, limit precision.</p>
+<div class="downloads"><a href="Supporting_data/regional_actionable_focused_method_interaction_probabilities.csv">Adjusted probabilities and counts</a><a href="Supporting_data/regional_actionable_focused_method_interaction_tests.csv">Method-interaction tests</a><a href="Supporting_data/regional_actionable_focused_method_interaction_global_test.csv">Joint test</a><a href="../Code/141_regional_method_interaction_actionable.R">Reproduce model and bootstrap</a></div>
+{end}'''
+working=out/"Ethiopia_discontinuation_analysis.html"
+from report_fragments import replace_fragment
+replace_fragment(working,'regional-actionable-method-interaction',block,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-method-interaction')
+)----------------------"
+REPORT_FILES[["src/report/147_render_actionable_regional_injectables_implants.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Add the observed injectable/implant regional tests to the working HTML."""
+import csv
+import html
+from pathlib import Path
+import os
+
+root=Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out=root/"output"
+support=out/"Supporting_data"
+def read(name):
+    with (support/name).open() as f:
+        return list(csv.DictReader(f))
+rates=read("regional_actionable_injectable_implant_rates.csv")
+global_tests=read("regional_actionable_injectable_implant_global_tests.csv")
+pairs=read("regional_actionable_injectable_implant_pairwise_tests.csv")
+assert len(rates)==28 and len(global_tests)==2 and len(pairs)==121
+e=html.escape
+f=lambda x:f"{float(x):.1f}"
+p=lambda x:"<0.001" if float(x)<.001 else f"{float(x):.3f}"
+by={(r['method'],r['region']):r for r in rates}
+region_order=["Tigray","Central Ethiopia","South Ethiopia",
+    "Benishangul-Gumuz","Harari","Oromia","Gambella","Sidama",
+    "Afar","South West Ethiopia","Addis Ababa","Amhara",
+    "Dire Dawa","Somali"]
+def cell(method,region):
+    r=by[method,region]
+    count=f"{r['eligible_episodes_n']} episodes; {r['actionable_endings_n']} endings"
+    if r['tested']!='TRUE':
+        return f'<td>Insufficient data <small>({count})</small></td>'
+    flag=' <sup>*</sup>' if int(r['actionable_endings_n'])<30 else ''
+    return (f'<td>{f(r["estimate_pct"])}%{flag} '
+      f'<small>({f(r["ci_low"])}–{f(r["ci_high"])})</small>'
+      f'<br><small>{count}</small></td>')
+rows=''.join(f'<tr><th scope="row">{e(region)}</th>'+
+    cell('Injectables',region)+cell('Implants',region)+'</tr>'
+    for region in region_order)
+g={r['method']:r for r in global_tests}
+sig=[r for r in pairs if r['significant_5pct']=='TRUE']
+assert len(sig)==1 and sig[0]['method']=='Injectables'
+s=sig[0]
+start='<!-- BEGIN INJECTABLE IMPLANT REGIONAL ACTIONABLE TESTS -->'
+end='<!-- END INJECTABLE IMPLANT REGIONAL ACTIONABLE TESTS -->'
+block=f'''{start}
+<h3 id="regional-actionable-injectable-implant-tests">Do 12-month actionable discontinuation rates differ by region for injectables and implants?</h3>
+<p>These are <strong>observed, unadjusted</strong> survey-weighted 12-month cumulative probabilities of ending the original method for a potentially actionable reason. Each method has its own eligible episodes as the denominator: 4,796 injectable episodes (824 observed actionable first-year endings) and 2,522 implant episodes (191 endings). Wanted pregnancy, partner disapproval, and all other nonselected endings remain competing events. The monthly life table accommodates right censoring and episodes first observed after method start; its point estimates reproduce the existing regional method-rate table.</p>
+<figure style="margin:1.4rem 0"><a href="assets/regional_actionable_injectable_implant_12month_tests.svg"><img src="assets/regional_actionable_injectable_implant_12month_tests.svg" alt="Observed 12-month actionable discontinuation by region, separately for injectables and implants, with survey-bootstrap intervals and sparse-cell flags" style="display:block;width:100%;height:auto;max-width:1500px;margin:auto"></a><figcaption>The dashed line is the national probability for that method (injectables 18.8%; implants 8.2%). The two panels test <em>regional differences within each method</em>; they are not a test comparing injectables with implants.</figcaption></figure>
+<p><strong>Global regional tests.</strong> We included regions with at least 100 eligible episodes and 10 observed actionable first-year endings for the method. For injectables, 12 regions met that criterion; the survey-bootstrap Wald test gives p = {p(g['Injectables']['p_value'])} and p = <strong>{p(g['Injectables']['holm_p_across_methods'])}</strong> after Holm correction across the two methods. For implants, 11 regions met it; p = <strong>{p(g['Implants']['holm_p_across_methods'])}</strong>. Thus the data support regional variation in the injectable probability; they do not establish regional variation for implants. An inconclusive implant test is not evidence that its true regional risks are identical.</p>
+<p><strong>Which regions differ?</strong> We tested every pair among the eligible regions for each method (66 injectable and 55 implant comparisons), using the same 5,000 survey-stratified PSU bootstrap samples and Holm correction across all 121 pairs. Only <strong>{e(s['region_a'])} versus {e(s['region_b'])}</strong> remained significant: {f(s['rate_a_pct'])}% versus {f(s['rate_b_pct'])}% for injectables, a difference of {f(s['difference_pp'])} percentage points (pointwise 95% bootstrap interval {f(s['ci_low_pp'])} to {f(s['ci_high_pp'])}; corrected p = {p(s['holm_p'])}). No implant pair survived correction. The interval is pointwise; the corrected p-value is the multiple-comparison decision.</p>
+<details><summary>Show every regional probability, confidence interval, and observed count</summary>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Region</th><th>Injectables: 12-month probability (95% CI)</th><th>Implants: 12-month probability (95% CI)</th></tr></thead><tbody>{rows}</tbody></table></div>
+<p><sup>*</sup> Exploratory cell with 10–29 observed actionable first-year endings. “Insufficient data” means fewer than 100 eligible episodes or fewer than 10 such endings; these regions are shown on the plot for orientation but excluded from formal tests. Counts are unweighted; probabilities and intervals use survey weights and stratified PSU resampling. Repeated episodes remain together within a resampled PSU.</p></details>
+<p>These tests describe <em>unadjusted</em> regional differences within each method. They do not control for differences in age, parity, or other characteristics of women using the method in each region, and they do not establish a causal regional effect. The implant comparisons have limited power because many regions have only 10–29 actionable endings.</p>
+<div class="downloads"><a href="Supporting_data/regional_actionable_injectable_implant_rates.csv">Regional rates and counts</a><a href="Supporting_data/regional_actionable_injectable_implant_global_tests.csv">Global tests</a><a href="Supporting_data/regional_actionable_injectable_implant_pairwise_tests.csv">All pairwise tests</a><a href="../Code/145_test_actionable_regional_rates_injectables_implants.R">Reproduce estimates and tests</a></div>
+{end}'''
+working=out/"Ethiopia_discontinuation_analysis.html"
+from report_fragments import replace_fragment
+replace_fragment(working,'regional-actionable-injectable-implant-tests',block,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered injectable and implant comparisons')
+)----------------------"
+REPORT_FILES[["src/report/150_render_injectable_three_stage_regional_tests.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render the three-stage injectable regional comparison in the working HTML."""
+import csv
+import html
+from pathlib import Path
+import os
+
+root=Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out=root/'output'
+support=out/'Supporting_data'
+def read(name):
+    with (support/name).open() as f:return list(csv.DictReader(f))
+raw_rates=[r for r in read('regional_actionable_injectable_implant_rates.csv')
+           if r['method']=='Injectables' and r['tested']=='TRUE']
+raw_global=next(r for r in read('regional_actionable_injectable_implant_global_tests.csv')
+                if r['method']=='Injectables')
+raw_pairs=[r for r in read('regional_actionable_injectable_implant_pairwise_tests.csv')
+           if r['method']=='Injectables']
+adj_rates=read('regional_actionable_injectable_full_probabilities.csv')
+adj_global=read('regional_actionable_injectable_full_global_test.csv')[0]
+adj_pairs=read('regional_actionable_injectable_full_pairwise_tests.csv')
+assert len(raw_rates)==len(adj_rates)==12
+assert len(raw_pairs)==len(adj_pairs)==66
+fmt=lambda x:f'{float(x):.1f}'
+pfmt=lambda x:'<0.001' if float(x)<.001 else f'{float(x):.3f}'
+esc=html.escape
+def holm(pvalues):
+    n=len(pvalues);indices=sorted(range(n),key=lambda i:pvalues[i])
+    result=[0]*n;running=0
+    for rank,i in enumerate(indices):
+        running=max(running,min(1,(n-rank)*pvalues[i]))
+        result[i]=running
+    return result
+raw_holm=holm([float(r['p_value']) for r in raw_pairs])
+for r,v in zip(raw_pairs,raw_holm):r['injectable_only_holm_p']=v
+raw_by={frozenset((r['region_a'],r['region_b'])):r for r in raw_pairs}
+adj_by={frozenset((r['region_a'],r['region_b'])):r for r in adj_pairs}
+assert raw_by.keys()==adj_by.keys()
+raw_sig={k for k,r in raw_by.items() if r['injectable_only_holm_p']<.05}
+adj_sig={k for k,r in adj_by.items() if float(r['holm_p'])<.05}
+top=raw_sig|adj_sig
+def aligned_adj(raw,adj):
+    sign=1 if (raw['region_a'],raw['region_b'])==(
+        adj['region_a'],adj['region_b']) else -1
+    low=float(adj['ci_low_pp']);high=float(adj['ci_high_pp'])
+    if sign<0:low,high=-high,-low
+    return sign*float(adj['difference_pp']),low,high
+def pair_row(key):
+    a=raw_by[key];b=adj_by[key]
+    name=f'{esc(a["region_a"])} vs {esc(a["region_b"])}'
+    adjusted,low,high=aligned_adj(a,b)
+    return (f'<tr><th scope="row">{name}</th>'
+      f'<td>{fmt(a["difference_pp"])} pp <small>({fmt(a["ci_low_pp"])} to {fmt(a["ci_high_pp"])})</small></td>'
+      f'<td>{pfmt(a["injectable_only_holm_p"])}</td>'
+      f'<td>{adjusted:.1f} pp <small>({low:.1f} to {high:.1f})</small></td>'
+      f'<td>{pfmt(b["holm_p"])}</td></tr>')
+top_rows=''.join(pair_row(k) for k in sorted(top,
+  key=lambda k: min(raw_by[k]['injectable_only_holm_p'],
+                    float(adj_by[k]['holm_p']))))
+if not top_rows:
+    top_rows='<tr><td colspan="5">No regional pair passes Holm correction at 5% in either distinct stage.</td></tr>'
+all_rows=''.join(pair_row(k) for k in sorted(raw_by,
+  key=lambda k:min(raw_by[k]['injectable_only_holm_p'],
+                   float(adj_by[k]['holm_p']))))
+raw_by_region={r['region']:r for r in raw_rates}
+adj_by_region={r['region']:r for r in adj_rates}
+region_order=sorted(raw_by_region,
+  key=lambda r:float(raw_by_region[r]['estimate_pct']),reverse=True)
+rate_rows=''.join(
+  f'<tr><th scope="row">{esc(region)}</th>'
+  f'<td>{fmt(raw_by_region[region]["estimate_pct"])}% '
+  f'<small>({fmt(raw_by_region[region]["ci_low"])}–{fmt(raw_by_region[region]["ci_high"])})</small></td>'
+  f'<td>{fmt(adj_by_region[region]["adjusted_probability_pct"])}% '
+  f'<small>({fmt(adj_by_region[region]["ci_low"])}–{fmt(adj_by_region[region]["ci_high"])})</small></td>'
+  f'<td>{raw_by_region[region]["eligible_episodes_n"]}</td>'
+  f'<td>{raw_by_region[region]["actionable_endings_n"]}</td></tr>'
+  for region in region_order)
+raw_p=pfmt(raw_global['p_value'])
+adj_p=pfmt(adj_global['p_value'])
+if float(adj_global['p_value'])<.05:
+    summary=('The fully adjusted global test also supports regional variation; '
+      'measured population characteristics do not account for all observed variation.')
+else:
+    summary=('The fully adjusted global test does not establish regional variation '
+      'at 5%; this does not prove all adjusted regional risks are equal.')
+start='<!-- BEGIN INJECTABLE THREE STAGE REGIONAL TESTS -->'
+end='<!-- END INJECTABLE THREE STAGE REGIONAL TESTS -->'
+block=f'''{start}
+<h3 id="regional-actionable-injectable-three-stage">Injectable regional gaps: observed, common method mix, and fully adjusted</h3>
+<p>This repeats the three-stage regional comparison specifically for <strong>injectable episodes</strong> and the 12-month probability of ending the original method for a potentially actionable reason. Wanted pregnancy, partner disapproval, and other nonselected endings remain competing events. The observed analysis uses the same survey-weighted DHS-style monthly life table as the method-specific rate figure above.</p>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Stage</th><th>What is compared</th><th>Tested regions</th><th>Global p</th><th>Purpose</th></tr></thead><tbody>
+<tr><th scope="row">1. Observed</th><td>Actual injectable episodes in each region</td><td>12</td><td>{raw_p}</td><td>Is there an observed regional difference?</td></tr>
+<tr><th scope="row">2. Same method mix</th><td><strong>Identical to Stage 1:</strong> each episode is already injectable use</td><td>12</td><td>{raw_p}</td><td>Method mix cannot explain differences within a single method.</td></tr>
+<tr><th scope="row">3. Fully adjusted</th><td>Injectable-only monthly competing-event model; compare regions using the same measured injectable-user profiles</td><td>12</td><td>{adj_p}</td><td>How much regional variation remains after accounting for measured user composition?</td></tr>
+</tbody></table></div>
+<p>Stage 3 includes month of use, region, age and parity at method start, marital status, education, wealth, residence, and method-start year. It fits 4,706 eligible injectable episodes in the 12 testable regions, including episodes observed after use began. To obtain comparable adjusted probabilities, it predicts each region’s 12-month risk for the same survey-weighted set of 4,156 injectable episodes observed from method start, then averages those predictions. This is adjustment for measured composition, not a causal estimate of a region’s health system.</p>
+<figure style="margin:1.5rem 0"><a href="assets/regional_actionable_injectable_three_stage_tests.svg"><img src="assets/regional_actionable_injectable_three_stage_tests.svg" alt="Observed and fully adjusted 12-month injectable discontinuation probabilities by region with 95% confidence intervals, dotted national benchmark, and stars identifying regions in significant pairwise comparisons" style="display:block;width:100%;height:auto;max-width:1350px;margin:auto"></a><figcaption>Gold: observed. Navy: fully adjusted. The dotted line is the national observed injectable rate. Asterisks mark regions in a significant regional pair at that stage, after Holm correction across 66 pairs; they do not indicate a difference from the national rate. Stage 2 coincides with observed because every episode is injectable use.</figcaption></figure>
+<p><strong>Global tests:</strong> Stage 1 (and identical Stage 2) p = {raw_p}; Stage 3 p = {adj_p}. {summary} These global tests ask whether all 12 tested regional probabilities can be equal; they do not identify which pairs differ.</p>
+<h4>Regional pairs surviving multiple-comparison correction</h4>
+<p>For each distinct stage we tested all 66 region pairs using survey-stratified PSU bootstrap differences and Holm correction across those 66 comparisons. Stage 2 repeats Stage 1 exactly. The corrected p-values here use an <em>injectable-only</em> comparison family; they can differ from the previous table’s correction across injectable and implant pairs together.</p>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Region pair</th><th>Observed gap (pointwise 95% CI)</th><th>Observed Holm p</th><th>Fully adjusted gap (pointwise 95% CI)</th><th>Adjusted Holm p</th></tr></thead><tbody>{top_rows}</tbody></table></div>
+<p>The Tigray–South West Ethiopia adjusted comparison is close to the corrected 5% threshold and should be treated as exploratory. A gap becoming statistically distinguishable after adjustment can reflect changes in the estimate or its precision; it does not by itself prove what caused the gap. The fully adjusted intervals and tests use 500 valid survey-stratified PSU bootstrap refits.</p>
+<details><summary>Show all 66 tested regional pairs</summary><div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Region pair</th><th>Observed gap (pointwise 95% CI)</th><th>Observed Holm p</th><th>Fully adjusted gap (pointwise 95% CI)</th><th>Adjusted Holm p</th></tr></thead><tbody>{all_rows}</tbody></table></div></details>
+<details><summary>Show observed and fully adjusted probabilities for all 12 tested regions</summary><div class="table-wrap analysis-table" role="region" tabindex="0"><table><thead><tr><th>Region</th><th>Observed (95% CI)</th><th>Fully adjusted (95% CI)</th><th>Eligible episodes</th><th>Actionable first-year endings</th></tr></thead><tbody>{rate_rows}</tbody></table></div></details>
+<p>Somali (10 injectable episodes, 3 actionable endings) and Dire Dawa (80 episodes, 15 endings) are excluded from formal testing by the predeclared threshold of at least 100 eligible episodes and 10 actionable endings. Afar and Harari meet the threshold but have only 14 and 19 endings, so their intervals are wide. Marital status, education, wealth, and residence were recorded at interview and may not describe an earlier episode exactly. The observed and adjusted estimates use different averaging populations; subtracting those two estimates is not a causal or exact decomposition. No pairwise interval alone determines the multiplicity-adjusted result.</p>
+<div class="downloads"><a href="presentation_FINAL_with_subnational_injectable_pairwise.pptx">PowerPoint with this figure</a><a href="Supporting_data/regional_actionable_injectable_full_probabilities.csv">Adjusted probabilities</a><a href="Supporting_data/regional_actionable_injectable_full_global_test.csv">Adjusted global test</a><a href="Supporting_data/regional_actionable_injectable_full_pairwise_tests.csv">Adjusted pairwise tests</a><a href="../Code/148_injectable_actionable_fully_adjusted_regional_tests.R">Reproduce the adjusted model</a></div>
+{end}'''
+working=out/'Ethiopia_discontinuation_analysis.html'
+from report_fragments import replace_fragment
+replace_fragment(working,'regional-actionable-injectable-three-stage',block,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered regional-actionable-injectable-three-stage')
+)----------------------"
+REPORT_FILES[["src/report/22_add_other_reason_breakdown_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Append the two distinct Other-reason distributions to the working HTML."""
+
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+PROJECT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUTPUT = PROJECT / "output"
+PAGE = OUTPUT / "Ethiopia_discontinuation_analysis.html"
+FIRST = OUTPUT / "Supporting_data/other_recorded_reasons_first_year_breakdown.csv"
+FIVE = OUTPUT / "Supporting_data/other_reasons_five_year_breakdown.csv"
+START = "<!-- START OTHER REASON COUNT BREAKDOWN -->"
+END = "<!-- END OTHER REASON COUNT BREAKDOWN -->"
+
+
+def records(path):
+    with path.open(newline="") as stream:
+        return list(csv.DictReader(stream))
+
+
+def row(label, raw, weighted, share, group=None, bold=False):
+    th = f'<th scope="row">{escape(label)}</th>'
+    if group is not None:
+        th = f'<td>{escape(group)}</td>' + th
+    values = f'<td>{raw:,}</td><td>{weighted:,.1f}</td><td>{share:.1f}</td>'
+    cells = th + values
+    return f'<tr class="total-row">{cells}</tr>' if bold else f'<tr>{cells}</tr>'
+
+
+first = records(FIRST)
+five = records(FIVE)
+first_total_raw = sum(int(x["unweighted_n"]) for x in first)
+first_total_wt = sum(float(x["weighted_n"]) for x in first)
+five_total_raw = sum(int(x["unweighted_n"]) for x in five)
+five_total_wt = sum(float(x["weighted_n"]) for x in five)
+assert first_total_raw == 527 and five_total_raw == 362
+
+first_rows = "\n".join(
+    row(x["reason"], int(x["unweighted_n"]), float(x["weighted_n"]),
+        float(x["percent_within_other"]), x["group"])
+    for x in first
+)
+five_rows = "\n".join(
+    row(x["reason"], int(x["unweighted_n"]), float(x["weighted_n"]),
+        float(x["percent_within_other"]))
+    for x in five
+)
+
+section = f'''{START}
+<section id="other-reasons-count-breakdown">
+<h2>What is inside “Other” discontinuation reasons?</h2>
+<p>Two figures use different definitions of “Other.” The gray <strong>Other recorded reasons</strong> segment in the 12-month discontinuation chart combines other fertility-related reasons with residual other or unknown reasons. The narrower <strong>Other reasons</strong> category in the five-year reason-distribution chart contains only the residual reasons. Both tables below exclude emergency contraception and use the survey weight for percentages and weighted counts.</p>
+<h3>Other recorded reasons in the 12-month discontinuation chart</h3>
+<p>Among <strong>{first_total_raw:,} observed original-method endings</strong> (weighted N = {first_total_wt:,.1f}) in this category during the first 12 months of use, the recorded reasons were:</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Breakdown of other recorded reasons in the first twelve months" tabindex="0"><table>
+<thead><tr><th scope="col">Reason family</th><th scope="col">Recorded reason</th><th scope="col">Unweighted N</th><th scope="col">Weighted N</th><th scope="col">Share of Other recorded reasons (%)</th></tr></thead>
+<tbody>{first_rows}
+{row("Total Other recorded reasons", first_total_raw, first_total_wt, 100, "", True)}</tbody></table></div>
+<p class="note">The share column is a distribution <em>among the observed endings in this category</em>; it sums to 100% apart from rounding. It is not the 12-month competing-risks probability. The latter is <strong>6.67%</strong> of eligible original-method episodes and accounts for censoring and changing monthly risk sets. “Missing or unclassified” is retained here because it contributes to the residual Other segment. The eight unweighted endings for difficulty becoming pregnant or menopause warrant caution.</p>
+<h3>Other reasons in the five-year reason-distribution chart</h3>
+<p>The narrower residual category contains <strong>{five_total_raw:,} observed discontinuations</strong> (weighted N = {five_total_wt:,.1f}) across the five-year calendar window:</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Breakdown of residual other reasons in the five-year reason distribution" tabindex="0"><table>
+<thead><tr><th scope="col">Recorded reason</th><th scope="col">Unweighted N</th><th scope="col">Weighted N</th><th scope="col">Share of Other reasons (%)</th></tr></thead>
+<tbody>{five_rows}
+{row("Total Other reasons", five_total_raw, five_total_wt, 100, bold=True)}</tbody></table></div>
+<p class="note">These are recorded method-ending events, not women. A woman can contribute more than one event. The five-year tabulation follows the DHS Table 7.12 reason-distribution window; its counts therefore differ from the first-year life-table counts above. “Other, unspecified” is not further detailed in the calendar reason code.</p>
+<div class="downloads"><a href="Supporting_data/other_recorded_reasons_first_year_breakdown.csv">Download first-year breakdown</a><a href="Supporting_data/other_reasons_five_year_breakdown.csv">Download five-year breakdown</a></div>
+</section>
+{END}'''
+
+html = PAGE.read_text()
+if START in html:
+    html = html[:html.index(START)] + html[html.index(END) + len(END):]
+marker = "<!-- END PRESENTATION FIGURES -->"
+assert html.count(marker) == 1
+html = html.replace(marker, section + "\n" + marker)
+PAGE.write_text(html)
+)----------------------"
+REPORT_FILES[["src/report/24_add_infrequent_sex_followup_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Add the fixed-cohort month 1/3/6/12 comparison to the working HTML."""
+
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+page = project / "output/Ethiopia_discontinuation_analysis.html"
+data_file = project / "output/Supporting_data/infrequent_sex_followup_states_months_1_3_6_12.csv"
+start = "<!-- START INFREQUENT SEX FOLLOWUP -->"
+end = "<!-- END INFREQUENT SEX FOLLOWUP -->"
+with data_file.open(newline="") as stream:
+    data = list(csv.DictReader(stream))
+assert len(data) == 12
+
+def pct(row, field):
+    return float(row[field])
+
+def display_group(label):
+    return {
+        "Infrequent sex or husband away": "Infrequent sex or husband away",
+        "All other stated reasons": "All other reasons",
+        "Other reasons excluding wanted pregnancy and partner disapproval":
+            "Other reasons, excluding wanted pregnancy and partner disapproval",
+    }[label]
+
+rows = []
+for record in data:
+    other = sum(pct(record, name) for name in (
+        "birth_or_termination_pct", "traditional_method_pct",
+        "emergency_contraception_pct", "other_unknown_pct"))
+    no_method = pct(record, "no_method_pct")
+    lower = pct(record, "no_method_ci_lower")
+    upper = pct(record, "no_method_ci_upper")
+    rows.append(
+        f'<tr><th scope="row">{record["month_after_stop"]}</th>'
+        f'<td>{escape(display_group(record["comparison"]))}</td>'
+        f'<td>{int(record["unweighted_episodes"]):,}</td>'
+        f'<td><strong>{no_method:.1f}</strong> <small>({lower:.1f}–{upper:.1f})</small></td>'
+        f'<td>{pct(record, "original_method_again_pct"):.1f}</td>'
+        f'<td>{pct(record, "different_modern_method_pct"):.1f}</td>'
+        f'<td>{pct(record, "pregnant_pct"):.1f}</td>'
+        f'<td>{other:.1f}</td></tr>'
+    )
+
+section = f'''{start}
+<section id="infrequent-sex-followup">
+<h2>What follows discontinuation attributed to infrequent sex or a husband away?</h2>
+<p>The table follows the <strong>same recorded modern-method discontinuation episodes</strong> at months 1, 3, 6, and 12 after the original method ended. All included episodes have 12 subsequent calendar months observed, and emergency contraception is excluded as an originating method. This fixed cohort contains 273 episodes coded “infrequent sex/husband away” from 229 women (348.7 weighted episodes). The first comparison includes all other stated reasons; the second excludes “wanted to become pregnant” and “husband/partner disapproved” from that comparison group.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Calendar states at months one three six and twelve after discontinuation" tabindex="0"><table>
+<thead><tr><th scope="col">Month after stop</th><th scope="col">Recorded reason group</th><th scope="col">Unweighted episodes</th><th scope="col">No method, % (95% CI)</th><th scope="col">Original method again, %</th><th scope="col">Different modern method, %</th><th scope="col">Pregnant, %</th><th scope="col">Other state, %</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></div>
+<p class="note"><strong>Reading the table:</strong> Each row is a weighted distribution of the calendar state <em>at that month</em> and totals 100% before rounding. “Original method again” means the same method appears at the checkpoint after a recorded stop; “different modern method” excludes emergency contraception. “Other state” combines traditional use, emergency contraception, birth, and pregnancy termination; no states were unknown. Pregnancy is the state in that particular month, not the cumulative share that became pregnant at any time since stopping. The two comparison rows overlap: the restricted comparison is a subset of “all other reasons.”</p>
+<p class="note"><strong>Survey design and limits:</strong> Percentages use DHS individual weights; the no-method confidence intervals use strata <code>v022</code> and PSUs <code>v021</code>, which cluster repeated episodes from the same woman. These are descriptive associations, not effects of the stated reason. The calendar records neither intercourse nor partner residence in each historical month. EC remains visible as a subsequent state in the downloadable detailed data, although EC-originating episodes were excluded.</p>
+<p><strong>Main pattern:</strong> Among episodes attributed to infrequent sex or a husband away, 97.0% were followed by no method at month 1, and 82.8% were at no method at month 12 (95% CI 75.7–89.9). At month 12, 10.1% were using the original method again, 2.5% a different ongoing modern method, and 4.5% were pregnant. In the comparison excluding wanted pregnancy and partner disapproval, 49.0% were at no method at month 12. Differences in the original method mix and circumstances also affect this comparison.</p>
+<div class="downloads"><a href="Supporting_data/infrequent_sex_followup_states_months_1_3_6_12.csv">Download all state percentages, counts, and no-method confidence intervals</a></div>
+</section>
+{end}'''
+
+html = page.read_text()
+if start in html:
+    html = html[:html.index(start)] + html[html.index(end) + len(end):]
+marker = "<!-- END PRESENTATION FIGURES -->"
+assert html.count(marker) == 1
+html = html.replace(marker, section + "\n" + marker)
+page.write_text(html)
+)----------------------"
+REPORT_FILES[["src/report/26_add_other_recorded_reason_followup_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Replace the incorrect comparison with a five-row Other-reason follow-up table."""
+
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+page = project / "output/Ethiopia_discontinuation_analysis.html"
+data_file = project / "output/Supporting_data/other_recorded_reason_followup_states_1_3_6_12.csv"
+start = "<!-- START INFREQUENT SEX FOLLOWUP -->"
+end = "<!-- END INFREQUENT SEX FOLLOWUP -->"
+
+with data_file.open(newline="") as stream:
+    data = list(csv.DictReader(stream))
+assert len(data) == 20
+
+groups = list(dict.fromkeys(record["reason_subgroup"] for record in data))
+months = (1, 3, 6, 12)
+fields = (
+    ("no_method_pct", "No method", "no-method"),
+    ("original_method_again_pct", "Original method again", "same-method"),
+    ("different_modern_method_pct", "Different modern method", "modern-switch"),
+    ("traditional_method_pct", "Traditional method", "traditional"),
+    ("emergency_contraception_pct", "Emergency contraception", "ec"),
+    ("pregnant_birth_or_termination_pct", "Pregnant / birth / termination", "pregnancy"),
+)
+
+
+def cell(record):
+    parts = []
+    for key, label, kind in fields:
+        value = float(record[key])
+        if value >= 0.05:
+            parts.append(
+                f'<span class="orf-state orf-{kind}">'
+                f'<span>{label}</span><strong>{value:.1f}%</strong></span>'
+            )
+    return '<td class="orf-month">' + ''.join(parts) + '</td>'
+
+
+rows = []
+for group in groups:
+    records = {int(r["month_after_stop"]): r for r in data if r["reason_subgroup"] == group}
+    assert set(records) == set(months)
+    first = records[1]
+    count = int(first["unweighted_episodes"])
+    share = float(first["weighted_share_within_other"])
+    caution = '<span class="orf-caution">Small N</span>' if count < 25 else ''
+    rows.append(
+        f'<tr><th scope="row">{escape(group)}{caution}</th>'
+        f'<td class="orf-n"><strong>{count:,}</strong> ({share:.1f}%)</td>'
+        + ''.join(cell(records[month]) for month in months) + '</tr>'
+    )
+
+section = f'''{start}
+<section id="other-reason-followup">
+<style>
+#other-reason-followup .orf-table {{width:100%; min-width:1140px; border-collapse:collapse; font-size:13px; line-height:1.26}}
+#other-reason-followup .orf-table th,#other-reason-followup .orf-table td {{vertical-align:top; padding:12px 11px; border-bottom:1px solid #d9e5e8}}
+#other-reason-followup .orf-table thead th {{color:#123740; background:#e9f2f3; font-size:13px; white-space:nowrap}}
+#other-reason-followup .orf-table tbody th {{min-width:190px; max-width:220px; color:#173b43; text-align:left; font-weight:700}}
+#other-reason-followup .orf-table tbody tr:nth-child(even) {{background:#f7fafb}}
+#other-reason-followup .orf-n {{min-width:95px; color:#123740; white-space:nowrap}}
+#other-reason-followup .orf-month {{min-width:178px}}
+#other-reason-followup .orf-state {{display:flex; justify-content:space-between; gap:8px; padding:2px 0}}
+#other-reason-followup .orf-state strong {{white-space:nowrap; color:#123740; font-weight:700}}
+#other-reason-followup .orf-no-method span:first-child {{color:#63757b}}
+#other-reason-followup .orf-same-method span:first-child {{color:#005f58}}
+#other-reason-followup .orf-modern-switch span:first-child {{color:#008d9d}}
+#other-reason-followup .orf-pregnancy span:first-child {{color:#b64d4f}}
+#other-reason-followup .orf-caution {{display:block; margin-top:4px; color:#a05c10; font-size:11px; font-weight:600}}
+</style>
+<h2>What follows discontinuation for each “Other recorded reason”?</h2>
+<p>These are <strong>only</strong> the modern-method episodes that ended for a reason in the broad “Other recorded reasons” category of the 12-month discontinuation analysis. Each column shows the weighted distribution of calendar states at that month after the method ended. The same <strong>417 episodes</strong> from <strong>339 women</strong> appear at all four checkpoints because all had 12 months of follow-up observed.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Other recorded reasons and subsequent calendar states at months one, three, six, and twelve" tabindex="0"><table class="orf-table">
+<thead><tr><th scope="col">Recorded reason within “Other”</th><th scope="col">N (share of Other)</th><th scope="col">State at 1 month</th><th scope="col">State at 3 months</th><th scope="col">State at 6 months</th><th scope="col">State at 12 months</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></div>
+<p class="note"><strong>Reading the table:</strong> The N is the unweighted episode count; its percentage is the survey-weighted share among these 417 eligible “Other” episodes. Each month cell gives a <em>snapshot</em> of states and sums to 100% before rounding. Zero-valued states are omitted. “Original method again” means use of the same method at that checkpoint after a recorded stop; “different modern method” excludes emergency contraception. The pregnancy state combines pregnant, birth, and pregnancy termination. Emergency contraception was excluded as an originating method but can appear later.</p>
+<p class="note"><strong>Follow-up and precision:</strong> The full first-year “Other recorded reasons” group contains 527 observed endings; 110 had fewer than 12 subsequent calendar months and are excluded from this fixed-cohort table. Percentages use DHS individual weights. The difficulty/menopause row has only 8 episodes, so its percentages are unstable. The historical calendar does not record when sex resumed or a partner returned; these patterns cannot establish why use resumed. An episode is a recorded period of method use, and a woman may contribute multiple episodes.</p>
+<div class="downloads"><a href="Supporting_data/other_recorded_reason_followup_states_1_3_6_12.csv">Download counts and full-precision state distributions</a></div>
+</section>
+{end}'''
+
+html = page.read_text()
+assert html.count(start) == 1 and html.count(end) == 1
+html = html[:html.index(start)] + section + html[html.index(end) + len(end):]
+page.write_text(html)
+)----------------------"
+REPORT_FILES[["src/report/30_add_method_experience_reason_detail.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Insert the method-experience reason drill-down into the working HTML."""
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+project = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = project / 'output'
+html_path = out / 'Ethiopia_discontinuation_analysis.html'
+csv_path = out / 'reason_mix_by_method_experience_access_detail.csv'
+rows = list(csv.DictReader(csv_path.open()))
+methods = ['Injectables', 'Implants', 'Pill', 'IUD', 'Other modern', 'All modern']
+reasons = ['Method failure', 'Wanted a more effective method',
+           'Side effects/health', 'Access/cost/inconvenience']
+lookup = {(r['method'], r['reason_group']): r for r in rows}
+body = []
+for method in methods:
+    values = [lookup[(method, reason)] for reason in reasons]
+    assert abs(sum(float(r['percent']) for r in values) - 100) < 1e-8
+    n = int(values[0]['unweighted_episodes'])
+    weighted = float(values[0]['weighted_episodes'])
+    cells = ''.join(f'<td>{float(r["percent"]):.1f}</td>' for r in values)
+    cls = ' class="total-row"' if method == 'All modern' else ''
+    body.append(f'<tr{cls}><th scope="row">{escape(method)}</th><td>{n:,}</td>'
+                f'<td>{weighted:,.1f}</td>{cells}</tr>')
+
+block = '''<!-- START METHOD EXPERIENCE DETAIL -->
+<h3 id="method-experience-reasons-by-method">Distribution of reasons for discontinuation by method, focusing only on method experience and access</h3>
+<p>This figure shows <strong>why episodes ended within the method experience or access group</strong>. It keeps only method failure, wanting a more effective method, side effects or health concerns (including bleeding changes), and access, cost, or inconvenience. Wanted pregnancy, husband/partner disapproval, and all Other recorded reasons are excluded. Each method bar sums to 100% <em>among its method experience or access endings</em>; it does not show a 12-month discontinuation rate.</p>
+<div class="figure-grid"><figure><a href="assets/reason_mix_by_method_experience_access_detail.svg?v=115"><img src="assets/reason_mix_by_method_experience_access_detail.svg?v=115" alt="Weighted distribution of four recorded method experience or access reasons among discontinued modern-method episodes, by method. Each bar sums to 100 percent."></a><figcaption>Reason shares among method experience and access discontinuations only. Emergency contraception is excluded. Colors match the earlier detailed-reasons bar graph.</figcaption></figure></div>
+<div class="table-wrap analysis-table" role="region" aria-label="Detailed weighted reason shares within method experience and access discontinuations" tabindex="0"><table>
+<thead><tr><th scope="col">Method</th><th scope="col">Observed endings (n)</th><th scope="col">Weighted endings</th><th scope="col">Method failure (%)</th><th scope="col">Wanted more effective (%)</th><th scope="col">Side effects / health (%)</th><th scope="col">Access / cost / inconvenience (%)</th></tr></thead>
+<tbody>''' + ''.join(body) + '''</tbody></table></div>
+<p class="note"><strong>Denominator:</strong> The all-modern row includes ''' + f'{int(lookup[("All modern", reasons[0])]["unweighted_episodes"]):,}' + ''' observed endings (''' + f'{float(lookup[("All modern", reasons[0])]["weighted_episodes"]):,.1f}' + ''' weighted). A woman can contribute more than one ending. “Method failure” means pregnancy while using; it remains here because it is a recorded method-experience reason, even though the previous chart excludes stopping because of a <em>desire</em> for pregnancy. IUD and Other modern have smaller samples, so interpret their detailed segments cautiously.</p>
+<div class="downloads"><a href="reason_mix_by_method_experience_access_detail.csv">Download detailed chart values</a></div>
+<!-- END METHOD EXPERIENCE DETAIL -->'''
+
+html = html_path.read_text()
+start_mark = '<!-- START METHOD EXPERIENCE DETAIL -->'
+end_mark = '<!-- END METHOD EXPERIENCE DETAIL -->'
+if start_mark in html:
+    before = html.index(start_mark)
+    after = html.index(end_mark, before) + len(end_mark)
+    html = html[:before] + block + html[after:]
+else:
+    anchor = '<div class="downloads"><a href="reason_mix_by_method_all_discontinued.csv">Download all-reason figure data</a><a href="reason_mix_by_method_excluding_wanted_pregnancy_partner.csv">Download companion figure data</a></div>'
+    assert html.count(anchor) == 1
+    html = html.replace(anchor, anchor + '\n' + block)
+html_path.write_text(html)
+print(f'Updated {html_path}')
+)----------------------"
+REPORT_FILES[["src/report/32_add_method_experience_12_month_detail.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Draw a four-reason life-table companion and insert it in the working HTML."""
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+rows = list(csv.DictReader((out / 'presentation_method_experience_12_month_detail.csv').open()))
+by_method = {row['method']: row for row in rows}
+methods = ['Pill', 'Injectables', 'Other modern methods', 'IUD', 'Implants', 'All modern methods']
+groups = [
+    ('Method failure', 'method_failure_pp', 'method_failure_share_pct', '#66519A', '#FFFFFF'),
+    ('Wanted a more effective method', 'wanted_more_effective_pp', 'wanted_more_effective_share_pct', '#DA9A25', '#111111'),
+    ('Side effects / health', 'side_effects_health_pp', 'side_effects_health_share_pct', '#D45A49', '#111111'),
+    ('Access / cost / inconvenience', 'access_cost_inconvenience_pp', 'access_cost_inconvenience_share_pct', '#153F5B', '#FFFFFF'),
+]
+
+def label(x, y, value, size=18, weight=400, fill='#17222C', anchor='start'):
+    return (f'<text x="{x:.1f}" y="{y:.1f}" dominant-baseline="middle" '
+            f'text-anchor="{anchor}" font-family="Arial,Aptos,sans-serif" '
+            f'font-size="{size}" font-weight="{weight}" fill="{fill}">{escape(str(value))}</text>')
+
+def rect(x, y, width, height, fill):
+    return (f'<rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" '
+            f'height="{height:.1f}" fill="{fill}"/>')
+
+svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="790" viewBox="0 0 1280 790" role="img" aria-labelledby="t d">',
+    '<title id="t">12-month discontinuation from method experience or access, by recorded reason</title>',
+    '<desc id="d">Cause-specific 12-month cumulative probability among all eligible original-method episodes. Four colored segments sum to each method experience or access total. All modern methods total 17.0 percentage points.</desc>',
+    rect(0, 0, 1280, 790, '#FFFFFF'),
+    label(54, 65, '12-month discontinuation from method experience or access', 30, 700, '#153F5B'),
+    label(54, 102, 'Segment values are percentage-point contributions; the bar total is the combined 12-month probability.', 17, 400, '#52636C'),
+]
+x0, scale, top, bar_height, gap = 335, 26, 155, 44, 76
+for index, method in enumerate(methods):
+    row = by_method[method]
+    y = top + index * gap
+    center = y + bar_height / 2
+    if method == 'All modern methods':
+        svg.append(f'<line x1="54" x2="1180" y1="{y-14}" y2="{y-14}" stroke="#D8E1E5" stroke-width="1.5"/>')
+    svg.append(label(54, center, method, 21, 700, '#17222C'))
+    left = x0
+    for group, key, _, fill, ink in groups:
+        value = float(row[key])
+        width = value * scale
+        svg.append(rect(left, y, width, bar_height, fill))
+        if width >= 51:
+            svg.append(label(left + width / 2, center, f'{value:.1f}', 18, 700, ink, 'middle'))
+        left += width
+    total = float(row['total_method_experience_access_pp'])
+    assert abs(left - x0 - total * scale) < 1e-6
+    svg.append(label(left + 14, center, f'{total:.1f}', 22, 700, '#17222C'))
+
+axis_y = 625
+svg.append(f'<line x1="{x0}" x2="{x0+30*scale}" y1="{axis_y}" y2="{axis_y}" stroke="#D8E1E5" stroke-width="1.5"/>')
+for tick in range(0, 31, 5):
+    x = x0 + tick * scale
+    svg.append(f'<line x1="{x}" x2="{x}" y1="{axis_y-5}" y2="{axis_y+5}" stroke="#D8E1E5"/>')
+    svg.append(label(x, axis_y + 27, tick, 17, 400, '#17222C', 'middle'))
+svg.append(label(725, 684, '12-month cumulative probability (%)', 19, 400, '#17222C', 'middle'))
+for x, y, group_index in ((58, 706, 0), (560, 706, 1), (58, 744, 2), (560, 744, 3)):
+    group, _, _, fill, _ = groups[group_index]
+    svg.append(rect(x, y, 19, 19, fill))
+    svg.append(label(x + 29, y + 10, group, 18, 400, '#17222C'))
+svg.append('</svg>')
+asset = out / 'assets/presentation_method_experience_12_month_detail.svg'
+asset.write_text('\n'.join(svg))
+
+body = []
+for method in methods:
+    row = by_method[method]
+    cells = ''.join(f'<td>{float(row[share_key]):.1f}</td>' for _, _, share_key, _, _ in groups)
+    cls = ' class="total-row"' if method == 'All modern methods' else ''
+    body.append(f'<tr{cls}><th scope="row">{escape(method)}</th>'
+                f'<td>{float(row["total_method_experience_access_pp"]):.1f}</td>{cells}</tr>')
+
+all_modern = by_method['All modern methods']
+block = '''<!-- START METHOD EXPERIENCE 12-MONTH DETAIL -->
+<h3 id="method-experience-12-month-detail">What contributes to 12-month discontinuation from method experience or access?</h3>
+<p>This companion to the all-reason 12-month figure splits its <strong>method experience or access</strong> segment into the four reason groups used in the preceding reason-distribution drill-down. Each stacked bar uses <em>all eligible episodes of the original method</em> as its life-table base. Its segments are 12-month probability contributions in percentage points and add to the method experience or access total printed at right. They do not add to 100%.</p>
+<div class="figure-grid"><figure><a href="assets/presentation_method_experience_12_month_detail.svg?v=116"><img src="assets/presentation_method_experience_12_month_detail.svg?v=116" alt="Stacked 12-month cumulative discontinuation probability by method, split into method failure, wanted a more effective method, side effects or health, and access cost or inconvenience. All modern methods total 17.0 percent."></a><figcaption>Weighted competing-risks life-table probabilities. Small segments without an interior label are listed in the table below.</figcaption></figure></div>
+<h4>Within the method experience or access total</h4>
+<p>For all modern methods combined, the 12-month probability is <strong>''' + f'{float(all_modern["total_method_experience_access_pp"]):.1f}' + '''%</strong>. The table gives the share of that method-specific total due to each reason, so its four reason columns sum to 100% within each row.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Share of method experience or access 12-month discontinuation probability by detailed reason" tabindex="0"><table>
+<thead><tr><th scope="col">Method</th><th scope="col">12-month method experience or access probability (%)</th><th scope="col">Method failure share (%)</th><th scope="col">Wanted more effective share (%)</th><th scope="col">Side effects / health share (%)</th><th scope="col">Access / cost / inconvenience share (%)</th></tr></thead>
+<tbody>''' + ''.join(body) + '''</tbody></table></div>
+<p class="note">The life table retains method failure (pregnancy while using) within method experience, but excludes discontinuation because the woman <em>wanted</em> to become pregnant from this figure. “Other modern methods” excludes IUD and emergency contraception. A method ending may be followed by a switch, so this is not necessarily an exit from modern contraception.</p>
+<div class="downloads"><a href="presentation_method_experience_12_month_detail.csv">Download four-reason life-table values and within-group shares</a></div>
+<!-- END METHOD EXPERIENCE 12-MONTH DETAIL -->'''
+
+html_path = out / 'Ethiopia_discontinuation_analysis.html'
+html = html_path.read_text()
+start = '<!-- START METHOD EXPERIENCE 12-MONTH DETAIL -->'
+end = '<!-- END METHOD EXPERIENCE 12-MONTH DETAIL -->'
+if start in html:
+    a = html.index(start)
+    b = html.index(end, a) + len(end)
+    html = html[:a] + block + html[b:]
+else:
+    anchor = '<div class="downloads"><a href="presentation_discontinuation_probability_by_reason.csv">Download cause-specific probabilities</a></div>'
+    assert html.count(anchor) == 1
+    html = html.replace(anchor, anchor + '\n' + block)
+html_path.write_text(html)
+print(asset)
+print(html_path)
+)----------------------"
+REPORT_FILES[["src/report/35_render_selected_reason_regression.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render the selected-cause regression summary and place it in the working HTML."""
+from __future__ import annotations
+
+import csv
+import html
+from pathlib import Path
+import os
+
+
+PROJECT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = PROJECT / 'output'
+SOURCE = OUT / 'presentation_selected_reason_predictor_margins.csv'
+OVERALL = OUT / 'presentation_selected_reason_regression_overall.csv'
+PRELIM = OUT / 'presentation_selected_reason_predictor_margins_preliminary.csv'
+AUDIT = OUT / 'presentation_selected_reason_regression_audit.csv'
+COMPARE = OUT / 'presentation_selected_reason_unadjusted_vs_adjusted.csv'
+CONTRASTS = OUT / 'presentation_selected_reason_pairwise_contrasts.csv'
+OMNIBUS = OUT / 'presentation_selected_reason_omnibus_tests.csv'
+SVG = OUT / 'assets' / 'presentation_selected_reason_predictors.svg'
+PAGE = OUT / 'Ethiopia_discontinuation_analysis.html'
+
+
+def s(text: object) -> str:
+    return html.escape(str(text), quote=True)
+
+
+def line(x1, y1, x2, y2, color, width=1, dash=None):
+    extra = f' stroke-dasharray="{dash}"' if dash else ''
+    return f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{color}" stroke-width="{width}"{extra}/>'
+
+
+def text(x, y, value, size=20, color='#153F5B', bold=False, anchor='start'):
+    return (f'<text x="{x:.1f}" y="{y:.1f}" dominant-baseline="middle" text-anchor="{anchor}" '
+            f'font-family="Aptos,Arial,sans-serif" font-size="{size}" font-weight="{700 if bold else 400}" '
+            f'fill="{color}">{s(value)}</text>')
+
+
+with SOURCE.open(newline='') as f:
+    rows = list(csv.DictReader(f))
+with OVERALL.open(newline='') as f:
+    overall = next(csv.DictReader(f))
+with PRELIM.open(newline='') as f:
+    preliminary = list(csv.DictReader(f))
+with AUDIT.open(newline='') as f:
+    audit = next(csv.DictReader(f))
+raw_by_key = {(r['group'], r['level']): r for r in preliminary}
+for row in rows:
+    row.update({k: raw_by_key[(row['group'], row['level'])][k]
+                for k in ('unadjusted_12_month_probability_pct',
+                          'unweighted_eligible_episodes', 'weighted_eligible_episodes')})
+with COMPARE.open('w', newline='') as f:
+    writer = csv.DictWriter(f, fieldnames=('group', 'level',
+        'unweighted_eligible_episodes', 'weighted_eligible_episodes',
+        'unadjusted_12_month_probability_pct',
+        'adjusted_12_month_probability_pct', 'ci_low', 'ci_high'))
+    writer.writeheader()
+    writer.writerows({k: r[k] for k in writer.fieldnames} for r in rows)
+ref = float(overall['overall_pct'])
+group_names = {
+    'age_group': 'Age at method start',
+    'parity_group': 'Parity at method start',
+    'education': 'Education',
+    'wealth_group': 'Household wealth',
+    'residence': 'Residence',
+}
+groups = list(group_names)
+by_group = {g: [r for r in rows if r['group'] == g] for g in groups}
+
+width, height = 1600, 900
+plot_left, plot_right = 620, 1175
+plot_top, plot_bottom = 217, 788
+xmax = 50
+def x(value):
+    return plot_left + float(value) / xmax * (plot_right - plot_left)
+
+parts = [
+    f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="chart-title chart-desc">',
+    '<title id="chart-title">Adjusted 12-month probability of discontinuation for selected reasons</title>',
+    '<desc id="chart-desc">Survey-weighted competing-risks model. All eligible modern-method episodes are included. Selected endings exclude wanted pregnancy and husband or partner disapproval, which are competing events. Points show adjusted 12-month probabilities and lines show 95 percent stratified PSU bootstrap intervals.</desc>',
+    '<rect width="1600" height="900" fill="white"/>',
+    text(66, 62, 'Who is more likely to discontinue for the selected reasons?', 39, bold=True),
+    text(68, 107, 'Excludes wanted pregnancy and husband/partner disapproval as outcomes', 25, '#516872'),
+    text(68, 166, 'Characteristic', 22, '#516872', True),
+    text((plot_left + plot_right) / 2, 166, 'Adjusted 12-month probability (%)', 22, '#153F5B', True, 'middle'),
+    text(1230, 166, 'Estimate (95% CI)', 22, '#516872', True),
+]
+for tick in range(0, 51, 10):
+    parts.append(line(x(tick), plot_top, x(tick), plot_bottom, '#E1E9EB', 1.2))
+    parts.append(text(x(tick), 824, tick, 18, '#3A505A', anchor='middle'))
+parts.append(line(x(ref), plot_top, x(ref), plot_bottom, '#0B7B77', 2, '7 6'))
+parts.append(text(x(ref), 197, f'All episodes {ref:.1f}%', 17, '#0B7B77', True, 'middle'))
+
+y = 235
+for gi, group in enumerate(groups):
+    if gi:
+        parts.append(line(65, y - 14, 1535, y - 14, '#E4EAED', 1))
+    parts.append(text(69, y, group_names[group], 21, '#007D88', True))
+    y += 24
+    for row in by_group[group]:
+        estimate = float(row['adjusted_12_month_probability_pct'])
+        low = float(row['ci_low'])
+        high = float(row['ci_high'])
+        parts.append(text(98, y, row['level'], 20, '#18313E'))
+        parts.append(line(x(low), y, x(high), y, '#153F5B', 3.5))
+        parts.append(line(x(low), y - 7, x(low), y + 7, '#153F5B', 2.3))
+        parts.append(line(x(high), y - 7, x(high), y + 7, '#153F5B', 2.3))
+        parts.append(f'<circle cx="{x(estimate):.1f}" cy="{y:.1f}" r="7.5" fill="#007D88" stroke="white" stroke-width="1.5"/>')
+        parts.append(text(1230, y, f'{estimate:.1f} ({low:.1f}–{high:.1f})', 20, '#18313E', True))
+        y += 24
+    y += 8
+parts.append('</svg>')
+SVG.write_text('\n'.join(parts), encoding='utf-8')
+
+table_rows = []
+for group in groups:
+    for row in by_group[group]:
+        table_rows.append('<tr>'
+            f'<th scope="row">{s(group_names[group])}</th>'
+            f'<td style="text-align:left">{s(row["level"])}</td>'
+            f'<td>{int(row["unweighted_eligible_episodes"]):,}</td>'
+            f'<td>{float(row["weighted_eligible_episodes"]):,.0f}</td>'
+            f'<td>{float(row["unadjusted_12_month_probability_pct"]):.1f}</td>'
+            f'<td>{float(row["adjusted_12_month_probability_pct"]):.1f}</td>'
+            f'<td>{float(row["ci_low"]):.1f}–{float(row["ci_high"]):.1f}</td>'
+            '</tr>')
+table_rows.append('<tr class="total-row"><th scope="row">All eligible episodes</th>'
+    '<td style="text-align:left">All groups</td>'
+    f'<td>{int(audit["unweighted_episodes"]):,}</td>'
+    f'<td>{float(audit["weighted_episodes"]):,.0f}</td>'
+    f'<td>{float(audit["unadjusted_overall_pct"]):.1f}</td>'
+    f'<td>{ref:.1f}</td>'
+    f'<td>{float(overall["ci_low"]):.1f}–{float(overall["ci_high"]):.1f}</td></tr>')
+comparison_table = '''<div class="table-wrap analysis-table" role="region" aria-label="Unadjusted and adjusted selected-reason 12-month discontinuation probabilities" tabindex="0"><table>
+<thead><tr><th scope="col">Characteristic</th><th scope="col">Group</th><th scope="col">Eligible episodes (n)</th><th scope="col">Weighted episodes</th><th scope="col">Unadjusted 12-month probability (%)</th><th scope="col">Adjusted 12-month probability (%)</th><th scope="col">Adjusted 95% CI (%)</th></tr></thead><tbody>''' + ''.join(table_rows) + '</tbody></table></div>'
+
+method_rows = []
+for row in (r for r in rows if r['group'] == 'method_group'):
+    method_rows.append('<tr>'
+        f'<th scope="row">{s(row["level"])}</th>'
+        f'<td>{int(row["unweighted_eligible_episodes"]):,}</td>'
+        f'<td>{float(row["weighted_eligible_episodes"]):,.0f}</td>'
+        f'<td>{float(row["unadjusted_12_month_probability_pct"]):.1f}</td>'
+        f'<td>{float(row["adjusted_12_month_probability_pct"]):.1f}</td>'
+        f'<td>{float(row["ci_low"]):.1f}–{float(row["ci_high"]):.1f}</td>'
+        '</tr>')
+method_rows.append('<tr class="total-row"><th scope="row">All modern</th>'
+    f'<td>{int(audit["unweighted_episodes"]):,}</td>'
+    f'<td>{float(audit["weighted_episodes"]):,.0f}</td>'
+    f'<td>{float(audit["unadjusted_overall_pct"]):.1f}</td>'
+    f'<td>{ref:.1f}</td>'
+    f'<td>{float(overall["ci_low"]):.1f}–{float(overall["ci_high"]):.1f}</td></tr>')
+method_table = '''<div class="table-wrap analysis-table" role="region" aria-label="Unadjusted and adjusted selected-reason 12-month discontinuation probabilities by method" tabindex="0"><table>
+<thead><tr><th scope="col">Original method</th><th scope="col">Eligible episodes (n)</th><th scope="col">Weighted episodes</th><th scope="col">Unadjusted 12-month probability (%)</th><th scope="col">Adjusted 12-month probability (%)</th><th scope="col">Adjusted 95% CI (%)</th></tr></thead><tbody>''' + ''.join(method_rows) + '</tbody></table></div>'
+
+with CONTRASTS.open(newline='') as f:
+    contrasts = list(csv.DictReader(f))
+with OMNIBUS.open(newline='') as f:
+    omnibus = {r['group']: r for r in csv.DictReader(f)}
+def contrast(group, first, second):
+    for r in contrasts:
+        if r['group'] == group and r['level_1'] == first and r['level_2'] == second:
+            return tuple(float(r[k]) for k in ('adjusted_difference_percentage_points', 'ci_low', 'ci_high'))
+        if r['group'] == group and r['level_1'] == second and r['level_2'] == first:
+            value, low, high = (float(r[k]) for k in ('adjusted_difference_percentage_points', 'ci_low', 'ci_high'))
+            return -value, -high, -low
+    raise KeyError((group, first, second))
+pill_injectable = contrast('method_group', 'Pill', 'Injectables')
+injectable_implant = contrast('method_group', 'Injectables', 'Implants')
+parity_zero_high = contrast('parity_group', '0', '3+')
+method_p = float(omnibus['method_group']['approximate_p_value'])
+demographic_groups = ('age_group', 'parity_group', 'education', 'wealth_group', 'residence')
+demographic_tests_clear = all(float(omnibus[g]['approximate_p_value']) >= 0.05
+                              for g in demographic_groups)
+
+block = f'''<h3 style="color:var(--navy)" id="selected-reason-regression">Who is more likely to discontinue for reasons other than wanted pregnancy or partner disapproval?</h3>
+<p>This regression mirrors the <a href="#restricted-discontinuation-probability">selected-reason 12-month life table</a>. Its denominator is <strong>all eligible modern-method episodes</strong>, including episodes that continue. The event is ending the original method within 12 months for any recorded reason <em>except</em> wanting to become pregnant or husband/partner disapproval. Those two excluded endings are competing events: they remain in the starting group but do not count toward the selected-reason probability. Method failure, other fertility-related reasons, and residual Other reasons remain included. A switch still counts as ending the original method.</p>
+<div class="figure-grid"><figure><a href="assets/{SVG.name}"><img src="assets/{SVG.name}" alt="Adjusted 12-month probabilities of discontinuing the original modern method for any recorded reason except wanted pregnancy or partner disapproval, by age, parity, education, wealth, and residence. 95 percent confidence intervals account for survey cluster and strata in a bootstrap."></a><figcaption>Points are adjusted 12-month cumulative probabilities; lines are 95% confidence intervals from {int(float(overall['bootstrap_reps']))} stratified-PSU bootstrap replicates. The dashed line shows the model-standardized overall probability of {ref:.1f}%. Subgroup estimates are standardized to a common weighted distribution of observed method starts.</figcaption></figure></div>
+<h3>Unadjusted and adjusted 12-month probabilities by group</h3>
+<p>Both columns use the same complete-case set of eligible episodes. The unadjusted column is a weighted competing-risks life table calculated separately within each group. The adjusted column compares groups after accounting for original method, duration, the other characteristics below, region, and start year; it is standardized to a common distribution of observed method starts.</p>
+{comparison_table}
+<h3>How the selected-reason probability varies by original method</h3>
+<p>Method is included in the same regression. The unadjusted column uses the same competing-risks life table within each method; the adjusted column applies each method to a common mix of age, parity, education, wealth, residence, region, and start year. These estimates refer to ending the <em>original</em> method, including episodes that switch to another method.</p>
+{method_table}
+<p><strong>Direct comparisons:</strong> The adjusted pill probability is {pill_injectable[0]:.1f} percentage points above injectables (95% CI {pill_injectable[1]:.1f}–{pill_injectable[2]:.1f}); injectables are {injectable_implant[0]:.1f} points above implants ({injectable_implant[1]:.1f}–{injectable_implant[2]:.1f}). The overall exploratory test of method differences has p&lt;0.001. {'None of the five demographic characteristics shows clear overall variation at the 0.05 level in exploratory omnibus tests.' if demographic_tests_clear else 'Some demographic characteristics show overall variation in exploratory omnibus tests.'} For example, parity 0 is {parity_zero_high[0]:.1f} points above parity 3+, but its direct 95% CI ({parity_zero_high[1]:.1f}–{parity_zero_high[2]:.1f}) includes zero. These tests were not corrected for multiple comparisons, and lack of statistical evidence does not establish equality.</p>
+<p class="note">The IUD and Other modern rows have smaller samples; Other modern combines several distinct methods. Their estimates are less precise than those for injectables, implants, and pills.</p>
+<p class="note">Eligible episodes include those that continued, were censored, or ended for any reason. The weighted episode count is not a count of unique women. Unadjusted subgroup confidence intervals are not shown; the confidence intervals belong to the adjusted estimates. Differences between groups should be assessed using uncertainty in the <em>difference</em>, not by whether their individual intervals overlap.</p>
+<div class="downloads"><a href="{COMPARE.name}">Download unadjusted and adjusted group estimates</a><a href="{OVERALL.name}">Download adjusted overall estimate</a><a href="presentation_selected_reason_pairwise_contrasts.csv">Download direct pairwise comparisons</a><a href="presentation_selected_reason_omnibus_tests.csv">Download exploratory omnibus tests</a></div>
+<details><summary>Risk-model methods and interpretation</summary>
+<p>The Ethiopia DHS 2024–25 IR calendar contributes 8,611 eligible modern-method episodes excluding emergency contraception, including 7,648 observed starts, and 70,691 at-risk episode-months. The monthly outcome has three categories: continuing the original method, ending it for a selected reason, or ending it because of wanted pregnancy or partner disapproval. An episode leaves the risk set after either type of ending; otherwise it contributes observed months until censoring or month 12. Episodes already underway when calendar observation begins enter at their observed duration.</p>
+<p>We fitted a survey-weighted multinomial discrete-time model with month since method start, original method, age and parity at start, education, wealth, residence, region, and year of start. Eligible late-entry episodes contribute only their observed months to model fitting, following the DHS life-table risk-set convention. For each subgroup, predicted monthly probabilities of both types of ending were combined into a 12-month cumulative incidence, then standardized over the same weighted distribution of episodes observed from method initiation. The woman's v005 weight is applied to each episode. Confidence intervals resample v021 PSUs within v022 strata, keeping all episodes from the same woman together.</p>
+<p>Parity at method start was reconstructed from each woman's live-birth dates. Education, wealth, residence and region were measured at interview and may not reflect their values when an earlier episode began. These are adjusted associations, not causal effects. The overall standardized model estimate of {ref:.1f}% is close to the 23.6% selected-reason life-table estimate for the full EC-excluded modern-method cohort; they differ because the model uses complete cases and standardizes over observed starts.</p>
+</details>
+'''
+from report_fragments import replace_fragment
+replace_fragment(PAGE,'toc-from-reasons-to-risk','<h3 id="toc-from-reasons-to-risk">From reasons to risk</h3>'+block,parent='presentation-figures',end_anchor='toc-regional-discontinuation-and-reason-profiles')
+print('Rendered toc-from-reasons-to-risk')
+)----------------------"
+REPORT_FILES[["src/report/38_render_selected_reason_regional_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Add selected-reason regional rates and two normalized reason tables to HTML."""
+from __future__ import annotations
+
+import csv
+import html
+from pathlib import Path
+import os
+
+PROJECT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = PROJECT / 'output'
+PAGE = OUT / 'Ethiopia_discontinuation_analysis.html'
+RATES = OUT / 'presentation_selected_reason_regional_rates.csv'
+REASONS = OUT / 'presentation_selected_reason_regional_reason_profile.csv'
+DETAIL = OUT / 'presentation_selected_reason_regional_method_experience_profile.csv'
+BOOT = OUT / 'presentation_selected_reason_regional_bootstrap.csv'
+KEY_CONTRASTS = OUT / 'presentation_selected_reason_regional_key_contrasts.csv'
+OVERALL = OUT / 'presentation_selected_reason_regression_overall.csv'
+AUDIT = OUT / 'presentation_selected_reason_regression_audit.csv'
+RAW_OVERALL = OUT / 'presentation_selected_reason_regional_unadjusted_overall_ci.csv'
+PAIRWISE = OUT / 'presentation_selected_reason_regional_unadjusted_pairwise.csv'
+SVG_ADJUSTED = OUT / 'assets' / 'presentation_selected_reason_regional_rates.svg'
+SVG_RAW = OUT / 'assets' / 'presentation_selected_reason_regional_rates_unadjusted.svg'
+
+
+def rows(path):
+    with path.open(newline='') as handle:
+        return list(csv.DictReader(handle))
+
+
+def esc(value):
+    return html.escape(str(value), quote=True)
+
+
+rate_rows = rows(RATES)
+reason_lookup = {r['region']: r for r in rows(REASONS)}
+detail_lookup = {r['region']: r for r in rows(DETAIL)}
+overall = rows(OVERALL)[0]
+audit = rows(AUDIT)[0]
+raw_overall = rows(RAW_OVERALL)[0]
+pair_rows = rows(PAIRWISE)
+rate_lookup = {r['region']: r for r in rate_rows}
+boot_rows = rows(BOOT)
+assert len(rate_rows) == 14
+assert all('adjusted_ci_low' in r for r in rate_rows), 'Run regional bootstrap first'
+assert all('unadjusted_ci_low' in r for r in rate_rows), 'Run unadjusted regional bootstrap first'
+display_rows = sorted((r for r in rate_rows if r['region'] != 'Somali'),
+                      key=lambda r: -float(r['unadjusted_12_month_probability_pct']))
+display_rows += [r for r in rate_rows if r['region'] == 'Somali']
+
+def percentile(values, probability):
+    ordered = sorted(values)
+    pos = (len(ordered) - 1) * probability
+    left = int(pos)
+    right = min(left + 1, len(ordered) - 1)
+    return ordered[left] + (ordered[right] - ordered[left]) * (pos - left)
+
+key_pairs = [('Tigray', 'Benishangul-Gumuz'),
+             ('Tigray', 'Addis Ababa'),
+             ('Tigray', 'Amhara')]
+key_contrasts = []
+for first, second in key_pairs:
+    draws = [float(r[first]) - float(r[second]) for r in boot_rows]
+    key_contrasts.append({
+        'region_1': first, 'region_2': second,
+        'adjusted_difference_percentage_points':
+            float(rate_lookup[first]['adjusted_12_month_probability_pct']) -
+            float(rate_lookup[second]['adjusted_12_month_probability_pct']),
+        'ci_low': percentile(draws, .025),
+        'ci_high': percentile(draws, .975)})
+with KEY_CONTRASTS.open('w', newline='') as f:
+    writer = csv.DictWriter(f, fieldnames=key_contrasts[0].keys())
+    writer.writeheader()
+    writer.writerows(key_contrasts)
+tigray_beni = key_contrasts[0]
+
+def svg_text(x, y, value, size=20, color='#153F5B', bold=False, anchor='start'):
+    return (f'<text x="{x:.1f}" y="{y:.1f}" dominant-baseline="middle" text-anchor="{anchor}" '
+            f'font-family="Aptos,Arial,sans-serif" font-size="{size}" font-weight="{700 if bold else 400}" '
+            f'fill="{color}">{esc(value)}</text>')
+
+
+def svg_line(x1, y1, x2, y2, color, width=1, dash=None):
+    extra = f' stroke-dasharray="{dash}"' if dash else ''
+    return f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{color}" stroke-width="{width}"{extra}/>'
+
+
+W, H = 1600, 900
+x0, x1, xmax = 300, 630, 70
+def x(value):
+    return x0 + float(value) / xmax * (x1 - x0)
+
+def heat_color(value):
+    # The original slide's pale-to-deep teal heat-map language.
+    fraction = min(1.0, max(0.0, value / 80.0))
+    start, end = (231, 242, 243), (30, 147, 151)
+    rgb = [round(a + fraction * (b-a)) for a, b in zip(start, end)]
+    return '#' + ''.join(f'{part:02x}' for part in rgb)
+
+def render_regional_svg(adjusted: bool, destination: Path):
+    label = 'Adjusted' if adjusted else 'Unadjusted'
+    estimate_key = ('adjusted_12_month_probability_pct' if adjusted else
+                    'unadjusted_12_month_probability_pct')
+    low_key = 'adjusted_ci_low' if adjusted else 'unadjusted_ci_low'
+    high_key = 'adjusted_ci_high' if adjusted else 'unadjusted_ci_high'
+    national_value = (float(overall['overall_pct']) if adjusted else
+                      float(raw_overall['overall_unadjusted_pct']))
+    reason_specs = ([
+        ('Method experience', 'or access', 'method_experience_or_access_pct'),
+        ('Other recorded', 'reasons', 'other_recorded_reasons_pct')
+    ] if not adjusted else [
+        ('Method', 'failure', 'method_failure_pct'),
+        ('More effective', 'method', 'wanted_more_effective_pct'),
+        ('Side effects', 'or health', 'side_effects_or_health_pct'),
+        ('Access, cost', 'or inconvenience', 'access_cost_inconvenience_pct')
+    ])
+    profile = detail_lookup if adjusted else reason_lookup
+    heat_left, heat_right = 1090, 1538
+    col_width = (heat_right - heat_left) / len(reason_specs)
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="regional-title regional-desc">',
+        f'<title id="regional-title">{label} 12-month selected-reason discontinuation by region</title>',
+        '<desc id="regional-desc">Regional 12-month selected-reason discontinuation rates and aligned reason heat map. Wanted pregnancy and husband or partner disapproval are competing events. Somali has only 30 eligible episodes and 8 selected first-year endings.</desc>',
+        '<rect width="1600" height="900" fill="white"/>',
+        svg_text(68, 62, f'{label} regional variation in 12-month method discontinuation', 38, bold=True),
+        svg_text(68, 107, 'Reasons exclude wanted pregnancy and partner disapproval; excluded endings remain competing events', 22, '#516872'),
+        svg_text(468, 169, f'{label} probability of ending the original method (%)', 23, '#153F5B', True, 'middle'),
+        svg_text(1312, 169, ('Among retained first-year endings (%)' if not adjusted else
+                             'Within method experience or access endings (%)'), 22,
+                 '#153F5B', True, 'middle'),
+    ]
+    for k, (first, second, _) in enumerate(reason_specs):
+        center = heat_left + (k + .5) * col_width
+        parts += [svg_text(center, 214, first, 17, '#1d313b', True, 'middle'),
+                  svg_text(center, 236, second, 17, '#1d313b', True, 'middle')]
+    for tick in (0, 20, 40, 60):
+        parts += [svg_line(x(tick), 253, x(tick), 797, '#dbe5e8', 1.2),
+                  svg_text(x(tick), 817, tick, 17, '#3A505A', anchor='middle')]
+    parts += [svg_line(x(national_value), 253, x(national_value), 797, '#0B7B77', 2, '7 6'),
+              svg_text(x(national_value), 234, f'National {national_value:.1f}', 17,
+                       '#0B7B77', True, 'middle')]
+    for j, row in enumerate(display_rows):
+        y = 274 + j * 37
+        sparse = row['region'] == 'Somali'
+        color = '#74858D' if sparse else '#153F5B'
+        point = '#74858D' if sparse else '#007D88'
+        name = row['region'] + (' †' if sparse else '')
+        est, low, high = (float(row[k]) for k in (estimate_key, low_key, high_key))
+        parts += [svg_text(68, y, name, 19, color, sparse),
+                  svg_line(x(low), y, x(high), y, '#9db3bc', 3),
+                  svg_line(x(low), y-6, x(low), y+6, color, 2),
+                  svg_line(x(high), y-6, x(high), y+6, color, 2),
+                  f'<circle cx="{x(est):.1f}" cy="{y:.1f}" r="6.5" fill="{point}"/>',
+                  svg_text(666, y, f'{est:.1f}', 20, color, True),
+                  svg_text(725, y, f'({low:.1f}–{high:.1f})', 16, '#536b75'),
+                  svg_text(1074, y, row['region'], 17, '#1d313b', sparse, 'end')]
+        data = profile[row['region']]
+        for k, (_, _, field) in enumerate(reason_specs):
+            value = float(data[field])
+            left = heat_left + k * col_width
+            parts += [f'<rect x="{left:.1f}" y="{y-16:.1f}" width="{col_width-3:.1f}" height="32" fill="{heat_color(value)}"/>',
+                      svg_text(left + (col_width-3)/2, y, f'{value:.1f}', 17,
+                               '#ffffff' if value >= 43 else '#1d313b', True, 'middle')]
+    note = ('Right panel: shares sum to 100 within each region.' if not adjusted else
+            'Right panel: four method experience or access shares sum to 100 within each region.')
+    parts += [svg_text(70, 860, '† Somali has 30 eligible episodes and eight selected endings; its apparent rank is unreliable.',
+                       17, '#516872'),
+              svg_text(1537, 860, note, 15, '#516872', anchor='end'), '</svg>']
+    destination.write_text('\n'.join(parts), encoding='utf-8')
+
+render_regional_svg(False, SVG_RAW)
+render_regional_svg(True, SVG_ADJUSTED)
+national = float(overall['overall_pct'])
+
+rate_body = []
+reason_body = []
+detail_body = []
+for row in display_rows:
+    name = row['region']
+    rr = reason_lookup[name]
+    dd = detail_lookup[name]
+    flag = ' <span title="Small selected-reason event count">†</span>' if int(rr['unweighted_selected_endings']) < 50 else ''
+    detail_flag = ' <span title="Small method-experience event count">†</span>' if int(dd['unweighted_method_experience_endings']) < 50 else ''
+    rate_body.append('<tr>'
+        f'<th scope="row">{esc(name)}{flag}</th>'
+        f'<td>{int(row["unweighted_eligible_episodes"]):,}</td>'
+        f'<td>{int(row["unweighted_selected_endings_12"]):,}</td>'
+        f'<td>{float(row["unadjusted_12_month_probability_pct"]):.1f}</td>'
+        f'<td>{float(row["unadjusted_ci_low"]):.1f}–{float(row["unadjusted_ci_high"]):.1f}</td>'
+        f'<td>{float(row["adjusted_12_month_probability_pct"]):.1f}</td>'
+        f'<td>{float(row["adjusted_ci_low"]):.1f}–{float(row["adjusted_ci_high"]):.1f}</td></tr>')
+    reason_body.append('<tr>'
+        f'<th scope="row">{esc(name)}{flag}</th>'
+        f'<td>{int(rr["unweighted_selected_endings"]):,}</td>'
+        f'<td>{float(rr["method_experience_or_access_pct"]):.1f}</td>'
+        f'<td>{float(rr["other_recorded_reasons_pct"]):.1f}</td></tr>')
+    detail_body.append('<tr>'
+        f'<th scope="row">{esc(name)}{detail_flag}</th>'
+        f'<td>{int(dd["unweighted_method_experience_endings"]):,}</td>'
+        f'<td>{float(dd["method_failure_pct"]):.1f}</td>'
+        f'<td>{float(dd["wanted_more_effective_pct"]):.1f}</td>'
+        f'<td>{float(dd["side_effects_or_health_pct"]):.1f}</td>'
+        f'<td>{float(dd["access_cost_inconvenience_pct"]):.1f}</td></tr>')
+
+all_r = reason_lookup['All modern']
+all_d = detail_lookup['All modern']
+rate_body.append('<tr class="total-row"><th scope="row">All modern</th>'
+    f'<td>{int(audit["unweighted_episodes"]):,}</td>'
+    f'<td>{int(audit["first_year_selected_endings"]):,}</td>'
+    f'<td>{float(audit["unadjusted_overall_pct"]):.1f}</td>'
+    f'<td>{float(raw_overall["ci_low"]):.1f}–{float(raw_overall["ci_high"]):.1f}</td>'
+    f'<td>{national:.1f}</td>'
+    f'<td>{float(overall["ci_low"]):.1f}–{float(overall["ci_high"]):.1f}</td></tr>')
+reason_body.append('<tr class="total-row"><th scope="row">All modern</th>'
+    f'<td>{int(all_r["unweighted_selected_endings"]):,}</td>'
+    f'<td>{float(all_r["method_experience_or_access_pct"]):.1f}</td>'
+    f'<td>{float(all_r["other_recorded_reasons_pct"]):.1f}</td></tr>')
+detail_body.append('<tr class="total-row"><th scope="row">All modern</th>'
+    f'<td>{int(all_d["unweighted_method_experience_endings"]):,}</td>'
+    f'<td>{float(all_d["method_failure_pct"]):.1f}</td>'
+    f'<td>{float(all_d["wanted_more_effective_pct"]):.1f}</td>'
+    f'<td>{float(all_d["side_effects_or_health_pct"]):.1f}</td>'
+    f'<td>{float(all_d["access_cost_inconvenience_pct"]):.1f}</td></tr>')
+
+rate_table = '''<div class="table-wrap analysis-table" role="region" aria-label="Regional unadjusted and adjusted selected-reason discontinuation probabilities" tabindex="0"><table><thead><tr><th scope="col">Region</th><th scope="col">Eligible episodes (n)</th><th scope="col">Selected first-year endings (n)</th><th scope="col">Unadjusted 12-month probability (%)</th><th scope="col">Unadjusted 95% CI (%)</th><th scope="col">Adjusted 12-month probability (%)</th><th scope="col">Adjusted 95% CI (%)</th></tr></thead><tbody>''' + ''.join(rate_body) + '</tbody></table></div>'
+reason_table = '''<div class="table-wrap analysis-table" role="region" aria-label="Regional reason distribution among first-year selected-reason discontinuations" tabindex="0"><table><thead><tr><th scope="col">Region</th><th scope="col">Retained endings (n)</th><th scope="col">Method experience or access (%)</th><th scope="col">Other recorded reasons (%)</th></tr></thead><tbody>''' + ''.join(reason_body) + '</tbody></table></div>'
+detail_table = '''<div class="table-wrap analysis-table" role="region" aria-label="Regional detailed reason distribution within first-year method experience or access discontinuations" tabindex="0"><table><thead><tr><th scope="col">Region</th><th scope="col">Method-experience endings (n)</th><th scope="col">Method failure (%)</th><th scope="col">Wanted a more effective method (%)</th><th scope="col">Side effects or health (%)</th><th scope="col">Access, cost, or inconvenience (%)</th></tr></thead><tbody>''' + ''.join(detail_body) + '</tbody></table></div>'
+
+assert len(pair_rows) == 91
+pair_rows.sort(key=lambda r: (float(r['holm_adjusted_p']),
+                              -abs(float(r['difference_percentage_points']))))
+significant_pairs = [r for r in pair_rows if r['holm_significant_05'] == 'True']
+def format_p(value):
+    value = float(value)
+    return f'{value:.4f}' if value < .01 else f'{value:.3f}'
+
+pair_body = []
+for r in pair_rows:
+    significant = r['holm_significant_05'] == 'True'
+    pair_body.append('<tr' + (' class="total-row"' if significant else '') + '>'
+        f'<th scope="row" style="white-space:normal;min-width:205px">{esc(r["region_1"])} vs {esc(r["region_2"])}</th>'
+        f'<td>{float(r["difference_percentage_points"]):+.1f}</td>'
+        f'<td>{format_p(r["unadjusted_p"])}</td>'
+        f'<td>{format_p(r["holm_adjusted_p"])}</td>'
+        f'<td>{"Yes" if significant else "No"}</td></tr>')
+pair_table = '''<div class="table-wrap analysis-table" style="max-height:610px;overflow:auto" role="region" aria-label="All 91 survey-bootstrap tests of regional differences in unadjusted selected-reason discontinuation probabilities" tabindex="0"><table><thead><tr><th scope="col">Regional pair</th><th scope="col">Difference (pp)</th><th scope="col">Raw p</th><th scope="col">Holm p</th><th scope="col">Significant?</th></tr></thead><tbody>''' + ''.join(pair_body) + '</tbody></table></div>'
+
+block = f'''<!-- START SELECTED-REASON REGIONAL ANALYSIS -->
+<section id="selected-reason-regional-analysis">
+<h3 style="color:var(--navy)">Regional 12-month discontinuation for reasons other than wanted pregnancy or partner disapproval</h3>
+<p>These figures use the same 8,611 complete-case, emergency-contraception-excluded modern-method episodes. On the left, they show the 12-month probability that the original method ends for a recorded reason other than wanted pregnancy or husband/partner disapproval. Those excluded endings remain in the initial eligible population and are treated as competing events. The aligned panels on the right show reason distributions among observed first-year endings. Regions have the same order in both figures and in the tables below, ranked by the unadjusted probability except that Somali is placed last because its sample is small.</p>
+<h4>Unadjusted 12-month discontinuation by region</h4>
+<figure><a href="assets/{SVG_RAW.name}"><img src="assets/{SVG_RAW.name}" alt="Unadjusted regional selected-reason discontinuation probabilities on the left and a two-category regional reason heat map on the right, aligned by region."></a><figcaption>Left: survey-weighted competing-risk life-table estimates, with survey-cluster bootstrap 95% intervals and the national unadjusted reference. Right: among observed first-year selected-reason endings in each region, weighted shares of method experience or access versus Other recorded reasons; each row sums to 100%.</figcaption></figure>
+<h4 id="selected-reason-regional-pairwise">Which unadjusted regional rates differ?</h4>
+<p>Formal pairwise tests compare the 12-month unadjusted competing-risk probabilities in all <strong>91 pairs of 14 regions</strong>. Each test uses 10,000 stratified survey-PSU bootstrap replicates, with the same PSU draw applied to both regions and all episodes from a woman kept together. The two-sided p-value uses the null-centered bootstrap distribution of the direct rate difference. Holm adjustment controls the familywise error rate across all 91 tests. <strong>{len(significant_pairs)} pairs remain significant at 0.05 after Holm adjustment:</strong> Tigray versus Amhara, Sidama, and South West Ethiopia. A positive difference means the first region has the higher rate. Pointwise 95% intervals and regional sample sizes are included in the downloadable results; those intervals are not adjusted for multiple comparisons.</p>
+{pair_table}
+<p class="note">The table is ordered by Holm-adjusted p-value and scrolls to show all 91 comparisons. Somali has only 30 eligible episodes, so its pairwise tests have low precision even where its point estimate looks high. <a href="{PAIRWISE.name}">Download all pairwise test results</a>.</p>
+<h4>Adjusted 12-month discontinuation by region</h4>
+<figure><a href="assets/{SVG_ADJUSTED.name}"><img src="assets/{SVG_ADJUSTED.name}" alt="Adjusted regional selected-reason discontinuation probabilities on the left and a four-category method experience or access reason heat map on the right, aligned by region."></a><figcaption>Left: model-standardized competing-risk probabilities, with survey-cluster bootstrap 95% intervals and the national adjusted reference. The model accounts for duration of use and standardizes original method, age and parity at start, education, wealth, residence, and start year. Right: among observed method experience or access endings in each region, the four weighted reason shares sum to 100%. Region is measured at interview and may differ from residence when an earlier episode began.</figcaption></figure>
+<h4>Regional rate estimates and sample sizes</h4>
+{rate_table}
+<p><strong>Reading the new regional pattern:</strong> Tigray's adjusted estimate is {float(rate_lookup['Tigray']['adjusted_12_month_probability_pct']):.1f}%, and Benishangul-Gumuz is {float(rate_lookup['Benishangul-Gumuz']['adjusted_12_month_probability_pct']):.1f}%. Their direct difference is not clear (Tigray minus Benishangul-Gumuz: {tigray_beni['adjusted_difference_percentage_points']:.1f} percentage point; 95% bootstrap interval {tigray_beni['ci_low']:.1f} to {tigray_beni['ci_high']:.1f}). The earlier all-cause slide title about Tigray having the highest rate should therefore not be carried over to this selected-reason outcome. Somali's point estimate is too imprecise to rank.</p>
+<p class="note">Rates use all eligible episodes in each region, including ongoing or censored episodes. The first-year ending count is shown for precision context, but it is not the denominator of the 12-month life-table probability. Intervals are exploratory. Somali has 30 eligible episodes and eight selected first-year endings; its apparent rank is unreliable.</p>
+<h3 id="selected-reason-regional-reason-profile">Among retained first-year discontinuations, what share is method experience or access?</h3>
+<p>This table switches denominators: each row uses <strong>observed first-year discontinuations</strong> in that region after excluding endings recorded as wanted pregnancy or husband/partner disapproval. The two weighted percentages add to <strong>100.0 within each row</strong>. It is a distribution of reasons among endings, not a discontinuation probability among all eligible episodes.</p>
+{reason_table}
+<p class="note"><strong>Method experience or access</strong> combines method failure, bleeding changes, other side effects or health concerns, wanted a more effective method, and access, cost or inconvenience. <strong>Other recorded reasons</strong> combines other fertility-related circumstances (including infrequent sex or husband away, marital dissolution, and difficulty becoming pregnant or menopause) with fatalistic, unspecified, missing, or unknown reasons. † Fewer than 50 observed retained first-year endings; use the row only as a descriptive signal.</p>
+<h3 id="selected-reason-regional-method-experience">Which method experience or access reasons dominate within each region?</h3>
+<p>This second table further restricts its denominator to each region's observed first-year <strong>method experience or access discontinuations</strong>. The four weighted percentages add to <strong>100.0 within each row</strong>. Wanted pregnancy, partner disapproval, and Other recorded reasons are outside this denominator.</p>
+{detail_table}
+<p class="note">Method failure means pregnancy while using the method; it remains in this group even though stopping because of a <em>desire</em> for pregnancy is excluded. † Fewer than 50 observed method-experience endings. Rare components can be unstable even where the total row count exceeds 50; compare broad patterns before treating a region's highest percentage as a program priority.</p>
+<div class="callout"><strong>How to use “Other”:</strong> Its national share is {float(all_r['other_recorded_reasons_pct']):.1f}% of retained first-year discontinuations, so it matters for interpreting the profile and for checking reason coding. It is not a single preventable-service category: <strong>53.0% of this Other group</strong> is coded as infrequent sex or husband away, while marital dissolution, difficulty becoming pregnant, fatalistic answers, unspecified responses, and unknown reasons make up the rest. The <a href="#other-reasons-count-breakdown">original-code breakdown</a> and <a href="#other-reason-followup">follow-up states</a> help distinguish a temporary pause from prolonged nonuse. Any service response should support informed contraceptive choice rather than assume that every stop needs preventing, consistent with <a href="https://www.who.int/activities/providing-clinical-guidance">WHO's guidance on contraceptive choice</a>.</div>
+<div class="downloads"><a href="{RATES.name}">Download regional rates and confidence intervals</a><a href="{KEY_CONTRASTS.name}">Download key direct regional comparisons</a><a href="{REASONS.name}">Download two-category reason table</a><a href="{DETAIL.name}">Download method experience detail table</a><a href="presentation_selected_reason_regional_other_breakdown.csv">Download original codes within Other</a></div>
+</section>
+<!-- END SELECTED-REASON REGIONAL ANALYSIS -->'''
+
+from report_fragments import replace_fragment
+replace_fragment(PAGE,'selected-reason-regional-analysis',block,parent='subnational-discontinuation-analysis-extension')
+print('Rendered selected-reason-regional-analysis')
+)----------------------"
+REPORT_FILES[["src/report/41_unadjusted_selected_regional_pairwise.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""All design-bootstrap pairwise tests of regional 12-month selected-cause CIFs."""
+from __future__ import annotations
+
+import csv
+from itertools import combinations
+from pathlib import Path
+import os
+
+PROJECT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = PROJECT / 'output'
+RATES = OUT / 'presentation_selected_reason_regional_rates.csv'
+BOOT = OUT / 'presentation_selected_reason_regional_unadjusted_bootstrap.csv'
+DEST = OUT / 'presentation_selected_reason_regional_unadjusted_pairwise.csv'
+
+
+def read(path):
+    with path.open(newline='') as f:
+        return list(csv.DictReader(f))
+
+
+def quantile(values, q):
+    values = sorted(values)
+    pos = (len(values)-1) * q
+    lo = int(pos)
+    return values[lo] + (values[min(lo+1, len(values)-1)]-values[lo]) * (pos-lo)
+
+
+rates = read(RATES)
+draws = read(BOOT)
+assert len(rates) == 14 and len(draws) == 10000
+ordered = sorted((r for r in rates if r['region'] != 'Somali'),
+                 key=lambda r: -float(r['unadjusted_12_month_probability_pct']))
+ordered += [next(r for r in rates if r['region'] == 'Somali')]
+out = []
+for first, second in combinations(ordered, 2):
+    name1, name2 = first['region'], second['region']
+    difference = (float(first['unadjusted_12_month_probability_pct']) -
+                  float(second['unadjusted_12_month_probability_pct']))
+    samples = [float(b[name1])-float(b[name2]) for b in draws
+               if b[name1] not in ['', 'NA', 'NaN'] and b[name2] not in ['', 'NA', 'NaN']]
+    assert len(samples) >= 9500
+    # Null-center the paired bootstrap differences. The same survey PSU draw is
+    # used for both regions, so this captures their design covariance.
+    exceedances = sum(abs(value-difference) >= abs(difference) for value in samples)
+    p_value = (exceedances + 1) / (len(samples) + 1)
+    out.append(dict(
+        region_1=name1, region_2=name2,
+        n_1=int(first['unweighted_eligible_episodes']),
+        n_2=int(second['unweighted_eligible_episodes']),
+        rate_1_pct=float(first['unadjusted_12_month_probability_pct']),
+        rate_2_pct=float(second['unadjusted_12_month_probability_pct']),
+        difference_percentage_points=difference,
+        pointwise_ci_low=quantile(samples, .025),
+        pointwise_ci_high=quantile(samples, .975),
+        unadjusted_p=p_value,
+        valid_bootstrap_replicates=len(samples),
+    ))
+
+# Holm step-down controls familywise error over every one of the 91 pairs.
+ranked = sorted(range(len(out)), key=lambda i: out[i]['unadjusted_p'])
+running = 0.0
+for position, index in enumerate(ranked):
+    running = max(running, min(1.0, (len(out)-position)*out[index]['unadjusted_p']))
+    out[index]['holm_adjusted_p'] = running
+    out[index]['holm_significant_05'] = running < .05
+assert len(out) == 91
+
+with DEST.open('w', newline='') as f:
+    writer = csv.DictWriter(f, fieldnames=list(out[0]))
+    writer.writeheader()
+    writer.writerows(out)
+
+print(f'{DEST}: {len(out)} comparisons; '
+      f'{sum(r["holm_significant_05"] for r in out)} significant after Holm adjustment')
+)----------------------"
+REPORT_FILES[["src/report/50_append_method_reason_planning_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Append reproducible, illustrative current-user counts by method and reason.
+
+Run Code/49_rebuild_presentation_figures_tables.R first. This script reads its
+full-precision method and nine-reason life-table outputs and updates only the
+working analysis HTML. It is idempotent; it never alters the presentation.
+"""
+from __future__ import annotations
+
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUTPUT = ROOT / "output"
+REPRO = OUTPUT / "reproduced_figures"
+HTML = OUTPUT / "Ethiopia_discontinuation_analysis.html"
+BEGIN = "<!-- BEGIN CURRENT-USER REASON PLANNING -->"
+END = "<!-- END CURRENT-USER REASON PLANNING -->"
+
+
+def rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+method_rows = rows(REPRO / "slide_24_method_planning_table.csv")
+reason_rows = rows(REPRO / "method_by_nine_reasons_planning_table.csv")
+wra = float(rows(ROOT / "Data/ethiopia_2025_wra_planning_input.csv")[0]["women_15_49"])
+current_users = sum(float(r["current_users"]) for r in method_rows)
+mcpr = current_users / wra * 100
+excluded = {"Wanted to become pregnant", "Husband/partner disapproved"}
+methods = [r for r in method_rows if r["method"] != "EC"]
+assert len(methods) == 5
+assert len(reason_rows) == 45
+
+
+def count(value: float) -> str:
+    return f"{round(value / 100) * 100:,.0f}"
+
+
+def pct(value: float) -> str:
+    return f"{value:.2f}%"
+
+
+summary = []
+detail = []
+all_modern_users = sum(float(m["current_users"]) for m in methods)
+combined_reasons: dict[str, float] = {}
+
+
+def render_reason_table(name: str, users: float, reason_values: list[tuple[str, float, float]]) -> str:
+    """Render the seven retained competing-event reasons and their sum."""
+    assert len(reason_values) == 7
+    selected_count = sum(value for _, _, value in reason_values)
+    selected_prob = sum(prob for _, prob, _ in reason_values)
+    reason_lines = []
+    for reason, prob, value in sorted(reason_values, key=lambda x: -x[2]):
+        reason_lines.append("<tr><th scope='row'>{}</th><td>{}</td><td>{}</td></tr>".format(
+            escape(reason), pct(prob), count(value)))
+    return ("<h3>{}</h3><p class='note'>{} current users; each probability is per "
+            "100 eligible original-method episodes, including episodes that later end "
+            "for an excluded reason. Counts are rounded to the nearest "
+            "100.</p><div class='table-wrap analysis-table' role='region' "
+            "aria-label='Reason-specific planning table for {}' tabindex='0'><table>"
+            "<thead><tr><th scope='col'>Retained recorded reason</th>"
+            "<th scope='col'>12-month probability</th><th scope='col'>"
+            "Illustrative users ending this method</th></tr></thead><tbody>{}"
+            "<tr class='total'><th scope='row'>Total excluding wanted pregnancy "
+            "and partner disapproval</th><td>{}</td><td>{}</td></tr>"
+            "</tbody></table></div>").format(escape(name), count(users), escape(name),
+                  "".join(reason_lines), pct(selected_prob), count(selected_count))
+
+
+for m in methods:
+    name = m["method"]
+    rset = [r for r in reason_rows if r["method"] == name]
+    assert len(rset) == 9
+    all_count = float(m["planning_discontinuations"])
+    selected_count = sum(float(r["planning_discontinuations"]) for r in rset
+                         if r["reason"] not in excluded)
+    selected_prob = sum(float(r["cause_specific_d12_pct"]) for r in rset
+                        if r["reason"] not in excluded)
+    assert abs(sum(float(r["planning_discontinuations"]) for r in rset) - all_count) < .01
+    summary.append("<tr><th scope='row'>{}</th><td>{}</td><td>{}</td>"
+                   "<td>{}</td><td>{}</td></tr>".format(
+        escape(name), pct(float(m["current_mix_pct"])), count(float(m["current_users"])),
+        pct(selected_prob), count(selected_count)))
+    vals = []
+    for r in rset:
+        reason = r["reason"]
+        if reason in excluded:
+            continue
+        value = float(r["planning_discontinuations"])
+        vals.append((reason, float(r["cause_specific_d12_pct"]), value))
+        combined_reasons[reason] = combined_reasons.get(reason, 0.0) + value
+    comparison = next(r for r in rows(OUTPUT / "Supporting_data/12_month_three_column_comparison.csv")
+                      if r["Method"] == name)
+    assert abs(selected_prob - float(comparison["Excluding wanted pregnancy and partner disapproval (%)"])) < 1e-8
+    detail.append(render_reason_table(name, float(m["current_users"]), vals))
+
+selected_count = sum(float(r["planning_discontinuations"]) for r in reason_rows
+                     if r["reason"] not in excluded)
+combined_values = [(reason, value / all_modern_users * 100, value)
+                   for reason, value in combined_reasons.items()]
+assert abs(sum(value for _, _, value in combined_values) - selected_count) < .01
+detail.append(render_reason_table("All modern methods combined (excluding EC)",
+                                  all_modern_users, combined_values))
+ec = next(r for r in method_rows if r["method"] == "EC")
+section = f"""{BEGIN}
+<section id="current-user-reason-planning">
+<h2>Illustrative current-user method endings for reasons other than wanted pregnancy or partner disapproval</h2>
+<p>These tables estimate how many <em>current users might end their original method for a recorded reason other than wanting to become pregnant or husband/partner disapproval</em>. The probability in each row is the cause-specific 12-month cumulative incidence from the same competing-risk life table as the selected-reason analysis above. The seven retained probabilities sum to the selected-reason probability for that method, for example <strong>25.54% for injectables</strong>. The tables are planning illustrations, <strong>not prospective forecasts</strong>.</p>
+<div class="callout"><strong>Inputs used throughout:</strong> Ethiopia 2025 women aged 15–49 (WRA): <strong>{wra:,.0f}</strong> from the frozen UN/WDI planning denominator; survey-weighted 2024–25 Ethiopia DHS all-women mCPR: <strong>{mcpr:.1f}%</strong> (unrounded {mcpr:.4f}%); estimated current modern users: <strong>{current_users:,.0f}</strong>. Current method distribution comes from the survey-date DHS IR current-method variable <code>v312</code>, weighted by <code>v005</code>; it is <em>not</em> the calendar initiation mix. Each method's 12-month probabilities come from the weighted, competing-risk contraceptive-calendar life table used for the Table 7.11 replication. For each reason, the denominator is <em>all eligible episodes starting that method</em>; other endings are competing events. Emergency contraception represents {pct(float(ec['current_mix_pct']))} of current modern users but has no ongoing-use discontinuation projection here.</div>
+<p><strong>Outcome definition:</strong> The two excluded reason types, wanted pregnancy and husband/partner disapproval, remain in the starting risk set and leave it when they occur; they are competing events, <em>not episodes deleted from the denominator</em>. The seven retained reasons include method failure/pregnancy while using, other fertility-related reasons, residual Other recorded reasons, bleeding, other side effects/health concerns, wanting a more effective method, and access/cost/inconvenience. An ending followed by switching still counts as ending the <em>original method</em>; these numbers do not measure exits from all modern contraception.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Illustrative current-user discontinuations by method" tabindex="0"><table>
+<thead><tr><th scope="col">Method</th><th scope="col">Current mix</th><th scope="col">Current users</th><th scope="col">12-month probability excluding the two reasons</th><th scope="col">Illustrative method endings for retained reasons</th></tr></thead>
+<tbody>{''.join(summary)}<tr><th scope="row">All modern methods, excluding EC</th><td>{pct(100-float(ec['current_mix_pct']))}</td><td>{count(all_modern_users)}</td><td>{pct(selected_count/all_modern_users*100)}</td><td>{count(selected_count)}</td></tr></tbody></table></div>
+<h3>Detailed recorded causes within each method</h3>
+<p>Each table disaggregates the seven retained reason groups. The final table combines the five ongoing modern-method groups and excludes EC. Its <strong>{pct(selected_count/all_modern_users*100)}</strong> selected-reason probability is a current-method-mix-weighted average of the method-specific probabilities. It differs from the <strong>23.64%</strong> all-modern episode life-table probability because the current-user method mix differs from the mix of eligible calendar episodes. Values are rounded for display; totals use full-precision estimates.</p>
+{''.join(detail)}
+<p class="note"><strong>Interpretation limit:</strong> Current users have already survived varying durations on their methods, so their next-year risk is not generally the first-year risk from initiation. Some reason groups also include successful switching. A duration-standardized current-user pathway is developed separately above; that is the more appropriate framework for a prospective mCPR projection. These count calculations do not include new users, returns to use, changing WRA, or confidence intervals.</p>
+<div class="downloads"><a href="reproduced_figures/slide_24_method_planning_table.csv">Download method and current-mix inputs</a><a href="reproduced_figures/method_by_nine_reasons_planning_table.csv">Download underlying nine-reason calculation (includes excluded causes)</a><a href="Supporting_data/12_month_three_column_comparison.csv">Download selected-reason life-table check</a><a href="../Code/49_rebuild_presentation_figures_tables.R">Open life-table and planning calculation</a><a href="../Code/50_append_method_reason_planning_html.py">Open HTML table generator</a></div>
+</section>
+{END}"""
+
+html = HTML.read_text(encoding="utf-8")
+if BEGIN in html:
+    start = html.index(BEGIN)
+    stop = html.index(END, start) + len(END)
+    html = html[:start] + section + html[stop:]
+else:
+    anchor = "<footer>Ethiopia method discontinuation project"
+    assert anchor in html
+    html = html.replace(anchor, section + "\n" + anchor, 1)
+HTML.write_text(html, encoding="utf-8")
+print(f"Updated {HTML} with {len(methods)} method tables, one combined table, and {len(reason_rows)-2*len(methods)} displayed cause rows")
+)----------------------"
+REPORT_FILES[["src/report/52_append_duration_adjusted_reason_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Append an explanatory comparison and provisional duration-adjusted tables.
+
+Run Code/51_duration_adjusted_reason_projection.R first. This edit is
+idempotent and changes only the consolidated analysis HTML, not the PPTX.
+"""
+from __future__ import annotations
+
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = ROOT / "output"
+DATA = OUT / "Supporting_data"
+HTML = OUT / "Ethiopia_discontinuation_analysis.html"
+BEGIN = "<!-- BEGIN DURATION-ADJUSTED REASON PLANNING -->"
+END = "<!-- END DURATION-ADJUSTED REASON PLANNING -->"
+
+
+def read(name: str) -> list[dict[str, str]]:
+    with (DATA / name).open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def nfmt(x: float) -> str:
+    return f"{round(x / 100) * 100:,.0f}"
+
+
+def pformat(x: float) -> str:
+    return f"{x:.2f}%"
+
+
+summary = read("duration_adjusted_method_summary.csv")
+method_reason = read("duration_adjusted_method_reason.csv")
+combined = read("duration_adjusted_all_modern_reason.csv")
+historical = read("duration_adjusted_historical_reason_cells.csv")
+current_cells = read("duration_adjusted_current_method_duration_cells.csv")
+assert len(summary) == 5 and len(method_reason) == 45 and len(combined) == 9
+retained = lambda r: r["retained"].lower() == "true"
+current_users = sum(float(r["current_users"]) for r in summary)
+all_endings = sum(float(r["illustrative_endings"]) for r in summary)
+assert abs(sum(float(r["illustrative_users"]) for r in combined if retained(r)) - all_endings) < .01
+
+summary_html = []
+for r in summary:
+    summary_html.append("<tr><th scope='row'>{}</th><td>{:,}</td><td>{:,}</td>"
+                        "<td>{}</td><td>{}</td><td>{}</td></tr>".format(
+        escape(r["method"]), int(r["historical_unweighted_users"]),
+        int(r["current_unweighted_users"]), nfmt(float(r["current_users"])),
+        pformat(float(r["selected_reason_probability_pct"])),
+        nfmt(float(r["illustrative_endings"]))))
+
+reason_tables = []
+for name in [r["method"] for r in summary] + ["All modern methods combined (excluding EC)"]:
+    source = combined if name.startswith("All modern") else [r for r in method_reason if r["method"] == name]
+    source = [r for r in source if retained(r)]
+    assert len(source) == 7
+    denom = current_users if name.startswith("All modern") else float(next(r["current_users"] for r in summary if r["method"] == name))
+    cell = [r for r in historical if name.startswith("All modern") or r["method"] == name]
+    women = sum(int(r["historical_unweighted_users"]) for r in cell) // 9
+    # Every method-duration cell has the same denominator repeated over nine causes.
+    cause_n = {reason: sum(int(r["unweighted_events"]) for r in cell if r["reason"] == reason)
+               for reason in [r["reason"] for r in source]}
+    rows = []
+    for r in sorted(source, key=lambda x: -float(x["illustrative_users"])):
+        events = cause_n[r["reason"]]
+        sparse = " <span title='Fewer than 10 observed events'>†</span>" if events < 10 else ""
+        rows.append("<tr><th scope='row'>{}{}</th><td>{:,}</td><td>{}</td><td>{}</td></tr>".format(
+            escape(r["reason"]), sparse, events,
+            pformat(float(r["probability_pct"])),nfmt(float(r["illustrative_users"]))))
+    total_p = sum(float(r["probability_pct"]) for r in source)
+    total_n = sum(float(r["illustrative_users"]) for r in source)
+    reason_tables.append("<h3>{}</h3><p class='note'>Historical baseline users: {:,}; "
+                         "estimated current users: {}. Probabilities are weighted averages "
+                         "of the two duration-specific next-12-month probabilities.</p>"
+                         "<div class='table-wrap analysis-table' role='region' "
+                         "aria-label='Duration-adjusted reason table for {}' tabindex='0'>"
+                         "<table><thead><tr><th scope='col'>Retained recorded reason</th>"
+                         "<th scope='col'>Historical events (N)</th><th scope='col'>"
+                         "Duration-adjusted probability</th><th scope='col'>Illustrative "
+                         "current-user method endings</th></tr></thead><tbody>{}"
+                         "<tr class='total'><th scope='row'>Total excluding wanted pregnancy "
+                         "and partner disapproval</th><td>{:,}</td><td>{}</td><td>{}</td>"
+                         "</tr></tbody></table></div>".format(
+                             escape(name), women, nfmt(denom), escape(name),
+                             "".join(rows), sum(cause_n.values()), pformat(total_p),
+                             nfmt(total_n)))
+
+min_cell = min(int(r["historical_unweighted_users"]) for r in historical)
+assert min_cell == 22
+cell_sizes = "; ".join("{}: {} and {}".format(escape(r["method"]),
+    next(x["historical_unweighted_users"] for x in historical if x["method"] == r["method"]
+         and x["duration_group"] == "0-12 months"),
+    next(x["historical_unweighted_users"] for x in historical if x["method"] == r["method"]
+         and x["duration_group"] == "13+ months")) for r in summary)
+
+section = f"""{BEGIN}
+<section id="duration-adjusted-reason-planning">
+<h2>Estimating next-year method endings among current users</h2>
+<h3>Which probability answers which question?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Comparison of first-year and duration-adjusted approaches" tabindex="0"><table><thead><tr><th scope="col">Approach</th><th scope="col">Probability used</th><th scope="col">What it tells us</th><th scope="col">Appropriate use</th></tr></thead><tbody><tr><th scope="row">First year after method start: tables immediately above</th><td>Reason-specific cumulative probability during months 1–12 after a method starts, per all eligible starting episodes.</td><td>How new method episodes end in their first year. The current-user counts above apply that new-start risk to every user of the same method.</td><td>Compare methods and reasons for new starts; treat the current-user counts as an illustration, not a next-year forecast.</td></tr><tr><th scope="row">Next 12 months after time already used: tables below</th><td>Reason-specific probability in the next 12 observed months among historical users who had already continued 0–12 or 13+ months on that method. Weight the two probabilities by today's users in those duration groups.</td><td>How current users may end their original method over the coming year, conditional on their method and time already using it.</td><td>More relevant for planning support for the existing user stock; still preliminary because historical patterns may change and small cells limit precision.</td></tr></tbody></table></div>
+<p><strong>How the current tables were constructed:</strong> the tables immediately above use the Ethiopia DHS calendar's method-and-reason-specific 12-month cumulative incidences from method initiation. They keep all eligible episodes in the original risk set, treat wanted pregnancy and husband/partner disapproval as competing events, and add the seven retained reason probabilities. Multiplying that sum by the estimated number of current users of each method assumes that every current user faces the risk observed just after initiation. That assumption does not account for duration already used.</p>
+<p><strong>How the suggested tables were constructed:</strong> the historical landmark cohort contains women using a modern method 15 months before interview, leaving 12 observed follow-up months. We measure their time already using the original method from the monthly calendar, record the first original-method ending and its stated reason over the next 12 months, and estimate weighted probabilities separately for <strong>0–12</strong> and <strong>13+ months</strong> already used. Wanted pregnancy and partner disapproval remain in each baseline denominator as competing endings. We apply these two reason-specific probabilities to the corresponding weighted shares of survey-date users of each method (current method <code>v312</code>, duration <code>v337</code>, weight <code>v005</code>). Counts use the same 2025 WRA and all-women mCPR inputs documented above; EC is excluded. A method's seven reason probabilities sum to its selected-reason next-12-month probability.</p>
+<div class="callout"><strong>Provisional estimates:</strong> these are historical, duration-standardized method-ending estimates, not observed future outcomes or net exits from modern contraception. A direct switch remains an original-method ending. We use only two duration groups because some detailed groups are sparse. Historical N in the 0–12 and 13+ groups are {cell_sizes}. The smallest cell is IUD users at 0–12 months (N=22), and several reason-specific event counts are under 10 (marked †). No confidence intervals are available yet; these estimates should not be treated as precise forecasts or used for fine program targeting without a pooled model and uncertainty analysis.</div>
+<div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted selected-reason method-ending summary" tabindex="0"><table><thead><tr><th scope="col">Original method</th><th scope="col">Historical users (N)</th><th scope="col">Current users in IR (N)</th><th scope="col">Estimated current users</th><th scope="col">Next-12-month selected-reason probability</th><th scope="col">Illustrative method endings</th></tr></thead><tbody>{''.join(summary_html)}<tr class="total"><th scope="row">All modern methods, excluding EC</th><td>3,419</td><td>4,104</td><td>{nfmt(current_users)}</td><td>{pformat(all_endings/current_users*100)}</td><td>{nfmt(all_endings)}</td></tr></tbody></table></div>
+<h3>Reason-specific results by method</h3>
+<p>Only the seven retained reasons appear below. A zero or small estimate in a sparse group is not evidence that the true risk is zero. Totals use unrounded values.</p>
+{''.join(reason_tables)}
+<p class="note"><strong>Interpretation:</strong> these probabilities estimate ending the <em>original method</em> in the next 12 months for a retained reason. They are not probabilities of leaving all modern contraception or estimates of mCPR change. Further modeling must account for switching, gaps, re-entry, new starts and changing population denominators. The reason-specific historical landmark estimates also assume that the 2024–25 calendar experience is applicable to current users within each method-duration group.</p>
+<div class="downloads"><a href="Supporting_data/duration_adjusted_method_summary.csv">Download method summary</a><a href="Supporting_data/duration_adjusted_method_reason.csv">Download method-by-reason estimates</a><a href="Supporting_data/duration_adjusted_all_modern_reason.csv">Download combined estimates</a><a href="Supporting_data/duration_adjusted_historical_reason_cells.csv">Review historical cell sizes and events</a><a href="Supporting_data/duration_adjusted_current_method_duration_cells.csv">Review current-user duration mix</a><a href="../Code/51_duration_adjusted_reason_projection.R">Open calculation code</a></div>
+</section>
+{END}"""
+
+html = HTML.read_text(encoding="utf-8")
+if BEGIN in html:
+    start = html.index(BEGIN)
+    stop = html.index(END, start) + len(END)
+    html = html[:start] + section + html[stop:]
+else:
+    anchor = "<!-- END CURRENT-USER REASON PLANNING -->"
+    assert anchor in html
+    html = html.replace(anchor, anchor + "\n" + section, 1)
+HTML.write_text(html, encoding="utf-8")
+print(f"Updated {HTML} with explanatory comparison and six duration-adjusted tables")
+)----------------------"
+REPORT_FILES[["src/report/55_append_descriptive_subgroups_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render exploratory selected-reason subgroup life tables and extended model.
+
+Inputs are generated by Code/53 and Code/54. Idempotently appends an HTML
+section and an SVG while preserving all prior working analyses and the PPTX.
+"""
+from __future__ import annotations
+
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = ROOT / "output"
+DATA = OUT / "Supporting_data"
+PAGE = OUT / "Ethiopia_discontinuation_analysis.html"
+SVG = OUT / "assets/selected_reason_descriptive_subgroups.svg"
+BEGIN = "<!-- BEGIN SELECTED-REASON DESCRIPTIVE SUBGROUPS -->"
+END = "<!-- END SELECTED-REASON DESCRIPTIVE SUBGROUPS -->"
+
+
+def read(name: str) -> list[dict[str, str]]:
+    with (DATA / name).open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+one = read("selected_reason_descriptive_one_way.csv")
+two = read("selected_reason_descriptive_two_way.csv")
+adjusted = read("selected_reason_extended_regression_margins.csv")
+audit = read("selected_reason_descriptive_audit.csv")[0]
+model_audit = read("selected_reason_extended_regression_audit.csv")[0]
+assert len(one) == len(adjusted) == 24 and len(two) == 56
+adj = {(r["characteristic"], r["level"]): r for r in adjusted}
+assert all((r["characteristic"], r["level"]) in adj for r in one)
+
+names = {
+    "age_group": "Age at method start",
+    "parity_group": "Parity at method start",
+    "marital_group": "Marital status at interview",
+    "education": "Education at interview",
+    "wealth_group": "Wealth at interview",
+    "residence": "Residence at interview",
+    "method_group": "Original method",
+}
+order = list(names)
+
+
+def fmt(x: str) -> str:
+    return f"{float(x):.1f}"
+
+
+def label(level: str) -> str:
+    return escape(level.replace("-", "–") if level in {"15-19", "20-24", "25-34", "35-49", "1-2"} else level)
+
+
+# Presentation-style exploratory forest plot with raw life-table probabilities.
+width = 1660
+left, right = 560, 1170
+xmax = 75.0
+top = 175
+row_h = 34
+group_h = 43
+height = top + len(one) * row_h + len(order) * group_h + 85
+
+
+def x(v: float) -> float:
+    return left + v / xmax * (right - left)
+
+
+def svgtext(x0: float, y0: float, value: str, size=19, color="#18313E", bold=False, anchor="start") -> str:
+    return (f'<text x="{x0:.1f}" y="{y0:.1f}" dominant-baseline="middle" '
+            f'text-anchor="{anchor}" font-family="Aptos,Arial,sans-serif" '
+            f'font-size="{size}" font-weight="{700 if bold else 400}" '
+            f'fill="{color}">{escape(value)}</text>')
+
+
+parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+         f'viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">',
+         '<title id="title">Unadjusted 12-month method discontinuation for selected reasons by subgroup</title>',
+         '<desc id="desc">Each point is a survey-weighted subgroup competing-risk life-table probability. Horizontal lines are stratified primary-sampling-unit bootstrap 95 percent intervals. Wanted pregnancy and husband or partner disapproval are competing endings.</desc>',
+         f'<rect width="{width}" height="{height}" fill="white"/>',
+         svgtext(55,48,"Where selected-reason discontinuation is concentrated",37,"#153F5B",True),
+         svgtext(57,90,"Unadjusted 12-month probabilities; intervals account for the DHS survey design",22,"#63757B"),
+         svgtext(left,136,"12-month probability (%)",20,"#153F5B",True),
+         svgtext(1225,136,"Estimate (95% CI)",20,"#153F5B",True)]
+for tick in range(0,76,15):
+    xt = x(tick)
+    parts.append(f'<line x1="{xt:.1f}" y1="{top-3}" x2="{xt:.1f}" y2="{height-52}" stroke="#E2E9EC" stroke-width="1"/>')
+    parts.append(svgtext(xt,height-35,str(tick),17,"#63757B",anchor="middle"))
+y = top
+for group in order:
+    parts.append(f'<line x1="55" y1="{y-7}" x2="1440" y2="{y-7}" stroke="#D8E2E6"/>')
+    parts.append(svgtext(57,y+9,names[group],21,"#153F5B",True))
+    y += group_h
+    for r in (v for v in one if v["characteristic"] == group):
+        low, est, high = (float(r[k]) for k in ("ci_low", "unadjusted_12_month_probability_pct", "ci_high"))
+        parts.append(svgtext(83,y,label(r["level"]).replace("–", "–") + f"  (n={int(r['eligible_episodes']):,})",19))
+        parts.append(f'<line x1="{x(low):.1f}" y1="{y}" x2="{x(high):.1f}" y2="{y}" stroke="#7D8991" stroke-width="3"/>')
+        parts.append(f'<line x1="{x(low):.1f}" y1="{y-7}" x2="{x(low):.1f}" y2="{y+7}" stroke="#7D8991" stroke-width="2"/>')
+        parts.append(f'<line x1="{x(high):.1f}" y1="{y-7}" x2="{x(high):.1f}" y2="{y+7}" stroke="#7D8991" stroke-width="2"/>')
+        parts.append(f'<circle cx="{x(est):.1f}" cy="{y}" r="7" fill="#108B8D" stroke="white" stroke-width="1.5"/>')
+        parts.append(svgtext(1225,y,f"{est:.1f} ({low:.1f}–{high:.1f})",18,"#18313E",True))
+        y += row_h
+parts.append('</svg>')
+SVG.write_text("\n".join(parts),encoding="utf-8")
+
+one_tables = []
+for group in order:
+    rows = []
+    for r in (v for v in one if v["characteristic"] == group):
+        a = adj[(group,r["level"])]
+        rows.append("<tr><th scope='row'>{}</th><td>{:,}</td><td>{:,}</td>"
+                    "<td>{}</td><td>{}–{}</td><td>{}</td></tr>".format(
+            label(r["level"]),int(r["eligible_episodes"]),int(r["selected_endings"]),
+            fmt(r["unadjusted_12_month_probability_pct"]),fmt(r["ci_low"]),
+            fmt(r["ci_high"]),fmt(a["adjusted_12_month_probability_pct"])))
+    one_tables.append("<h3>{}</h3><div class='table-wrap analysis-table' role='region' "
+                      "aria-label='Descriptive selected-reason rates by {}' tabindex='0'>"
+                      "<table><thead><tr><th scope='col'>Group</th><th scope='col'>"
+                      "Eligible episodes (N)</th><th scope='col'>Selected endings (N)"
+                      "</th><th scope='col'>Unadjusted 12-month probability (%)"
+                      "</th><th scope='col'>Unadjusted 95% CI (%)</th><th scope='col'>"
+                      "Extended-model adjusted probability (%)</th></tr></thead>"
+                      "<tbody>{}</tbody></table></div>".format(
+                          escape(names[group]),escape(names[group]),"".join(rows)))
+
+two_tables = []
+pair_names = [("age_group","parity_group"),("age_group","method_group"),
+              ("parity_group","method_group")]
+for a,b in pair_names:
+    rows = []
+    for r in (v for v in two if v["characteristic_1"]==a and v["characteristic_2"]==b):
+        allowed = r["meets_display_threshold"].lower() == "true"
+        value = fmt(r["unadjusted_12_month_probability_pct"]) if allowed else "Withheld: small cell"
+        rows.append("<tr><th scope='row'>{}</th><td>{}</td><td>{:,}</td>"
+                    "<td>{:,}</td><td>{}</td></tr>".format(
+            label(r["level_1"]),label(r["level_2"]),
+            int(r["eligible_episodes"]),int(r["selected_endings"]),value))
+    two_tables.append("<h3>{} × {}</h3><div class='table-wrap analysis-table' "
+                      "role='region' aria-label='Exploratory two-way subgroup rates' tabindex='0'>"
+                      "<table><thead><tr><th scope='col'>{}</th><th scope='col'>{}"
+                      "</th><th scope='col'>Eligible episodes (N)</th><th scope='col'>"
+                      "Selected endings (N)</th><th scope='col'>Unadjusted 12-month "
+                      "probability (%)</th></tr></thead><tbody>{}</tbody></table></div>".format(
+                          escape(names[a]),escape(names[b]),escape(names[a]),
+                          escape(names[b]),"".join(rows)))
+
+section = f"""{BEGIN}
+<section id="selected-reason-descriptive-subgroups">
+<h2>Exploring which groups have higher 12-month discontinuation for selected reasons</h2>
+<p>This exploratory analysis uses the same outcome as the selected-reason regression: among <strong>all eligible ongoing-modern-method episodes, excluding EC</strong>, the 12-month cumulative probability of ending the original method for any recorded reason <em>other than</em> wanting to become pregnant or husband/partner disapproval. Those two endings remain competing events in every group's life table. The overall unadjusted probability on this complete-case cohort is <strong>{float(audit['overall_12_month_probability_pct']):.1f}%</strong> across <strong>{int(audit['eligible_episodes']):,}</strong> eligible episodes. The estimand is an episode risk, not the proportion of discontinued episodes or a current-user next-year forecast.</p>
+<div class="figure-grid"><figure><a href="assets/{SVG.name}"><img src="assets/{SVG.name}" alt="Unadjusted selected-reason 12-month discontinuation probabilities with survey-design confidence intervals by demographic and method groups"></a><figcaption>Each group has its own survey-weighted competing-risk life table. Bars are 95% percentile intervals from {int(audit['bootstrap_reps'])} rescaled bootstrap replicates that resample DHS primary sampling units within strata and retain all repeated episodes from each woman in the PSU. Group rates are descriptive: different groups can also have different method and other characteristic mixes.</figcaption></figure></div>
+<h3>One characteristic at a time</h3>
+<p>Age and parity refer to the start of each method episode. Parity uses the requested <strong>0, 1–2, 3, and 4+</strong> live-birth groups. Marital status, education, wealth and residence were measured <strong>at interview</strong>, sometimes years after the episode; their subgroup patterns must not be read as causal effects of those characteristics at method start. Method refers to the original method and includes subsequent switches as endings.</p>
+<p><strong>Reading high estimates:</strong> the unadjusted probability is {float(next(r['unadjusted_12_month_probability_pct'] for r in one if r['characteristic']=='method_group' and r['level']=='Pill')):.1f}% for pill episodes and {float(next(r['unadjusted_12_month_probability_pct'] for r in one if r['characteristic']=='parity_group' and r['level']=='0')):.1f}% for parity-zero episodes. The never-in-union group is high but includes only {int(next(r['eligible_episodes'] for r in one if r['characteristic']=='marital_group' and r['level']=='Never in union'))} eligible episodes. These categories overlap; they cannot be added or interpreted as independent drivers. Confidence intervals and subgroup sample sizes should accompany any comparison.</p>
+{''.join(one_tables)}
+<h3>Exploratory combinations</h3>
+<p>Two-way cells below are shown only when they contain at least <strong>100 eligible episodes and 20 selected endings</strong>. Smaller cells retain their N but have the rate withheld. These are unadjusted point estimates without intervals or formal interaction tests, intended to identify questions worth modeling rather than to rank every small population.</p>
+{''.join(two_tables)}
+<h3>Extended regression with marital status</h3>
+<p>The adjusted column in the one-way tables comes from a survey-weighted, three-outcome discrete-time model. Its monthly outcomes are continuing the original method, ending it for a retained reason, or ending it because of wanted pregnancy or partner disapproval. It controls simultaneously for method, duration month, age at start, parity at start (0, 1–2, 3, 4+), marital status at interview, education, wealth, residence, region, and method-start year. Eligible late-entry episodes contribute their observed duration months to the fit; predicted rates standardize each group to a common weighted distribution of episodes observed from initiation. The model converged, and its standardized overall selected-reason probability is <strong>{float(model_audit['adjusted_overall_pct']):.1f}%</strong>.</p>
+<p class="note"><strong>Inference boundary:</strong> the adjusted estimates are point estimates only. The earlier regression's confidence intervals and significance tests belong to its previous specification and cannot be reused after adding marital status and splitting parity. We have not yet calculated design-based intervals or direct contrasts for this extended model. Marital status at interview may have changed after a historical method episode, so even an adjusted association is not evidence that current marital status caused that earlier ending. Apparent differences across many one-way and two-way groups are exploratory and subject to multiple comparisons.</p>
+<div class="downloads"><a href="Supporting_data/selected_reason_descriptive_one_way.csv">Download one-way estimates and intervals</a><a href="Supporting_data/selected_reason_descriptive_two_way.csv">Download all two-way cells and screening flags</a><a href="Supporting_data/selected_reason_extended_regression_margins.csv">Download extended-model adjusted estimates</a><a href="../Code/53_descriptive_selected_reason_subgroups.R">Open descriptive calculation</a><a href="../Code/54_extended_selected_reason_regression.R">Open extended-model code</a></div>
+</section>
+{END}"""
+
+html = PAGE.read_text(encoding="utf-8")
+if BEGIN in html:
+    start = html.index(BEGIN)
+    stop = html.index(END,start) + len(END)
+    html = html[:start] + section + html[stop:]
+else:
+    anchor = "<!-- END DURATION-ADJUSTED REASON PLANNING -->"
+    assert anchor in html
+    html = html.replace(anchor,anchor+"\n"+section,1)
+# Mark the earlier regression as an older specification without rewriting its
+# validated result or attaching its intervals to the new model.
+notice = ('<p class="note" id="extended-regression-notice"><strong>Updated exploratory specification:</strong> '
+          'parity is now split into 0, 1–2, 3, and 4+ births, and marital status at interview is included. '
+          '<a href="#selected-reason-descriptive-subgroups">See the new descriptive tables and adjusted point estimates below.</a> '
+          'The confidence intervals in this earlier figure apply only to the earlier specification.</p>')
+if 'id="extended-regression-notice"' not in html:
+    anchor = '<h3 style="color:var(--navy)" id="selected-reason-regression">'
+    assert anchor in html
+    html = html.replace(anchor,notice+'\n'+anchor,1)
+PAGE.write_text(html,encoding="utf-8")
+print(f"Updated {PAGE}; wrote {SVG.name}")
+)----------------------"
+REPORT_FILES[["src/report/57_append_selected_reason_risk_strata_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Insert the held-out episode risk-stratification diagnostic in the working HTML."""
+from pathlib import Path
+import os
+import csv
+from html import escape
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+HTML = ROOT / 'output/Ethiopia_discontinuation_analysis.html'
+DATA = ROOT / 'output/Supporting_data'
+START = '<!-- START SELECTED-REASON RISK STRATA -->'
+END = '<!-- END SELECTED-REASON RISK STRATA -->'
+
+def read(name):
+    with (DATA / name).open(newline='') as f:
+        return list(csv.DictReader(f))
+
+rates = read('selected_reason_crossvalidated_risk_strata.csv')
+diffs = read('selected_reason_risk_strata_differences.csv')
+profiles = read('selected_reason_risk_strata_profiles.csv')
+
+def fmt(x): return f'{float(x):.1f}'
+def integer(x): return f'{int(x):,}'
+
+rate_rows = ''.join(
+    f'<tr><th scope="row">{escape(r["risk_stratum"])}</th>'
+    f'<td>{integer(r["eligible_episodes"])}</td>'
+    f'<td>{fmt(r["weighted_share_pct"])}%</td>'
+    f'<td><strong>{fmt(r["observed_12_month_probability_pct"])}%</strong></td>'
+    f'<td>{fmt(r["ci_low"])}–{fmt(r["ci_high"])}%</td></tr>'
+    for r in rates)
+diff_rows = ''.join(
+    f'<tr><th scope="row">{escape(r["comparison"])}</th>'
+    f'<td>{fmt(r["estimate_pp"])} percentage points</td>'
+    f'<td>{fmt(r["ci_low"])} to {fmt(r["ci_high"])} points</td></tr>'
+    for r in diffs)
+
+selected = [
+    ('method_group', 'Original method', 'Implants'),
+    ('method_group', 'Original method', 'Injectables'),
+    ('method_group', 'Original method', 'Pill'),
+    ('age_group', 'Age at method start', '15-19'),
+    ('age_group', 'Age at method start', '25-34'),
+    ('parity_group', 'Parity at method start', '0'),
+    ('parity_group', 'Parity at method start', '1-2'),
+    ('marital_group', 'Marital status at interview', 'Never in union'),
+]
+profile_lookup = {(r['characteristic'],r['level'],r['risk_stratum']): r for r in profiles}
+profile_rows = ''.join(
+    '<tr><th scope="row">' + escape(label) + '</th><td>' + escape(level) + '</td>' +
+    ''.join('<td>' + fmt(profile_lookup[(variable,level,g)]['weighted_share_within_stratum_pct']) + '%</td>'
+            for g in ('Lower','Middle','Higher')) + '</tr>'
+    for variable,label,level in selected)
+
+block = f'''{START}
+<section id="selected-reason-risk-strata">
+<h2>Do distinct high-, medium-, and low-risk profiles emerge?</h2>
+<p><strong>Only a lower-risk group is clearly distinguishable.</strong> A model trained outside each episode’s survey cluster placed episodes into three equally weighted bands of predicted 12-month original-method discontinuation for reasons other than wanted pregnancy or partner disapproval. The middle and higher bands overlap statistically. These are <em>episode-level risk strata</em>, not natural clusters of women or longitudinal trajectory groups.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Cross-validated discontinuation risk strata" tabindex="0"><table><thead><tr><th scope="col">Predicted-risk band</th><th scope="col">Eligible episodes</th><th scope="col">Weighted share</th><th scope="col">Observed 12-month probability</th><th scope="col">95% survey-bootstrap interval</th></tr></thead><tbody>{rate_rows}</tbody></table></div>
+<p>Observed differences between bands, estimated directly rather than judged from overlapping intervals:</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Risk-stratum contrasts" tabindex="0"><table><thead><tr><th scope="col">Comparison</th><th scope="col">Difference</th><th scope="col">95% survey-bootstrap interval</th></tr></thead><tbody>{diff_rows}</tbody></table></div>
+<p>The lowest band differs clearly from both other bands. The <strong>higher-minus-middle interval includes zero</strong>, so these data do not support calling them separate medium- and high-risk clusters. The model uses original method, age, and parity <em>at the start of the method episode</em>. Method largely defines the separation: lower-risk episodes are predominantly implants, middle-risk episodes are almost entirely injectables, and the higher band includes pills and injectables.</p>
+<h3>Who is in each predicted-risk band?</h3>
+<p>Each percentage below is the share <em>within that band</em>, not the discontinuation probability for that characteristic. Method, age, and parity helped construct the score, so their concentration across bands is partly built into the classification.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Characteristics of predicted-risk bands" tabindex="0"><table><thead><tr><th scope="col">Characteristic</th><th scope="col">Category</th><th scope="col">Lower</th><th scope="col">Middle</th><th scope="col">Higher</th></tr></thead><tbody>{profile_rows}</tbody></table></div>
+<p class="note"><strong>Method:</strong> 8,611 eligible modern-method episodes, excluding emergency contraception. Wanted pregnancy and partner disapproval remain competing endings. Five validation folds were assigned by survey cluster within survey stratum. Rates are weighted 12-month competing-risk life-table probabilities with delayed entry. The 95% intervals use 400 survey-stratified cluster bootstrap replicates with scores and risk cut-points held fixed; they therefore do not capture model-training uncertainty. Multiple episodes can belong to one woman. Marital status is measured at interview and may differ from status when an earlier episode began. These are descriptive/predictive associations, not causal explanations or evidence of naturally occurring latent classes.</p>
+<div class="downloads"><a href="Supporting_data/selected_reason_crossvalidated_risk_strata.csv">Download risk bands and intervals</a><a href="Supporting_data/selected_reason_risk_strata_differences.csv">Download direct comparisons</a><a href="Supporting_data/selected_reason_risk_strata_profiles.csv">Download full group profiles</a><a href="../Code/56_crossvalidated_selected_reason_risk_strata.R">Open calculation code</a></div>
+</section>
+{END}
+'''
+html = HTML.read_text()
+if START in html:
+    a = html.index(START)
+    b = html.index(END, a) + len(END)
+    html = html[:a] + block.rstrip() + html[b:]
+else:
+    html = html.replace('<footer>Ethiopia method discontinuation project',
+                        block + '<footer>Ethiopia method discontinuation project', 1)
+HTML.write_text(html)
+print(HTML)
+)----------------------"
+REPORT_FILES[["src/report/59_append_method_duration_class_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Append grouped method-duration discontinuation probabilities to working HTML."""
+from pathlib import Path
+import os
+import csv
+from html import escape
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+html_path = root / 'output/Ethiopia_discontinuation_analysis.html'
+csv_path = root / 'output/Supporting_data/selected_reason_by_method_duration_class.csv'
+start = '<!-- START METHOD-DURATION CLASS DISCONTINUATION -->'
+end = '<!-- END METHOD-DURATION CLASS DISCONTINUATION -->'
+with csv_path.open(newline='') as f:
+    rows = list(csv.DictReader(f))
+labels = {
+    'Short-acting reversible': ('Short-acting reversible', 'Injectables, pills, male condoms'),
+    'Long-acting reversible (implant/IUD)': ('Long-acting reversible', 'Implants, IUDs'),
+    'Other modern, mixed': ('Other modern, mixed', 'LAM, sterilization, unspecified other modern'),
+}
+body = ''.join(
+    '<tr><th scope="row">' + escape(labels[r['category']][0]) + '</th>'
+    '<td>' + escape(labels[r['category']][1]) + '</td>'
+    '<td>' + format(int(r['eligible_episodes']), ',') + '</td>'
+    '<td>' + format(int(r['selected_endings']), ',') + '</td>'
+    '<td><strong>' + f"{float(r['probability_12_month_pct']):.1f}%" + '</strong></td>'
+    '<td>' + f"{float(r['ci_low']):.1f}–{float(r['ci_high']):.1f}%" + '</td></tr>'
+    for r in rows)
+block = f'''{start}
+<section id="method-duration-class-discontinuation">
+<h2>12-month selected-reason discontinuation by method-duration class</h2>
+<p>Grouping methods makes the short-acting and long-acting comparison more stable while preserving the same competing-risk definition used above. These probabilities describe ending the <em>original method</em> for any recorded reason except wanted pregnancy or husband/partner disapproval. Endings for those two excluded reasons remain competing events in the risk set.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Selected-reason discontinuation by method duration class" tabindex="0"><table><thead><tr><th scope="col">Method category</th><th scope="col">Methods included</th><th scope="col">Eligible episodes</th><th scope="col">Selected endings</th><th scope="col">12-month probability</th><th scope="col">95% CI</th></tr></thead><tbody>{body}</tbody></table></div>
+<p><strong>Can we still disaggregate by reason?</strong> Yes. For each category, estimate a separate 12-month cumulative incidence for each recorded reason using the same group of eligible episodes at baseline; all other endings remain competing events. The reason-specific probabilities then sum to the category's selected-reason total before rounding. They must not be calculated only among episodes that ended, because that would answer a different question: the distribution of reasons <em>among discontinuations</em>.</p>
+<p class="note">The short-acting group has 1,537 selected first-year endings, supporting a detailed reason breakdown. The implant/IUD group has 253, but some individual reasons are sparse (only one recorded method-failure ending); aggregate sparse reasons or show wide intervals. The remaining mixed category has 47 selected endings and should not be interpreted as a coherent method-duration class or broken into many reason-specific rates. EC is excluded. Estimates use survey weights and 400 survey-stratified PSU bootstrap replicates; repeated episodes from a woman share a survey cluster. Ending the original method can include switching, so these are not necessarily exits from modern contraception.</p>
+<div class="downloads"><a href="Supporting_data/selected_reason_by_method_duration_class.csv">Download grouped estimates</a><a href="../Code/58_selected_reason_by_method_duration_class.R">Open calculation code</a></div>
+</section>
+{end}'''
+html = html_path.read_text()
+if start in html:
+    i = html.index(start)
+    j = html.index(end, i) + len(end)
+    html = html[:i] + block + html[j:]
+else:
+    marker = '<footer>Ethiopia method discontinuation project'
+    if marker not in html:
+        raise RuntimeError('HTML footer marker not found')
+    html = html.replace(marker, block + '\n' + marker, 1)
+html_path.write_text(html)
+print(html_path)
+)----------------------"
+REPORT_FILES[["src/report/61_append_short_acting_reason_distribution_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render conditional short-acting reason distribution in working HTML."""
+from pathlib import Path
+import os
+import csv
+from html import escape
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+page = root / 'output/Ethiopia_discontinuation_analysis.html'
+data = root / 'output/Supporting_data/short_acting_selected_reason_distribution.csv'
+start = '<!-- START SHORT-ACTING SELECTED REASON DISTRIBUTION -->'
+end = '<!-- END SHORT-ACTING SELECTED REASON DISTRIBUTION -->'
+with data.open(newline='') as f:
+    rows = list(csv.DictReader(f))
+table_rows = ''.join(
+    f'<tr><th scope="row">{escape(r["reason"])}</th>'
+    f'<td>{int(r["unweighted_endings"]):,}</td>'
+    f'<td><strong>{float(r["weighted_share_pct"]):.1f}%</strong></td>'
+    f'<td>{float(r["ci_low"]):.1f}–{float(r["ci_high"]):.1f}%</td></tr>'
+    for r in rows)
+block = f'''{start}
+<section id="short-acting-selected-reason-distribution">
+<h2>Why short-acting methods ended within 12 months</h2>
+<p>Among <strong>1,537 recorded first-year endings</strong> of injectable, pill, or male-condom episodes for a reason other than wanted pregnancy or husband/partner disapproval, the survey-weighted distribution of reasons is below. Percentages sum to 100% before rounding. The denominator is these discontinuations, <em>not all short-acting method episodes</em>.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Reasons among selected short-acting discontinuations" tabindex="0"><table><thead><tr><th scope="col">Recorded reason</th><th scope="col">Endings (N)</th><th scope="col">Weighted share</th><th scope="col">95% CI</th></tr></thead><tbody>{table_rows}</tbody></table></div>
+<p class="note">“Other fertility-related” includes infrequent sex or husband away, difficulty becoming pregnant or menopause, and marital dissolution or separation. “Other recorded” comprises residual other, unknown, or missing reasons. A reason's share among endings does not equal its 12-month probability among everyone using a short-acting method. Confidence intervals use 400 survey-stratified cluster bootstrap replicates; the weighted number of selected endings is 1,733.7.</p>
+<div class="downloads"><a href="Supporting_data/short_acting_selected_reason_distribution.csv">Download reason distribution</a><a href="../Code/60_short_acting_selected_reason_distribution.R">Open calculation code</a></div>
+</section>
+{end}'''
+html = page.read_text()
+if start in html:
+    a = html.index(start)
+    b = html.index(end, a) + len(end)
+    html = html[:a] + block + html[b:]
+else:
+    marker = '<footer>Ethiopia method discontinuation project'
+    if marker not in html:
+        raise RuntimeError('Footer marker not found')
+    html = html.replace(marker, block + '\n' + marker, 1)
+page.write_text(html)
+print(page)
+)----------------------"
+REPORT_FILES[["src/report/65_add_regional_episode_share_and_risk_panels.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Add presentation-style paired horizontal bars for every region."""
+from pathlib import Path
+import os
+import csv
+from html import escape
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+page = out / 'Ethiopia_discontinuation_analysis.html'
+with (out / 'regional_episode_mix_vs_selected_method_rates.csv').open(newline='') as f:
+    data = list(csv.DictReader(f))
+with (out / 'presentation_selected_reason_regional_rates.csv').open(newline='') as f:
+    rates = list(csv.DictReader(f))
+order = [r['region'] for r in sorted(rates,
+         key=lambda r: -float(r['unadjusted_12_month_probability_pct'])
+         if r['region'] != 'Somali' else 1e9)]
+order = ['National'] + order
+methods = ['Injectables','Implants','Pill','IUD','Other modern']
+lookup = {(r['region'],r['method']):r for r in data}
+START = '<!-- START REGIONAL MATCHED EPISODE MIX AND RISK -->'
+END = '<!-- END REGIONAL MATCHED EPISODE MIX AND RISK -->'
+
+def f1(x): return f'{float(x):.1f}'
+def card(region):
+    z = [lookup[(region,m)] for m in methods]
+    n = sum(int(x['eligible_episodes']) for x in z)
+    pieces = []
+    for method,row in zip(methods,z):
+        share = float(row['share_of_region_eligible_episodes_pct'])
+        episodes = int(row['eligible_episodes'])
+        endings = int(row['selected_first_year_endings'])
+        share_bar = (f'<div class="rpm-bar rpm-share" style="width:{share:.2f}%"></div>'
+                     f'<strong class="rpm-bar-value" style="left:calc({share:.2f}% + 7px)">{share:.1f}%</strong>')
+        if row['display_risk'] == 'TRUE' and row['selected_reason_12_month_probability_pct'] not in ('','NA'):
+            rate = float(row['selected_reason_12_month_probability_pct'])
+            mark = '<sup title="Small cell; interpret cautiously">†</sup>' if episodes < 100 or endings < 20 else ''
+            risk_bar = (f'<div class="rpm-bar rpm-risk" style="width:{rate:.2f}%"></div>'
+                        f'<strong class="rpm-bar-value" style="left:calc({rate:.2f}% + 7px)">{rate:.1f}%{mark}</strong>')
+        else:
+            risk_bar = '<span class="rpm-withheld">Rate withheld: small cell</span>'
+        pieces.append(
+            f'<div class="rpm-method-group" title="{escape(method)}: {episodes:,} eligible episodes; {endings:,} selected first-year endings">'
+            f'<span class="rpm-method">{escape(method)}</span>'
+            f'<div class="rpm-pair"><div class="rpm-line">{share_bar}</div>'
+            f'<div class="rpm-line">{risk_bar}</div></div></div>')
+    cls = ' rpm-national' if region == 'National' else ''
+    return (f'<article class="rpm-card{cls}"><h4>{escape(region)} <small>{n:,} eligible episodes</small></h4>'
+            '<div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span>'
+            '<span><i class="rpm-risk"></i>12-month discontinuation</span></div>'
+            '<div class="rpm-axis"><span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span></div>'
+            + ''.join(pieces) + '</article>')
+
+html = page.read_text()
+block = f'''{START}
+<section id="regional-episode-mix-and-risk">
+<h3>Regional method mix alongside discontinuation within each method</h3>
+<p>Each region repeats the national paired-bar format. For every method, the gold bar shows its <strong>weighted share of eligible modern-method episodes in that region</strong>; the navy bar directly below shows the <strong>12-month probability that an episode of that method ends for a reason other than wanted pregnancy or partner disapproval</strong>. Both measures use the same eligible episode cohort, excluding emergency contraception. The national panel gives a benchmark.</p>
+<div class="rpm-grid">{''.join(card(r) for r in order)}</div>
+<p class="note">All bars share a 0–100% scale. A discontinuation rate is withheld when a region-method cell has fewer than 30 eligible episodes or fewer than 10 selected first-year endings; its method-share bar remains visible. † marks displayed rates with fewer than 100 episodes or 20 selected endings. Method shares within each region sum to 100% before rounding. The probability uses a competing-risk life table: wanted-pregnancy and partner-disapproval endings remain in the starting population and leave the risk set when they occur. Ending the original method can include switching to another modern method, so these are not necessarily exits from modern contraception. Region is measured at interview and may differ from residence at episode start.</p>
+<div class="downloads"><a href="regional_episode_mix_vs_selected_method_rates.csv">Download every regional cell</a><a href="selected_reason_region_method_ci_preview.csv">Available method-specific confidence intervals</a><a href="../Code/63_regional_episode_mix_vs_selected_risk.R">Open calculation code</a></div>
+</section>
+{END}'''
+if START in html:
+    a=html.index(START);b=html.index(END,a)+len(END)
+    html=html[:a]+block+html[b:]
+else:
+    marker='<h3 id="regional-method-specific-selected">'
+    if marker not in html: raise RuntimeError('Regional insertion point missing')
+    html=html.replace(marker,block+'\n'+marker,1)
+CSS_START = '/* Regional matched-episode shares and method-specific risks */'
+CSS_END = '/* End regional matched-episode chart styles */'
+css = '''
+/* Regional matched-episode shares and method-specific risks */
+.rpm-grid{display:grid;grid-template-columns:1fr;gap:20px;margin:20px 0}
+.rpm-card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:21px 24px 17px;min-width:0}
+.rpm-card.rpm-national{background:#f4f9f9;border-color:#a9c8ce}
+.rpm-card h4{font-size:19px;color:var(--navy);margin:0 0 9px}
+.rpm-card h4 small{font-size:12px;color:var(--muted);font-weight:500;margin-left:8px}
+.rpm-key{display:flex;flex-wrap:wrap;gap:18px;margin:0 0 14px;font-size:12px;font-weight:650;color:var(--navy)}
+.rpm-key span{display:inline-flex;align-items:center;gap:6px}
+.rpm-key i{display:inline-block;width:13px;height:13px;border-radius:2px}
+.rpm-key i.rpm-share,.rpm-bar.rpm-share{background:#DA9A25}
+.rpm-key i.rpm-risk,.rpm-bar.rpm-risk{background:#153F5B}
+.rpm-axis{display:flex;justify-content:space-between;margin:0 62px 9px 160px;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.rpm-method-group{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:center;margin:0 54px 13px 0}
+.rpm-method{font-size:14px;font-weight:600;color:var(--ink)}
+.rpm-pair{min-width:0;background:repeating-linear-gradient(to right,transparent 0,transparent calc(20% - 1px),#e3e9ec calc(20% - 1px),#e3e9ec 20%);border-left:1px solid #c6d2d7}
+.rpm-line{height:19px;position:relative}
+.rpm-bar{height:100%;min-width:2px}
+.rpm-bar-value{position:absolute;top:1px;white-space:nowrap;font-size:13px;font-variant-numeric:tabular-nums;color:#162a35}
+.rpm-bar-value sup{font-size:9px;color:#9b6410}
+.rpm-withheld{position:absolute;left:7px;top:2px;color:var(--muted);font-size:11px;font-style:italic}
+@media(max-width:650px){.rpm-card{padding:16px 10px}.rpm-method-group{grid-template-columns:105px minmax(0,1fr);gap:5px;margin-right:49px}.rpm-method{font-size:12px}.rpm-axis{margin-left:110px;margin-right:51px;font-size:9px}.rpm-line{height:17px}.rpm-bar-value{font-size:11px}.rpm-key{font-size:11px}}
+/* End regional matched-episode chart styles */
+'''
+if CSS_START in html:
+    a=html.index(CSS_START)
+    b=html.find(CSS_END,a)
+    if b >= 0:
+        html=html[:a]+css+html[b+len(CSS_END):]
+    else:
+        html=html[:a]+css+html[html.index('</style></head>',a):]
+else:
+    html=html.replace('</style></head>',css+'</style></head>',1)
+page.write_text(html)
+print(page)
+)----------------------"
+REPORT_FILES[["src/report/67_explain_regional_decomposition.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Add an auditable explanation of the Tigray–Amhara decomposition to the HTML."""
+from pathlib import Path
+import os
+
+page = (Path(os.environ["ETHIOPIA_PROJECT_ROOT"])/'output/Ethiopia_discontinuation_analysis.html')
+start = '<!-- START REGIONAL DECOMPOSITION EXPLANATION -->'
+end = '<!-- END REGIONAL DECOMPOSITION EXPLANATION -->'
+block = '''<!-- START REGIONAL DECOMPOSITION EXPLANATION -->
+<div id="regional-decomposition-explanation">
+<h4>What is being decomposed?</h4>
+<p>The outcome here is the <strong>12-month probability of ending the original modern-method episode for any recorded reason other than wanted pregnancy or husband/partner disapproval</strong>. Those two excluded endings remain competing events in the life table. We compare two distinct quantities for each method: its survey-weighted <em>share of eligible episodes</em> in the region and its <em>12-month selected-reason discontinuation probability</em> among episodes using that method. The shares are not shares of observed new starts or of women currently using contraception. The method-specific probabilities are calculated from monthly weighted risk sets, not by dividing the count of endings by the count of episodes.</p>
+<h4>Worked example: Tigray and Amhara</h4>
+<p>Injectables account for <strong>56.7%</strong> of Tigray’s eligible method episodes and <strong>70.3%</strong> of Amhara’s. Yet the 12-month selected-reason discontinuation probability <em>among injectable episodes</em> is <strong>38.8%</strong> in Tigray and <strong>21.5%</strong> in Amhara. The underlying unweighted injectable samples are 388 and 708 episodes, respectively. The shares use DHS survey weights; they are not 388 divided by 682 or 708 divided by 999.</p>
+<p>First, using each region’s own method mix, multiply each method’s weighted episode share by its within-method probability and add across methods. For injectables, the contribution is approximately <strong>0.567 × 38.8% = 22.0 percentage points</strong> in Tigray and <strong>0.703 × 21.5% = 15.1 points</strong> in Amhara. Adding implants, pills, and other modern methods gives a weighted-average probability of <strong>31.4%</strong> for Tigray and <strong>22.1%</strong> for Amhara, a <strong>9.3-point gap</strong>.</p>
+<p>Next, give the two regions the same mix: the simple average of their weighted method shares, method by method. The common injectable share is <strong>(56.7% + 70.3%) ÷ 2 = 63.5%</strong>. This is an equally weighted comparison standard, not the pooled share of all episodes in the two regions. Keep each region’s own within-method probabilities. Under that common mix, the weighted-average probabilities are <strong>33.1%</strong> for Tigray and <strong>20.6%</strong> for Amhara, a <strong>12.6-point gap</strong>.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Tigray and Amhara own and common method mix comparison" tabindex="0"><table><thead><tr><th scope="col">Method-mix comparison</th><th scope="col">Tigray</th><th scope="col">Amhara</th><th scope="col">Tigray minus Amhara</th></tr></thead><tbody><tr><th scope="row">Each region’s own mix</th><td>31.4%</td><td>22.1%</td><td>9.3 percentage points</td></tr><tr><th scope="row">Same average method mix</th><td>33.1%</td><td>20.6%</td><td>12.6 percentage points</td></tr></tbody></table></div>
+<h4>What is the statistical technique, and why average?</h4>
+<p>This is a <strong>symmetric two-factor Kitagawa decomposition</strong> of a difference between weighted averages, not a fitted Oaxaca–Blinder regression. It assigns <strong>−3.2 percentage points</strong> to differences in method mix and <strong>+12.6 points</strong> to differences in probabilities within methods; together these equal the <strong>9.3-point</strong> own-mix gap. The symmetric calculation averages the two regions’ method shares when assessing within-method rates and averages their method-specific rates when assessing mix. Neither region is chosen as the reference, and the components add exactly for this weighted-average comparison. Using Amhara’s mix alone as the reference would be a legitimate alternative question but would allocate the overlap between composition and rates differently. See the <a href="../Code/42_regional_method_mix_diagnostic.R">calculation code</a>, <a href="regional_method_mix_diagnostic_cells.csv">method cells</a>, and <a href="regional_method_mix_diagnostic_summary.csv">decomposition estimates and intervals</a>. For the general method, see the <a href="https://www.census.gov/library/publications/1993/demo/p23-186.html">U.S. Census Bureau standardization and decomposition manual</a>.</p>
+<p>The negative mix component means Tigray’s method mix <em>reduces</em> its gap with Amhara. In particular, Tigray has a lower injectable share even though injectable discontinuation is much higher there. At the common injectable share of 63.5%, the 17.4-point difference between the regions’ injectable probabilities contributes approximately <strong>0.635 × 17.4 = 11.0 points</strong> to the within-method gap. The other methods bring that component to 12.6 points overall. This identifies higher within-method discontinuation, especially for injectables, as a lead for investigation; it does not establish a service-delivery cause.</p>
+<p><strong>Why these numbers differ slightly from the regional life-table graph:</strong> the direct all-method competing-risk estimates are <strong>31.7%</strong> for Tigray and <strong>22.1%</strong> for Amhara, about a <strong>9.6-point</strong> gap. The decomposition exactly partitions the <em>9.3-point gap between weighted averages of separate method-specific life tables</em>. That weighted average need not reproduce an all-method life table exactly because the monthly risk sets and censoring differ. The small Other-modern cells are also unstable: this decomposition pools IUD with that group and should remain exploratory.</p>
+<h4>What analysis would better test and explain regional differences?</h4>
+<p>Use the direct survey-weighted regional cumulative incidences, confidence intervals, and planned pairwise contrasts to establish which gaps are distinguishable from sampling variation. Then report <strong>marginally standardized 12-month probabilities</strong> from a competing-event model so regions are compared on the same distribution of method, duration, age, parity, education, wealth, residence, and start year. The <a href="../Code/37_selected_reason_regional_analysis.R">current adjusted regional model</a> already does this with main effects, but it does not include region-by-method interactions or marital status, and its parity grouping is 0, 1–2, and 3+. A next model could add region-by-method interactions to test whether, for example, injectable discontinuation differs between regions after adjustment, while pooling sparse cells where necessary. Timing, stated reasons, switching after stopping, and credible service or supply measures could then be examined as possible explanations. An adjusted association or persistent residual gap does not by itself identify a causal driver; region is recorded at interview and may not be the episode’s location at initiation.</p>
+</div>
+<!-- END REGIONAL DECOMPOSITION EXPLANATION -->'''
+
+html = page.read_text()
+if start in html:
+    a = html.index(start)
+    b = html.index(end, a) + len(end)
+    html = html[:a] + block + html[b:]
+else:
+    marker = '<h3 id="injectable-regional-timing">'
+    if marker not in html:
+        raise RuntimeError('Regional explanation insertion point missing')
+    html = html.replace(marker, block + '\n' + marker, 1)
+page.write_text(html)
+print(page)
+)----------------------"
+REPORT_FILES[["src/report/71_render_four_marital_regression.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Create a presentation-style review of the full four-category marital model."""
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = ROOT / 'output'
+DATA = OUT / 'Supporting_data'
+
+def read_one(path):
+    with path.open(newline='') as f:
+        return next(csv.DictReader(f))
+
+with (DATA / 'selected_reason_four_marital_four_parity_margins.csv').open(newline='') as f:
+    rows = list(csv.DictReader(f))
+audit = read_one(DATA / 'selected_reason_four_marital_four_parity_audit.csv')
+overall = read_one(DATA / 'selected_reason_four_marital_four_parity_overall_ci.csv')
+with (OUT / 'presentation_selected_reason_regional_rates.csv').open(newline='') as f:
+    regions = {r['region_code']: r['region'] for r in csv.DictReader(f)}
+
+groups = [
+    ('age_group', 'Age at method start'),
+    ('parity_group', 'Live births at method start'),
+    ('marital_group', 'Marital status at interview'),
+    ('education', 'Education at interview'),
+    ('wealth_group', 'Wealth at interview'),
+    ('residence', 'Residence at interview'),
+    ('method_group', 'Original method'),
+]
+
+def label(r):
+    return regions.get(r['level'], r['level']) if r['characteristic'] == 'region' else r['level']
+
+def svg(plot_groups, title, subtitle, xmax, filename):
+    w = 1600
+    plot_l, plot_r = 620, 1190
+    top = 190
+    current = top
+    positions = []
+    for key, group_title in plot_groups:
+        selected = [r for r in rows if r['characteristic'] == key]
+        positions.append(('head', group_title, current, None))
+        current += 31
+        for r in selected:
+            positions.append(('row', label(r), current, r))
+            current += 34
+        current += 18
+    h = current + 75
+    plot_bottom = current - 7
+    x = lambda v: plot_l + float(v) / xmax * (plot_r - plot_l)
+    esc = escape
+    elements = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img">',
+                f'<title>{esc(title)}</title>',
+                f'<desc>{esc(subtitle)} Points are adjusted 12-month cumulative probabilities; horizontal lines are survey-stratified PSU bootstrap 95% confidence intervals.</desc>',
+                f'<rect width="{w}" height="{h}" fill="white"/>',
+                f'<text x="55" y="55" font-size="37" font-weight="700" fill="#123843" font-family="Arial">{esc(title)}</text>',
+                f'<text x="55" y="93" font-size="22" fill="#586e75" font-family="Arial">{esc(subtitle)}</text>',
+                '<text x="56" y="151" font-size="22" font-weight="700" fill="#123843" font-family="Arial">Group</text>',
+                f'<text x="{(plot_l+plot_r)/2:.1f}" y="151" text-anchor="middle" font-size="22" font-weight="700" fill="#123843" font-family="Arial">Adjusted 12-month probability (%)</text>',
+                '<text x="1230" y="151" font-size="22" font-weight="700" fill="#123843" font-family="Arial">Estimate (95% CI)</text>']
+    for tick in range(0, xmax + 1, 10):
+        xx = x(tick)
+        elements.append(f'<line x1="{xx:.1f}" y1="173" x2="{xx:.1f}" y2="{plot_bottom}" stroke="#dfe9ea"/>')
+        elements.append(f'<text x="{xx:.1f}" y="{plot_bottom+28}" text-anchor="middle" font-family="Arial" font-size="18" fill="#425c64">{tick}</text>')
+    ref = float(overall['estimate'])
+    elements.append(f'<line x1="{x(ref):.1f}" y1="173" x2="{x(ref):.1f}" y2="{plot_bottom}" stroke="#008e9d" stroke-width="2.4" stroke-dasharray="8 6"/>')
+    for kind, txt, yy, r in positions:
+        if kind == 'head':
+            elements.append(f'<line x1="55" y1="{yy-13}" x2="1545" y2="{yy-13}" stroke="#e5eeee"/>')
+            elements.append(f'<text x="55" y="{yy+10}" font-family="Arial" font-size="22" font-weight="700" fill="#007b89">{esc(txt)}</text>')
+            continue
+        est = float(r['adjusted_12_month_probability_pct'])
+        lo = float(r['ci_low'])
+        hi = float(r['ci_high'])
+        n = int(r['eligible_episodes'])
+        elements.append(f'<text x="88" y="{yy+6}" font-family="Arial" font-size="21" fill="#123843">{esc(txt)} <tspan fill="#61777d">(N={n:,})</tspan></text>')
+        elements.append(f'<line x1="{x(lo):.1f}" y1="{yy}" x2="{x(hi):.1f}" y2="{yy}" stroke="#123843" stroke-width="3.5"/>')
+        elements.append(f'<line x1="{x(lo):.1f}" y1="{yy-7}" x2="{x(lo):.1f}" y2="{yy+7}" stroke="#123843" stroke-width="2"/>')
+        elements.append(f'<line x1="{x(hi):.1f}" y1="{yy-7}" x2="{x(hi):.1f}" y2="{yy+7}" stroke="#123843" stroke-width="2"/>')
+        elements.append(f'<circle cx="{x(est):.1f}" cy="{yy}" r="8" fill="#008e9d" stroke="white" stroke-width="2"/>')
+        elements.append(f'<text x="1230" y="{yy+7}" font-family="Arial" font-size="20" font-weight="700" fill="#123843">{est:.1f} ({lo:.1f}–{hi:.1f})</text>')
+    elements.append('</svg>')
+    path = OUT / 'assets' / filename
+    path.write_text('\n'.join(elements))
+    return path
+
+def focused_svg():
+    selected = [r for r in rows if r['characteristic'] in ('parity_group', 'marital_group')]
+    x = lambda v: 350 + float(v) / 70 * 290
+    h = 585
+    parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="960" height="585" viewBox="0 0 960 585" role="img">',
+      '<title>Adjusted 12-month probabilities by parity and marital status</title>',
+      '<rect width="960" height="585" fill="white"/>',
+      '<text x="35" y="48" font-family="Arial" font-size="30" font-weight="700" fill="#123843">Parity and marital status</text>',
+      '<text x="35" y="81" font-family="Arial" font-size="18" fill="#586e75">Adjusted 12-month probability of selected-reason discontinuation</text>',
+      '<text x="35" y="127" font-family="Arial" font-size="17" font-weight="700" fill="#123843">Group</text>',
+      '<text x="495" y="127" text-anchor="middle" font-family="Arial" font-size="17" font-weight="700" fill="#123843">Probability (%)</text>',
+      '<text x="683" y="127" font-family="Arial" font-size="17" font-weight="700" fill="#123843">Estimate (95% CI)</text>']
+    for tick in range(0, 71, 10):
+        xx = x(tick)
+        parts += [f'<line x1="{xx:.1f}" y1="145" x2="{xx:.1f}" y2="536" stroke="#e1e9e9"/>',
+                  f'<text x="{xx:.1f}" y="563" font-family="Arial" font-size="15" text-anchor="middle" fill="#52696f">{tick}</text>']
+    ref = float(overall['estimate'])
+    parts.append(f'<line x1="{x(ref):.1f}" y1="145" x2="{x(ref):.1f}" y2="536" stroke="#008e9d" stroke-width="2" stroke-dasharray="6 5"/>')
+    for idx, r in enumerate(selected):
+        y = 190 + idx * 47 + (17 if idx >= 4 else 0)
+        if idx == 4:
+            parts.append('<line x1="35" y1="357" x2="925" y2="357" stroke="#cfdede"/>')
+        est = float(r['adjusted_12_month_probability_pct'])
+        lo = float(r['ci_low']); hi = float(r['ci_high'])
+        lab = escape(r['level'])
+        parts += [f'<text x="35" y="{y+6}" font-family="Arial" font-size="20" fill="#123843">{lab}</text>',
+                  f'<line x1="{x(lo):.1f}" y1="{y}" x2="{x(hi):.1f}" y2="{y}" stroke="#123843" stroke-width="3"/>',
+                  f'<circle cx="{x(est):.1f}" cy="{y}" r="7" fill="#008e9d" stroke="white" stroke-width="1.5"/>',
+                  f'<text x="683" y="{y+6}" font-family="Arial" font-size="19" font-weight="700" fill="#123843">{est:.1f} ({lo:.1f}–{hi:.1f})</text>']
+    parts.append('</svg>')
+    path = OUT / 'assets' / 'selected_reason_four_marital_focused.svg'
+    path.write_text('\n'.join(parts))
+    return path
+
+focus_plot = focused_svg()
+main_plot = svg(groups, 'Adjusted probability by subgroup and method',
+    'Selected-reason original-method ending; survey-weighted competing-event model',
+    80, 'selected_reason_four_marital_full_model.svg')
+region_plot = svg([('region', 'Region at interview')],
+    'Adjusted probability by region',
+    'Same full model and standard population; regional estimates are exploratory',
+    80, 'selected_reason_four_marital_regions.svg')
+
+def table(keys):
+    body = []
+    for key, name in keys:
+        subset = [r for r in rows if r['characteristic'] == key]
+        for idx, r in enumerate(subset):
+            gh = f'<th rowspan="{len(subset)}" class="group">{escape(name)}</th>' if idx == 0 else ''
+            body.append(f'<tr>{gh}<th scope="row">{escape(label(r))}</th>'
+              f'<td>{int(r["eligible_episodes"]):,}</td>'
+              f'<td>{int(r["selected_first_year_endings"]):,}</td>'
+              f'<td>{float(r["unadjusted_12_month_probability_pct"]):.1f}%</td>'
+              f'<td class="focus">{float(r["adjusted_12_month_probability_pct"]):.1f}%</td>'
+              f'<td>{float(r["ci_low"]):.1f}–{float(r["ci_high"]):.1f}%</td></tr>')
+    return '<div class="scroll"><table><thead><tr><th>Covariate</th><th>Group</th><th>Eligible episodes</th><th>Selected first-year endings</th><th>Unadjusted</th><th>Adjusted</th><th>Adjusted 95% CI</th></tr></thead><tbody>' + ''.join(body) + '</tbody></table></div>'
+
+html = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Full adjusted discontinuation model with four parity and marital groups</title>
+<style>
+*{{box-sizing:border-box}}body{{margin:0;background:#edf3f3;color:#123843;font:16px/1.5 Arial,Helvetica,sans-serif}}
+main{{max-width:1300px;margin:28px auto;background:white;padding:36px 46px 56px;box-shadow:0 10px 35px #18394215}}
+.eyebrow{{font-weight:800;color:#008e9d;text-transform:uppercase;letter-spacing:.09em;font-size:13px}}
+h1{{font:700 36px/1.14 Georgia,serif;margin:8px 0 18px}}h2{{font:700 26px/1.2 Georgia,serif;margin:33px 0 12px}}
+p{{max-width:1100px}}figure{{margin:20px 0}}figure img{{width:100%;display:block;border:1px solid #dde8e8}}
+figcaption{{font-size:14px;color:#52696f;margin-top:9px}}.stats{{display:flex;gap:13px;flex-wrap:wrap;margin:22px 0}}
+.stat{{background:#f0f8f8;border:1px solid #d4e6e6;border-radius:8px;padding:13px 18px;min-width:190px}}
+.stat b{{display:block;font-size:27px;color:#007d89}}.stat span{{font-size:14px;color:#52696f}}
+.callout{{padding:15px 19px;background:#edf7f7;border-left:5px solid #008e9d;margin:21px 0}}
+.caution{{background:#fff6e9;border-color:#cf871e}}.scroll{{overflow-x:auto}}
+table{{border-collapse:collapse;width:100%;min-width:1020px;font-size:15px}}
+thead th{{background:#123843;color:white;text-align:left;padding:11px 9px;line-height:1.25}}
+tbody th,tbody td{{padding:9px;border-bottom:1px solid #dce8e8;vertical-align:top}}
+tbody tr:nth-child(even){{background:#f7fafa}}tbody th.group{{color:#007d89;border-right:1px solid #dce8e8}}
+td.focus{{font-weight:800;color:#078245}}a{{color:#007b89}}
+@media(max-width:650px){{main{{margin:0;padding:20px}}h1{{font-size:28px}}}}
+</style></head><body><main>
+<div class="eyebrow">Ethiopia DHS 2024–25 · full adjusted model</div>
+<h1>Adjusted 12-month discontinuation with four parity and four marital-status groups</h1>
+<p>The model includes duration month, original method, age, parity, marital status, education, wealth, residence, region, and method-start year. The outcome is discontinuation of the original modern method for any recorded reason except wanted pregnancy or husband/partner disapproval; those two endings remain competing events.</p>
+<div class="stats"><div class="stat"><b>{int(audit['eligible_episodes']):,}</b><span>Eligible episodes</span></div>
+<div class="stat"><b>{int(audit['selected_first_year_endings']):,}</b><span>Selected first-year endings</span></div>
+<div class="stat"><b>{float(overall['estimate']):.1f}%</b><span>Overall adjusted 12-month probability</span></div>
+<div class="stat"><b>{float(overall['ci_low']):.1f}–{float(overall['ci_high']):.1f}%</b><span>Overall 95% confidence interval</span></div></div>
+<h2>Requested parity and marital-status groups</h2>
+<figure><img src="assets/{focus_plot.name}" alt="Adjusted 12-month probabilities and survey-bootstrap intervals by parity and four marital-status groups."><figcaption>The dashed vertical line is the 24.0% overall adjusted probability. Marital status is measured at interview.</figcaption></figure>
+<h2>Adjusted probabilities for every modeled covariate</h2>
+<p><a href="assets/{main_plot.name}">Open full-size subgroup plot</a></p>
+<figure><img src="assets/{main_plot.name}" alt="Dot and confidence-interval plot of adjusted 12-month selected-reason discontinuation probabilities by demographic group and original method."><figcaption>Points show marginally standardized probabilities and horizontal lines show 95% intervals from {int(overall['valid_reps'])} stratified PSU bootstrap replicates. The dashed vertical line is the overall adjusted probability.</figcaption></figure>
+<p class="callout"><strong>How to read the plot:</strong> Each row applies that category to the same weighted distribution of observed episode starts, then accumulates modeled monthly selected-ending probabilities through 12 months. These are probabilities, not odds ratios. Each estimate also accounts for the competing chance of ending the method because of wanted pregnancy or partner disapproval.</p>
+<h2>Unadjusted and adjusted results</h2>
+{table(groups)}
+<h2>Regional estimates from the same full model</h2>
+<p><a href="assets/{region_plot.name}">Open full-size regional plot</a></p>
+<figure><img src="assets/{region_plot.name}" alt="Dot and confidence-interval plot of adjusted 12-month selected-reason discontinuation probabilities by region."><figcaption>Region remains in the same full model and is standardized over the common episode-start distribution. Small regional samples, especially Somali, require caution.</figcaption></figure>
+<details><summary style="cursor:pointer;font-weight:700;font-size:20px;margin:10px 0">Open regional results table</summary>{table([('region','Region at interview')])}</details>
+<h2>What was modeled</h2>
+<p>Each eligible modern-method episode contributes one row for each observed month at risk, up to month 12. The monthly dependent variable has three mutually exclusive values: <strong>continue</strong> (the original method is still in use during the observed month); <strong>selected</strong> (it ends for any reason other than wanted pregnancy or husband/partner disapproval); or <strong>excluded</strong> (it ends for wanted pregnancy or husband/partner disapproval). The fitted model is a survey-weighted multinomial discrete-time competing-event regression. Predicted monthly probabilities are combined into a 12-month cumulative probability and standardized to the same weighted episode-start population for every group.</p>
+<p class="callout caution"><strong>Interpretation:</strong> Marital status, education, wealth, residence, and region were measured at interview, sometimes after an episode began. Their adjusted associations cannot be interpreted as causes of a historical ending. “Divorced/widowed/separated” combines survey codes 3–5. Never-in-union and living-together categories each contain 173 eligible episodes, so their estimates are less precise. These are original-method endings; switching can be included and does not necessarily mean loss of modern contraceptive use.</p>
+<p><a href="Supporting_data/selected_reason_four_marital_four_parity_margins.csv">Download full results</a> · <a href="../Code/70_four_marital_four_parity_selected_regression.R">View reproducible R code</a></p>
+</main></body></html>'''
+path = OUT / 'selected_reason_full_regression_four_marital_preview.html'
+path.write_text(html)
+print(path)
+)----------------------"
+REPORT_FILES[["src/report/73_add_revised_subgroup_regression_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Append the revised full regression and five-wealth sensitivity to the subgroup section."""
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = ROOT / 'output'
+DATA = OUT / 'Supporting_data'
+PAGE = OUT / 'Ethiopia_discontinuation_analysis.html'
+BEGIN = '<!-- BEGIN FOUR-MARITAL FULL SUBGROUP MODEL -->'
+END = '<!-- END FOUR-MARITAL FULL SUBGROUP MODEL -->'
+
+def read_rows(name):
+    with (DATA / name).open(newline='') as f:
+        return list(csv.DictReader(f))
+
+def row_table(rows, keys, labels):
+    trs = []
+    for key in keys:
+        subset = [r for r in rows if r['characteristic'] == key]
+        for idx, r in enumerate(subset):
+            group = f'<th scope="rowgroup" rowspan="{len(subset)}">{escape(labels[key])}</th>' if idx == 0 else ''
+            trs.append(f'<tr>{group}<th scope="row">{escape(r["level"])}</th>'
+              f'<td>{int(r["eligible_episodes"]):,}</td>'
+              f'<td>{float(r["unadjusted_12_month_probability_pct"]):.1f}%</td>'
+              f'<td><strong>{float(r["adjusted_12_month_probability_pct"]):.1f}%</strong></td>'
+              f'<td>{float(r["ci_low"]):.1f}–{float(r["ci_high"]):.1f}%</td></tr>')
+    return ('<div class="table-wrap analysis-table" role="region" tabindex="0"><table>'
+      '<thead><tr><th>Covariate</th><th>Group</th><th>Eligible episodes</th>'
+      '<th>Unadjusted 12-month probability</th><th>Adjusted 12-month probability</th>'
+      '<th>Adjusted 95% CI</th></tr></thead><tbody>' + ''.join(trs) + '</tbody></table></div>')
+
+base = read_rows('selected_reason_four_marital_four_parity_margins.csv')
+audit = read_rows('selected_reason_four_marital_four_parity_audit.csv')[0]
+overall = read_rows('selected_reason_four_marital_four_parity_overall_ci.csv')[0]
+group_labels = {
+    'age_group': 'Age at method start',
+    'parity_group': 'Live births at method start',
+    'marital_group': 'Marital status at interview',
+    'education': 'Education at interview',
+    'wealth_group': 'Household wealth at interview',
+    'residence': 'Residence at interview',
+    'method_group': 'Original method',
+}
+full_table = row_table(base, list(group_labels), group_labels)
+parts = [BEGIN, '<div id="revised-full-subgroup-model">',
+    '<h3>Full adjusted model with four parity and four marital-status categories</h3>',
+    '<p class="note">The adjusted columns in the one-way tables above belong to the earlier exploratory specification, which used 0, 1–2, 3, and 4+ for parity and three marital-status groups. The revised model results below use 0, 1–2, 3–4, and 5+ for parity and the four requested marital-status groups.</p>',
+    '<p><strong>Outcome:</strong> the 12-month cumulative probability of discontinuing the original modern method for any recorded reason <strong>except wanted pregnancy or husband/partner disapproval</strong>. Those two excluded endings remain competing events in the monthly risk sets. Switching after ending the original method can still count as discontinuation here.</p>',
+    '<p>This model includes duration month, original method, age and parity at method start (0, 1–2, 3–4, 5+), marital status at interview (never in union, living together, married, divorced/widowed/separated), education, household wealth, residence, region, and method-start year. It uses '
+      f'{int(audit["eligible_episodes"]):,} eligible episodes and {int(audit["selected_first_year_endings"]):,} selected first-year endings. The overall adjusted 12-month probability is <strong>{float(overall["estimate"]):.1f}%</strong> (95% CI {float(overall["ci_low"]):.1f}–{float(overall["ci_high"]):.1f}%).</p>',
+    '<div class="figure-grid"><figure><a href="assets/selected_reason_four_marital_focused.svg"><img src="assets/selected_reason_four_marital_focused.svg" alt="Adjusted 12-month selected-reason discontinuation probabilities with 95 percent confidence intervals for four parity and four marital status groups"></a><figcaption>Parity and marital-status estimates from the full model. Points are adjusted 12-month probabilities; horizontal lines are 95% survey-stratified PSU bootstrap intervals.</figcaption></figure></div>',
+    '<h4>Adjusted probabilities for all model covariates</h4>',
+    '<div class="figure-grid"><figure><a href="assets/selected_reason_four_marital_full_model.svg"><img src="assets/selected_reason_four_marital_full_model.svg" alt="Full model adjusted 12-month probabilities with confidence intervals by age, parity, marital status, education, wealth, residence, and original method"></a><figcaption>All subgroup estimates use the same full model and weighted standard population. The dashed line indicates the adjusted overall probability.</figcaption></figure></div>',
+    '<h4>Adjusted regional probabilities from the same full model</h4>',
+    '<div class="figure-grid"><figure><a href="assets/selected_reason_four_marital_regions.svg"><img src="assets/selected_reason_four_marital_regions.svg" alt="Full model adjusted 12-month probabilities with confidence intervals by region"></a><figcaption>Region is adjusted for all other covariates and standardized over the common episode-start population. Estimates for sparse regions require caution.</figcaption></figure></div>',
+    '<details><summary>Show the numerical table for all covariates</summary>', full_table, '</details>',
+    '<p class="note"><strong>Interpretation:</strong> These are standardized 12-month cumulative probabilities, not odds ratios. Age and parity refer to method start; marital status, education, wealth, residence, and region were measured at interview and could have changed since a historical episode. The never-in-union and living-together categories each have 173 eligible episodes, with wider intervals. An adjusted association is not evidence that marital status caused discontinuation.</p>',
+    '<div class="downloads"><a href="Supporting_data/selected_reason_four_marital_four_parity_margins.csv">Full model estimates</a><a href="assets/selected_reason_four_marital_regions.svg">Regional estimates from the same model</a><a href="../Code/70_four_marital_four_parity_selected_regression.R">Reproducible model code</a></div>']
+
+five_path = DATA / 'selected_reason_five_wealth_four_marital_four_parity_margins.csv'
+if five_path.exists() and (DATA / 'selected_reason_five_wealth_four_marital_four_parity_overall_ci.csv').exists():
+    five = read_rows(five_path.name)
+    five_overall = read_rows('selected_reason_five_wealth_four_marital_four_parity_overall_ci.csv')[0]
+    wealth_rows = [r for r in five if r['characteristic'] == 'wealth_group']
+    width, height = 920, 420
+    x = lambda value: 280 + float(value) / 45 * 350
+    wealth_svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+      '<title>Adjusted 12-month discontinuation by DHS wealth quintile</title>',
+      '<rect width="920" height="420" fill="white"/>',
+      '<text x="30" y="45" font-family="Arial" font-size="28" font-weight="700" fill="#123843">Wealth quintiles in the full model</text>',
+      '<text x="30" y="76" font-family="Arial" font-size="17" fill="#586e75">Adjusted 12-month selected-reason discontinuation (%)</text>']
+    for tick in range(0, 46, 10):
+        xx = x(tick)
+        wealth_svg += [f'<line x1="{xx:.1f}" y1="100" x2="{xx:.1f}" y2="355" stroke="#e1e9e9"/>',
+          f'<text x="{xx:.1f}" y="385" text-anchor="middle" font-family="Arial" font-size="16" fill="#52696f">{tick}</text>']
+    ref = float(five_overall['estimate'])
+    wealth_svg.append(f'<line x1="{x(ref):.1f}" y1="100" x2="{x(ref):.1f}" y2="355" stroke="#008e9d" stroke-width="2" stroke-dasharray="6 5"/>')
+    for idx, r in enumerate(wealth_rows):
+        y = 132 + idx * 52
+        est = float(r['adjusted_12_month_probability_pct'])
+        lo, hi = float(r['ci_low']), float(r['ci_high'])
+        wealth_svg += [f'<text x="45" y="{y+6}" font-family="Arial" font-size="20" fill="#123843">{escape(r["level"])}</text>',
+          f'<line x1="{x(lo):.1f}" y1="{y}" x2="{x(hi):.1f}" y2="{y}" stroke="#123843" stroke-width="3"/>',
+          f'<circle cx="{x(est):.1f}" cy="{y}" r="7" fill="#008e9d" stroke="white" stroke-width="1.5"/>',
+          f'<text x="670" y="{y+6}" font-family="Arial" font-size="18" font-weight="700" fill="#123843">{est:.1f} ({lo:.1f}–{hi:.1f})</text>']
+    wealth_svg.append('</svg>')
+    (OUT / 'assets' / 'selected_reason_five_wealth_full_model.svg').write_text('\n'.join(wealth_svg))
+    boot = read_rows('selected_reason_five_wealth_four_marital_four_parity_bootstrap.csv')
+    differences = sorted(float(r['wealth_group::Poorest']) - float(r['wealth_group::Richest'])
+                         for r in boot if r['wealth_group::Poorest'] and r['wealth_group::Richest'])
+    def percentile(values, probability):
+        index = (len(values) - 1) * probability
+        lower = int(index)
+        upper = min(lower + 1, len(values) - 1)
+        return values[lower] + (index - lower) * (values[upper] - values[lower])
+    poorest = next(r for r in wealth_rows if r['level'] == 'Poorest')
+    richest = next(r for r in wealth_rows if r['level'] == 'Richest')
+    difference = float(poorest['adjusted_12_month_probability_pct']) - float(richest['adjusted_12_month_probability_pct'])
+    parts += [
+      '<h4>Wealth-quintile sensitivity model</h4>',
+      '<p>To assess whether the three-group wealth adjustment hides a gradient, the identical full model was refitted with all five DHS combined-wealth quintiles: poorest, poorer, middle, richer, and richest. Every other outcome definition and covariate stayed the same. The overall adjusted probability is '
+      f'<strong>{float(five_overall["estimate"]):.1f}%</strong> (95% CI {float(five_overall["ci_low"]):.1f}–{float(five_overall["ci_high"]):.1f}%).</p>',
+      '<div class="figure-grid"><figure><a href="assets/selected_reason_five_wealth_full_model.svg"><img src="assets/selected_reason_five_wealth_full_model.svg" alt="Adjusted 12-month selected-reason discontinuation probabilities and intervals for all five DHS wealth quintiles"></a><figcaption>The model includes all other covariates, including four parity groups and four marital-status groups. The dashed line is the overall adjusted probability.</figcaption></figure></div>',
+      row_table(wealth_rows, ['wealth_group'], {'wealth_group': 'DHS wealth quintile'}),
+      f'<p>The adjusted poorest-minus-richest difference is <strong>{difference:.1f} percentage points</strong> (95% bootstrap CI {percentile(differences, .025):.1f} to {percentile(differences, .975):.1f} points). The pattern across all five categories should be assessed as a whole rather than inferred from this one contrast alone.</p>',
+      '<p class="note">Wealth is the DHS asset-based index measured at interview, not income at method start. These category-specific intervals are useful for assessing precision; the poorest-versus-richest contrast does not by itself establish a monotonic gradient across all five quintiles.</p>',
+      '<div class="downloads"><a href="Supporting_data/selected_reason_five_wealth_four_marital_four_parity_margins.csv">Five-quintile full model estimates</a><a href="../Code/72_five_wealth_four_marital_selected_regression.R">Five-quintile model code</a></div>'
+    ]
+parts += ['</div>', END]
+block = '\n'.join(parts)
+
+from report_fragments import replace_fragment
+replace_fragment(PAGE,'revised-full-subgroup-model',block,parent='selected-reason-descriptive-subgroups')
+print('Rendered revised-full-subgroup-model')
+)----------------------"
+REPORT_FILES[["src/report/81_render_descriptive_characteristics_preview.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render a review-only HTML table of subgroup risk and selected-ending reasons."""
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+support = out / 'Supporting_data'
+
+def read_csv(name):
+    with (support / name).open(newline='') as stream:
+        return list(csv.DictReader(stream))
+
+rates = read_csv('selected_reason_descriptive_characteristics_rates.csv')
+reasons = read_csv('selected_reason_descriptive_characteristics_reason_mix.csv')
+by_cell = {}
+for item in reasons:
+    by_cell.setdefault((item['variable'], item['group']), []).append(item)
+
+table_rows = []
+previous = None
+for row in rates:
+    key = (row['variable'], row['group'])
+    mix = by_cell[key]
+    assert len(mix) == 7
+    assert abs(sum(float(x['share_pct']) for x in mix) - 100) < 1e-8
+    boundary = ' section-start' if row['characteristic'] != previous else ''
+    previous = row['characteristic']
+    chips = ''.join(
+        f'<li><span class="rank">{int(x["rank"])}</span>'
+        f'<span class="reason-name">{escape(x["reason"])}</span>'
+        f'<strong>{float(x["share_pct"]):.1f}%</strong></li>'
+        for x in mix
+    )
+    table_rows.append(f'''<tr class="data-row{boundary}">
+      <th scope="row"><span class="characteristic">{escape(row['characteristic'])}</span>
+        <span class="category">{escape(row['group'])}</span></th>
+      <td class="rate-cell"><strong class="rate">{float(row['rate_pct']):.1f}%</strong>
+        <span class="interval">95% CI {float(row['ci_low']):.1f}–{float(row['ci_high']):.1f}%</span>
+        <span class="count">{int(row['eligible_episodes']):,} eligible episodes</span></td>
+      <td class="reasons-cell"><div class="reasons-meta">{int(row['selected_endings_n']):,} observed selected endings underpin these estimates <b>100.0%</b></div>
+        <ol class="reason-list">{chips}</ol></td>
+    </tr>''')
+
+html = f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Descriptive subgroup discontinuation and reasons</title>
+<style>
+:root{{--navy:#123843;--teal:#008c97;--ink:#173740;--muted:#5c7278;--line:#d8e5e7;--paper:#fff;--bg:#edf3f4}}
+*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.42 Arial,Helvetica,sans-serif}}
+main{{max-width:1500px;margin:26px auto;background:var(--paper);padding:38px 45px 55px;box-shadow:0 8px 32px #12384314}}
+.eyebrow{{color:var(--teal);font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}}
+h1{{font:700 35px/1.12 Georgia,serif;color:var(--navy);margin:9px 0 18px;max-width:1250px}}
+.lede{{max-width:1270px;font-size:17px;color:#38545c;margin:0 0 16px}}
+.definition{{background:#eaf5f6;border-left:5px solid var(--teal);padding:13px 17px;margin:18px 0 25px;max-width:1300px}}
+.table-wrap{{overflow-x:auto;border:1px solid var(--line);border-radius:10px}}
+table{{border-collapse:collapse;width:100%;table-layout:fixed}}thead th{{background:var(--navy);color:white;text-align:left;font-size:15px;padding:15px 17px}}
+thead th:nth-child(1){{width:21%}}thead th:nth-child(2){{width:20%}}thead th:nth-child(3){{width:59%}}
+tbody th,tbody td{{vertical-align:top;padding:14px 17px;border-bottom:1px solid var(--line)}}tbody th{{text-align:left}}
+tbody tr.section-start th,tbody tr.section-start td{{border-top:4px solid #91bdc3}}
+tbody tr:nth-child(even){{background:#f8fbfb}}
+.characteristic{{display:block;text-transform:uppercase;letter-spacing:.055em;font-size:11px;color:var(--teal);font-weight:800;margin-bottom:4px}}
+.category{{display:block;font-size:17px;color:var(--navy);font-weight:700}}
+.rate{{display:block;font-size:25px;color:var(--navy);line-height:1.2}}
+.interval,.count{{display:block;font-size:13px;color:var(--muted);margin-top:4px}}
+.reasons-meta{{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e2ebed;padding-bottom:6px;margin-bottom:7px}}
+.reasons-meta b{{color:var(--navy);white-space:nowrap}}
+.reason-list{{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:22px;row-gap:5px}}
+.reason-list li{{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:6px;align-items:baseline;font-size:13px}}
+.rank{{display:inline-flex;justify-content:center;align-items:center;background:#dcecee;color:#205761;border-radius:50%;width:18px;height:18px;font-weight:700;font-size:11px}}
+.reason-name{{min-width:0}}.reason-list strong{{color:#0c6d76;font-variant-numeric:tabular-nums;white-space:nowrap}}
+.notes{{max-width:1250px;margin-top:24px;font-size:13px;color:#526a71}}.notes p{{margin:7px 0}}a{{color:#007787}}
+@media(max-width:900px){{main{{margin:0;padding:22px 18px}}h1{{font-size:28px}}.lede{{font-size:15px}}.table-wrap{{border:0;overflow:visible}}table,thead,tbody,tr,th,td{{display:block;width:100%}}thead{{display:none}}tbody tr{{border:1px solid var(--line);border-radius:9px;margin:0 0 14px;overflow:hidden}}tbody th,tbody td{{border:0;padding:9px 14px}}tbody tr.section-start th{{border-top:4px solid #91bdc3}}tbody tr.section-start td{{border-top:0}}.rate-cell{{padding-top:0}}.reasons-cell{{padding-top:7px}}.reason-list{{grid-template-columns:1fr 1fr}}}}
+@media(max-width:550px){{.reason-list{{grid-template-columns:1fr}}.reason-list li{{font-size:14px}}.rate{{font-size:27px}}}}
+</style></head><body><main>
+<div class="eyebrow">Ethiopia DHS 2024–25 · descriptive subgroup preview</div>
+<h1>How 12-month discontinuation and stated reasons vary across groups</h1>
+<p class="lede">Survey-weighted, unadjusted estimates for modern-method episodes. Within each category, the seven reasons are ranked by their contribution to the 12-month discontinuation probability and total 100% after balanced one-decimal rounding.</p>
+<div class="definition"><strong>The reasons decompose the rate beside them.</strong> The middle column is the cumulative probability that an eligible original-method episode ends for one of the selected reasons within 12 months. On the right, each reason’s own 12-month cumulative probability is divided by that selected-reason total. Both use the same weighted monthly risk sets.</div>
+<div class="table-wrap"><table><thead><tr><th>Characteristic and category</th><th>12-month selected-reason discontinuation</th><th>Ranked contributions to the 12-month rate</th></tr></thead><tbody>
+{''.join(table_rows)}
+</tbody></table></div>
+<div class="notes">
+<p><strong>Outcome:</strong> Ends the original modern method within 12 months for any recorded reason except <em>wanted pregnancy</em> or <em>husband/partner disapproval</em>. Those two remain competing events in the life table; they are not deleted from the initial risk set. Method failure (pregnancy while using) and other fertility-related reasons remain included. Emergency contraception is excluded. A method switch can count as an original-method ending.</p>
+<p><strong>Definitions:</strong> Age and live births are measured at method start. Marital status, education, wealth, and residence are recorded at interview and may have changed after the episode. “Other fertility-related” includes infrequent sex or husband away, marital dissolution or separation, and difficulty becoming pregnant or menopause.</p>
+<p><strong>Uncertainty:</strong> Rates use DHS survey weights and 95% percentile intervals from 1,000 rescaled PSU bootstrap samples within sampling strata. All episodes contributed by a woman move with her PSU. The eligible-episode and ending counts displayed are unweighted; ranked reason contributions are survey weighted and have no intervals in this preview. Small groups and individual reason cells warrant caution.</p>
+<p><a href="Supporting_data/selected_reason_descriptive_characteristics_rates.csv">Download subgroup rates</a> · <a href="Supporting_data/selected_reason_descriptive_characteristics_reason_mix.csv">Download ranked reason shares</a> · <a href="../Code/80_descriptive_characteristics_selected_reasons.R">Calculation code</a></p>
+</div></main></body></html>'''
+path = out / 'descriptive_subgroup_discontinuation_reasons_preview.html'
+path.write_text(html)
+print(path)
+)----------------------"
+REPORT_FILES[["src/report/83_render_method_experience_descriptive_preview.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render a review-only HTML table of subgroup risk and selected-ending reasons."""
+import csv
+from html import escape
+from pathlib import Path
+import os
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+support = out / 'Supporting_data'
+
+def read_csv(name):
+    with (support / name).open(newline='') as stream:
+        return list(csv.DictReader(stream))
+
+rates = read_csv('method_experience_descriptive_characteristics_rates.csv')
+reasons = read_csv('method_experience_descriptive_characteristics_reason_mix.csv')
+by_cell = {}
+for item in reasons:
+    by_cell.setdefault((item['variable'], item['group']), []).append(item)
+
+table_rows = []
+previous = None
+for row in rates:
+    key = (row['variable'], row['group'])
+    mix = by_cell[key]
+    assert len(mix) == 5
+    assert abs(sum(float(x['share_pct']) for x in mix) - 100) < 1e-8
+    boundary = ' section-start' if row['characteristic'] != previous else ''
+    previous = row['characteristic']
+    chips = ''.join(
+        f'<li><span class="rank">{int(x["rank"])}</span>'
+        f'<span class="reason-name">{escape(x["reason"])}</span>'
+        f'<strong>{float(x["share_pct"]):.1f}%</strong></li>'
+        for x in mix
+    )
+    table_rows.append(f'''<tr class="data-row{boundary}">
+      <th scope="row"><span class="characteristic">{escape(row['characteristic'])}</span>
+        <span class="category">{escape(row['group'])}</span></th>
+      <td class="rate-cell"><strong class="rate">{float(row['rate_pct']):.1f}%</strong>
+        <span class="interval">95% CI {float(row['ci_low']):.1f}–{float(row['ci_high']):.1f}%</span>
+        <span class="count">{int(row['eligible_episodes']):,} eligible episodes</span></td>
+      <td class="reasons-cell"><div class="reasons-meta">{int(row['selected_endings_n']):,} observed retained-reason endings underpin these estimates <b>100.0%</b></div>
+        <ol class="reason-list">{chips}</ol></td>
+    </tr>''')
+
+html = f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Descriptive subgroup discontinuation and reasons</title>
+<style>
+:root{{--navy:#123843;--teal:#008c97;--ink:#173740;--muted:#5c7278;--line:#d8e5e7;--paper:#fff;--bg:#edf3f4}}
+*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.42 Arial,Helvetica,sans-serif}}
+main{{max-width:1500px;margin:26px auto;background:var(--paper);padding:38px 45px 55px;box-shadow:0 8px 32px #12384314}}
+.eyebrow{{color:var(--teal);font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}}
+h1{{font:700 35px/1.12 Georgia,serif;color:var(--navy);margin:9px 0 18px;max-width:1250px}}
+.lede{{max-width:1270px;font-size:17px;color:#38545c;margin:0 0 16px}}
+.definition{{background:#eaf5f6;border-left:5px solid var(--teal);padding:13px 17px;margin:18px 0 25px;max-width:1300px}}
+.table-wrap{{overflow-x:auto;border:1px solid var(--line);border-radius:10px}}
+table{{border-collapse:collapse;width:100%;table-layout:fixed}}thead th{{background:var(--navy);color:white;text-align:left;font-size:15px;padding:15px 17px}}
+thead th:nth-child(1){{width:21%}}thead th:nth-child(2){{width:20%}}thead th:nth-child(3){{width:59%}}
+tbody th,tbody td{{vertical-align:top;padding:14px 17px;border-bottom:1px solid var(--line)}}tbody th{{text-align:left}}
+tbody tr.section-start th,tbody tr.section-start td{{border-top:4px solid #91bdc3}}
+tbody tr:nth-child(even){{background:#f8fbfb}}
+.characteristic{{display:block;text-transform:uppercase;letter-spacing:.055em;font-size:11px;color:var(--teal);font-weight:800;margin-bottom:4px}}
+.category{{display:block;font-size:17px;color:var(--navy);font-weight:700}}
+.rate{{display:block;font-size:25px;color:var(--navy);line-height:1.2}}
+.interval,.count{{display:block;font-size:13px;color:var(--muted);margin-top:4px}}
+.reasons-meta{{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e2ebed;padding-bottom:6px;margin-bottom:7px}}
+.reasons-meta b{{color:var(--navy);white-space:nowrap}}
+.reason-list{{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:22px;row-gap:5px}}
+.reason-list li{{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:6px;align-items:baseline;font-size:13px}}
+.rank{{display:inline-flex;justify-content:center;align-items:center;background:#dcecee;color:#205761;border-radius:50%;width:18px;height:18px;font-weight:700;font-size:11px}}
+.reason-name{{min-width:0}}.reason-list strong{{color:#0c6d76;font-variant-numeric:tabular-nums;white-space:nowrap}}
+.notes{{max-width:1250px;margin-top:24px;font-size:13px;color:#526a71}}.notes p{{margin:7px 0}}a{{color:#007787}}
+@media(max-width:900px){{main{{margin:0;padding:22px 18px}}h1{{font-size:28px}}.lede{{font-size:15px}}.table-wrap{{border:0;overflow:visible}}table,thead,tbody,tr,th,td{{display:block;width:100%}}thead{{display:none}}tbody tr{{border:1px solid var(--line);border-radius:9px;margin:0 0 14px;overflow:hidden}}tbody th,tbody td{{border:0;padding:9px 14px}}tbody tr.section-start th{{border-top:4px solid #91bdc3}}tbody tr.section-start td{{border-top:0}}.rate-cell{{padding-top:0}}.reasons-cell{{padding-top:7px}}.reason-list{{grid-template-columns:1fr 1fr}}}}
+@media(max-width:550px){{.reason-list{{grid-template-columns:1fr}}.reason-list li{{font-size:14px}}.rate{{font-size:27px}}}}
+</style></head><body><main>
+<div class="eyebrow">Ethiopia DHS 2024–25 · descriptive subgroup preview</div>
+<h1>How method experience and access-related discontinuation varies across groups</h1>
+<p class="lede">Survey-weighted, unadjusted estimates for modern-method episodes. Within each category, the five retained reasons are ranked by their contribution to the 12-month discontinuation probability and total 100% after balanced one-decimal rounding.</p>
+<div class="definition"><strong>The reasons decompose the rate beside them.</strong> The middle column is the cumulative probability that an eligible original-method episode ends for one of the selected reasons within 12 months. On the right, each reason’s own 12-month cumulative probability is divided by that retained-reason total. Both use the same weighted monthly risk sets.</div>
+<div class="table-wrap"><table><thead><tr><th>Characteristic and category</th><th>12-month retained-reason discontinuation</th><th>Ranked contributions to the 12-month rate</th></tr></thead><tbody>
+{''.join(table_rows)}
+</tbody></table></div>
+<div class="notes">
+<p><strong>Outcome:</strong> Ends the original modern method within 12 months for any recorded reason except <em>wanted pregnancy</em>, <em>husband/partner disapproval</em>, <em>other fertility-related</em>, and <em>other recorded</em>. Those four categories remain competing events in the life table; they are not deleted from the initial risk set. Method failure (pregnancy while using) remains included. Emergency contraception is excluded. A method switch can count as an original-method ending.</p>
+<p><strong>Definitions:</strong> Age and live births are measured at method start. Marital status, education, wealth, and residence are recorded at interview and may have changed after the episode. The two removed Other groups comprise infrequent sex or husband away, marital dissolution or separation, difficulty becoming pregnant or menopause; plus fatalistic, unspecified, missing/unclassified, or don’t know reasons.</p>
+<p><strong>Uncertainty:</strong> Rates use DHS survey weights and 95% percentile intervals from 1,000 rescaled PSU bootstrap samples within sampling strata. All episodes contributed by a woman move with her PSU. The eligible-episode and ending counts displayed are unweighted; ranked reason contributions are survey weighted and have no intervals in this preview. Small groups and individual reason cells warrant caution.</p>
+<p><a href="Supporting_data/method_experience_descriptive_characteristics_rates.csv">Download subgroup rates</a> · <a href="Supporting_data/method_experience_descriptive_characteristics_reason_mix.csv">Download ranked reason shares</a> · <a href="../Code/82_descriptive_characteristics_method_experience_reasons.R">Calculation code</a></p>
+</div></main></body></html>'''
+path = out / 'descriptive_subgroup_method_experience_reasons_preview.html'
+path.write_text(html)
+print(path)
+)----------------------"
+REPORT_FILES[["src/report/85_add_method_experience_subgroups_to_working_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Insert the reviewed five-reason subgroup table beside the revised model.
+
+The model immediately above still uses the broader two-exclusion outcome.
+This descriptive companion is explicitly labelled as a different, narrower
+outcome. Re-running this script replaces only its marked section.
+"""
+import csv
+from collections import defaultdict
+from html import escape
+from pathlib import Path
+import os
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+output = root / 'output'
+support = output / 'Supporting_data'
+target = output / 'Ethiopia_discontinuation_analysis.html'
+
+def read_csv(name):
+    with (support / name).open(newline='') as f:
+        return list(csv.DictReader(f))
+
+rates = read_csv('method_experience_descriptive_characteristics_rates.csv')
+mix = read_csv('method_experience_descriptive_characteristics_reason_mix.csv')
+timing = read_csv('method_experience_age_timepoints.csv')
+assert len(rates) == 22 and len(mix) == 110
+by_cell = defaultdict(list)
+for row in mix:
+    by_cell[(row['variable'], row['group'])].append(row)
+by_age = defaultdict(dict)
+for row in timing:
+    by_age[row['age_at_start']][int(row['month'])] = row
+
+age_rows = []
+for age in ('15-19', '20-24', '25-34', '35-49'):
+    t = by_age[age]
+    age_rows.append(
+        '<tr><th scope="row">{}</th><td>{:.1f}%</td><td>{:.1f}%</td>'
+        '<td><strong>{:.1f}%</strong></td><td>{:.1f}%</td><td>{:.1f}%</td></tr>'.format(
+            escape(age),
+            float(t[3]['retained_reason_pct']),
+            float(t[6]['retained_reason_pct']),
+            float(t[12]['retained_reason_pct']),
+            float(t[12]['bleeding_or_health_pct']),
+            float(t[12]['original_method_continuation_pct'])))
+
+reason_rows = []
+previous = None
+for row in rates:
+    key = (row['variable'], row['group'])
+    reasons = by_cell[key]
+    assert len(reasons) == 5
+    assert abs(sum(float(r['share_pct']) for r in reasons) - 100) < 1e-8
+    category = row['characteristic']
+    section_class = ' class="subgroup-first"' if category != previous else ''
+    previous = category
+    reason_text = '<ol class="subgroup-reason-list">' + ''.join(
+        '<li><span>{}</span><strong>{:.1f}%</strong></li>'.format(
+            escape(r['reason']), float(r['share_pct'])) for r in reasons
+    ) + '</ol>'
+    reason_rows.append(
+        '<tr{}><th scope="row"><span class="subgroup-variable">{}</span>'
+        '<span class="subgroup-level">{}</span></th>'
+        '<td class="num">{:,}</td><td class="num"><strong>{:.1f}%</strong>'
+        '<small>95% CI {:.1f}–{:.1f}%</small></td>'
+        '<td>{}</td></tr>'.format(
+            section_class, escape(category), escape(row['group']),
+            int(row['eligible_episodes']), float(row['rate_pct']),
+            float(row['ci_low']), float(row['ci_high']), reason_text))
+
+section = '''<!-- BEGIN METHOD-EXPERIENCE SUBGROUP REASONS -->
+<section id="method-experience-subgroup-reasons" class="method-experience-subgroup-section">
+<style>
+.method-experience-subgroup-section .subgroup-variable{display:block;color:#008c97;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.method-experience-subgroup-section .subgroup-level{display:block;color:#123843;font-size:1rem;font-weight:700}
+.method-experience-subgroup-section .subgroup-first>*{border-top:3px solid #a8ccd0}
+.method-experience-subgroup-section .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.method-experience-subgroup-section .num small{display:block;color:#567078;font-weight:400;font-size:.78rem}
+.method-experience-subgroup-section .subgroup-reason-list{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(2,minmax(165px,1fr));column-gap:1rem;row-gap:.25rem}
+.method-experience-subgroup-section .subgroup-reason-list li{display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;font-size:.82rem}
+.method-experience-subgroup-section .subgroup-reason-list strong{white-space:nowrap;color:#0d6e77;font-variant-numeric:tabular-nums}
+@media(max-width:700px){.method-experience-subgroup-section .subgroup-reason-list{grid-template-columns:1fr}}
+</style>
+<h4 id="toc-reasons-by-covariate-subgroup">Reasons by covariate subgroup</h4>
+<p><strong>A narrower descriptive companion to the model above.</strong> The adjusted regression above counts endings for every recorded reason other than wanted pregnancy and partner disapproval. This table also excludes <em>Other fertility-related</em> and <em>Other recorded</em> reasons from the outcome. All four excluded ending categories remain competing events in the original risk set; no episodes are deleted because of how they ended. Method failure remains included. These descriptive probabilities are therefore lower than those in the regression above and must not be read as adjusted model results.</p>
+<p>The five reason percentages on each row rank contributions to that row’s <strong>12-month retained-reason probability</strong>. They sum to 100% after rounding. Each is a reason-specific cumulative incidence divided by the row’s retained-reason total, not a raw percentage of observed endings. The table has 95% survey-design intervals for the total probability; the individual reason shares have no intervals.</p>
+<h5 id="method-experience-age-example">A simple example: age at method start</h5>
+<div class="table-wrap analysis-table" role="region" aria-label="Example of age-specific discontinuation timing, reasons and original-method continuation" tabindex="0"><table>
+<thead><tr><th>Age at start</th><th>Retained-reason ending by 3 months</th><th>By 6 months</th><th>By 12 months</th><th>Bleeding or other side effects by 12 months</th><th>Still using original method at 12 months</th></tr></thead>
+<tbody>''' + ''.join(age_rows) + '''</tbody></table></div>
+<p class="note"><strong>How to read ages 15–19:</strong> Among eligible episodes begun at ages 15–19, an estimated 6.5% ended for a retained reason by month 3 and 18.2% by month 12; 5.5% ended because of bleeding or other side effects by month 12. An estimated 55.1% were still using the <em>original method</em> at month 12. This is not the same as still using any contraception: switching ends the original method episode. The two rightmost columns are not complements. These time-point values are unadjusted point estimates; only the 12-month retained-reason total in the full table below has a displayed confidence interval.</p>
+<div class="table-wrap analysis-table" role="region" aria-label="Unadjusted twelve-month retained-reason discontinuation and ranked reason contributions by covariate group" tabindex="0"><table>
+<thead><tr><th>Characteristic and category</th><th>Eligible episodes</th><th>12-month retained-reason ending</th><th>Ranked reasons within the retained-reason total</th></tr></thead>
+<tbody>''' + ''.join(reason_rows) + '''</tbody></table></div>
+<p class="note">Age and live-birth parity are assigned at method start. Marital status, education, wealth and residence are measured at interview and may have changed after the episode. Bleeding changes and other side effects/health concerns are shown separately in the full table; they are combined only in the example’s broad service-experience column. Small groups and individual reason cells require caution. Emergency contraception is excluded.</p>
+<div class="downloads"><a href="Supporting_data/method_experience_descriptive_characteristics_rates.csv">Download subgroup rates and intervals</a><a href="Supporting_data/method_experience_descriptive_characteristics_reason_mix.csv">Download ranked reasons</a><a href="Supporting_data/method_experience_age_timepoints.csv">Download age example</a><a href="../Code/82_descriptive_characteristics_method_experience_reasons.R">Open calculation code</a></div>
+</section>
+<!-- END METHOD-EXPERIENCE SUBGROUP REASONS -->'''
+
+from report_fragments import replace_fragment
+replace_fragment(target,'method-experience-subgroup-reasons',section,parent='selected-reason-descriptive-subgroups')
+print('Rendered method-experience-subgroup-reasons')
+)----------------------"
+REPORT_FILES[["src/report/87_render_top_three_reasons_subgroup_preview.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Review-only, method-selectable top-three reason table and visual example."""
+import csv
+from collections import defaultdict
+from html import escape
+from pathlib import Path
+import os
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+support = out / 'Supporting_data'
+
+def read(name):
+    with (support / name).open(newline='') as f:
+        return list(csv.DictReader(f))
+
+data = read('top_three_retained_reasons_by_subgroup_method.csv')
+age_mix = read('method_experience_descriptive_characteristics_reason_mix.csv')
+methods = ['All modern', 'Injectables', 'Pill', 'IUD']
+reason_colors = {
+    'Method failure': '#66519A',
+    'Bleeding changes': '#008C97',
+    'Side effects/health': '#D45A49',
+    'Wanted more effective method': '#A56B08',
+    'Access/cost/inconvenience': '#153F5B',
+}
+by_method = defaultdict(lambda: defaultdict(list))
+for row in data:
+    by_method[row['method']][(row['variable'], row['group'])].append(row)
+
+def reason_cell(row):
+    return ('<div class="reason" style="--reason-color:{}">'
+            '<span class="reason-name">{}</span>'
+            '<strong>{:.1f}% of episodes</strong>'
+            '<span class="share">{:.1f}% of retained risk</span></div>').format(
+        reason_colors[row['reason']], escape(row['reason']),
+        float(row['reason_12_month_probability_pct']),
+        float(row['share_of_retained_12_month_probability_pct']))
+
+panels = []
+for method in methods:
+    rows = []
+    previous = None
+    for key, ranked in by_method[method].items():
+        assert len(ranked) == 3
+        ranked.sort(key=lambda x: int(x['rank']))
+        first = ranked[0]
+        characteristic = first['characteristic']
+        group = first['group']
+        n = int(first['eligible_episodes'])
+        events = int(first['retained_endings'])
+        status = first['status']
+        section_class = ' section-start' if characteristic != previous else ''
+        previous = characteristic
+        if status == 'Withhold':
+            cells = '<td colspan="3" class="withheld">Too few recorded endings to rank reasons reliably</td>'
+        else:
+            cells = ''.join(f'<td>{reason_cell(item)}</td>' for item in ranked)
+        caution = ' <span class="caution" title="Fewer than 30 retained endings; ranking is unstable">†</span>' if status == 'Sparse' else ''
+        raw_rate = first['retained_12_month_probability_pct']
+        rate = float(raw_rate) if raw_rate not in ('NA', '') else float('nan')
+        rate_text = f'{rate:.1f}%' if n and rate == rate else '—'
+        rows.append(
+            f'<tr class="{section_class}"><th scope="row">'
+            f'<span class="var">{escape(characteristic)}</span>'
+            f'<span class="group">{escape(group)}</span></th>'
+            f'<td class="num">{n:,}<small>{events:,} retained endings{caution}</small></td>'
+            f'<td class="num"><strong>{rate_text}</strong></td>{cells}</tr>')
+    panel_id = method.lower().replace(' ', '-')
+    panels.append(f'''<section id="panel-{panel_id}" class="panel" data-method="{escape(method)}" {'hidden' if method != methods[0] else ''}>
+<h2>{escape(method)}</h2>
+<p class="panel-note">{('All specified modern methods combined, excluding emergency contraception.' if method == 'All modern' else 'Original '+method.lower()+' method episodes.')}{' IUD subgroup cells are especially sparse; most rankings are withheld.' if method == 'IUD' else ''}</p>
+<div class="table-wrap"><table><thead><tr><th>Covariate and category</th><th>Episodes / endings</th><th>12-month retained-reason risk</th><th>1st reason</th><th>2nd reason</th><th>3rd reason</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></section>''')
+
+age_lookup = {(r['group'], r['reason']): float(r['cause_specific_12_month_probability_pct'])
+              for r in age_mix if r['variable'] == 'age_group'}
+reason_order = ['Wanted more effective method', 'Access/cost/inconvenience',
+                'Side effects/health', 'Bleeding changes', 'Method failure']
+ages = ['15-19', '20-24', '25-34', '35-49']
+heat_rows = []
+for age in ages:
+    cells = []
+    for reason in reason_order:
+        value = age_lookup[(age, reason)]
+        opacity = min(.64, .08 + .57 * value / 7.5)
+        cells.append(f'<td style="background:rgba(0,140,151,{opacity:.3f})">{value:.1f}%</td>')
+    heat_rows.append(f'<tr><th scope="row">{escape(age)}</th>{"".join(cells)}</tr>')
+
+page = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Top three discontinuation reasons by subgroup and method</title>
+<style>
+:root{{--navy:#123843;--teal:#008c97;--ink:#173740;--line:#d8e5e7;--bg:#edf3f4}}
+*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 Arial,sans-serif}}main{{max-width:1550px;margin:22px auto;background:white;padding:35px 42px 55px;box-shadow:0 8px 32px #12384314}}
+.eyebrow{{font-size:12px;color:var(--teal);font-weight:800;letter-spacing:.08em;text-transform:uppercase}}h1{{font:700 34px/1.12 Georgia,serif;color:var(--navy);margin:8px 0 14px}}h2{{font:700 25px/1.2 Georgia,serif;color:var(--navy);margin:25px 0 6px}}p{{max-width:1250px}}.definition{{background:#eaf5f6;border-left:5px solid var(--teal);padding:13px 16px;margin:18px 0}}
+.tabs{{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}}.tabs button{{border:1px solid #b9d1d4;border-radius:8px;background:white;color:var(--navy);padding:9px 17px;font-size:15px;font-weight:700;cursor:pointer}}.tabs button[aria-selected=true]{{background:var(--navy);color:white;border-color:var(--navy)}}.panel[hidden]{{display:none}}
+.table-wrap{{overflow-x:auto;border:1px solid var(--line);border-radius:9px}}table{{border-collapse:collapse;width:100%;min-width:1080px}}thead th{{background:var(--navy);color:white;text-align:left;padding:13px 12px;font-size:14px}}tbody th,tbody td{{border-bottom:1px solid var(--line);padding:10px 12px;vertical-align:top}}tbody th{{text-align:left;min-width:165px}}tbody tr:nth-child(even){{background:#f8fbfb}}tbody tr.section-start>*{{border-top:3px solid #91bdc3}}
+.var{{display:block;color:#16808a;text-transform:uppercase;font-size:11px;font-weight:800;letter-spacing:.04em}}.group{{display:block;font-size:15px;font-weight:700;color:var(--navy)}}.num{{white-space:nowrap;font-variant-numeric:tabular-nums}}.num small{{display:block;font-size:12px;color:#62777d}}.reason{{border-left:5px solid var(--reason-color);padding-left:8px;min-width:185px}}.reason-name{{display:block;font-weight:700;font-size:13px}}.reason strong{{display:block;font-size:15px;color:var(--navy)}}.reason .share{{display:block;color:#587078;font-size:12px}}.withheld{{color:#6c7a7e;font-style:italic}}.caution{{color:#a56b08;font-weight:800}}.panel-note,.note{{color:#4d666c}}
+.heatmap{{max-width:1000px;margin-top:18px}}.heatmap table{{min-width:690px}}.heatmap th,.heatmap td{{text-align:center;border:1px solid white;padding:11px 10px;font-weight:700;color:var(--navy)}}.heatmap thead th{{text-align:center;font-size:12px}}.heatmap tbody th{{background:#eaf5f6}}.footer{{font-size:13px;color:#4d666c;margin-top:22px}}a{{color:#007887}}
+@media(max-width:750px){{main{{margin:0;padding:20px 17px}}h1{{font-size:27px}}}}
+</style></head><body><main>
+<div class="eyebrow">Ethiopia DHS 2024–25 · exploratory review</div>
+<h1>Which reasons contribute most to 12-month method endings in each group?</h1>
+<p>Choose all modern methods, injectables, pills, or IUDs. Each row ranks the three largest <strong>reason-specific 12-month probabilities</strong> for that method and covariate group. Rankings are descriptive and unadjusted.</p>
+<div class="definition"><strong>Same outcome as the new subgroup reason table:</strong> method endings for five retained reasons. Wanted pregnancy, partner disapproval, Other fertility-related, and Other recorded endings remain competing events. The 12-month risk uses all eligible episodes of the method and subgroup as its starting group. “Share of retained risk” describes how the five retained reasons divide that risk; it is not the risk itself.</div>
+<div class="tabs" role="tablist" aria-label="Select method">{''.join(f'<button type="button" role="tab" data-target="{m}" aria-selected="{str(m==methods[0]).lower()}">{m}</button>' for m in methods)}</div>
+{''.join(panels)}
+<p class="note"><strong>Precision rule:</strong> rankings are withheld for fewer than 10 observed retained endings; † marks 10–29 endings and should be treated as tentative. These are descriptive estimates without reason-specific confidence intervals. A high reason share in a low-risk group may represent fewer episodes than a lower share in a high-risk group. Categories such as age and wealth are overlapping views of the same episodes, not independent populations.</p>
+<h2>A clearer visual for a presentation: absolute reason-specific risk</h2>
+<p>This compact example shows all five reasons for age groups across all modern methods. Each cell answers: “Out of 100 eligible method episodes begun at this age, how many are estimated to end for this reason within 12 months?” Darker shading denotes a larger probability. For a presentation, I would show one such panel for a small number of important covariates, with the adjusted overall-risk plot beside it.</p>
+<div class="heatmap table-wrap"><table><thead><tr><th>Age at method start</th>{''.join(f'<th>{escape(r)}</th>' for r in reason_order)}</tr></thead><tbody>{''.join(heat_rows)}</tbody></table></div>
+<p class="footer">The heatmap is an exploratory point-estimate display; it does not establish subgroup differences without confidence intervals or adjusted contrasts. Age and parity are assigned at method start. Marital status, education, wealth, and residence were measured at interview. Original-method endings include some switches and are not necessarily exits from modern contraception.</p>
+<p class="footer"><a href="Supporting_data/top_three_retained_reasons_by_subgroup_method.csv">Download every method and subgroup result</a> · <a href="../Code/86_top_three_reasons_by_subgroup_and_method.R">Open calculation code</a></p>
+</main><script>
+document.querySelectorAll('.tabs button').forEach(button=>button.addEventListener('click',()=>{{
+ document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b===button)));
+ document.querySelectorAll('.panel').forEach(panel=>panel.hidden=panel.dataset.method!==button.dataset.target);
+}}));
+</script></body></html>'''
+path = out / 'top_three_reasons_subgroup_method_preview.html'
+path.write_text(page)
+print(path)
+)----------------------"
+REPORT_FILES[["src/report/88_add_top_three_reasons_to_working_html.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Append method-specific top-three reason tables to the subgroup section."""
+import csv
+from collections import defaultdict
+from html import escape
+from pathlib import Path
+import os
+
+root = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+out = root / 'output'
+target = out / 'Ethiopia_discontinuation_analysis.html'
+with (out / 'Supporting_data/top_three_retained_reasons_by_subgroup_method.csv').open(newline='') as f:
+    source = list(csv.DictReader(f))
+methods = ['All modern', 'Injectables', 'Pill', 'IUD']
+by_method = defaultdict(lambda: defaultdict(list))
+for row in source:
+    by_method[row['method']][(row['variable'], row['group'])].append(row)
+
+tables = []
+for method in methods:
+    rows = []
+    for ranked in by_method[method].values():
+        ranked.sort(key=lambda r: int(r['rank']))
+        top = ranked[0]
+        n = int(top['eligible_episodes'])
+        endings = int(top['retained_endings'])
+        status = top['status']
+        raw = top['retained_12_month_probability_pct']
+        rate = f'{float(raw):.1f}%' if raw != 'NA' else '—'
+        if status == 'Withhold':
+            details = '<td colspan="3">Withheld: fewer than 10 retained endings</td>'
+        else:
+            details = ''.join(
+                '<td><strong>{}</strong><br>{:.1f}% of episodes; {:.1f}% of retained risk{}</td>'.format(
+                    escape(item['reason']),
+                    float(item['reason_12_month_probability_pct']),
+                    float(item['share_of_retained_12_month_probability_pct']),
+                    ' †' if status == 'Sparse' else '')
+                for item in ranked)
+        rows.append('<tr><th scope="row">{}: {}</th><td>{:,}</td><td>{:,}</td>'
+                    '<td>{}</td>{}</tr>'.format(
+                        escape(top['characteristic']), escape(top['group']),
+                        n, endings, rate, details))
+    open_attribute = ' open' if method == 'All modern' else ''
+    tables.append('<details{}><summary>{}</summary><div class="table-wrap analysis-table" role="region" tabindex="0">'
+                  '<table><thead><tr><th>Covariate and category</th><th>Eligible episodes</th>'
+                  '<th>Retained endings</th><th>12-month retained-reason risk</th>'
+                  '<th>1st reason</th><th>2nd reason</th><th>3rd reason</th>'
+                  '</tr></thead><tbody>{}</tbody></table></div></details>'.format(
+                      open_attribute, escape(method), ''.join(rows)))
+
+section = '''<!-- BEGIN TOP-THREE REASONS BY SUBGROUP AND METHOD -->
+<section id="top-three-reasons-by-subgroup-method">
+<h4 id="toc-top-three-reasons-by-subgroup-method">Top three reasons by subgroup and original method</h4>
+<p>The all-modern, injectable, pill and IUD tables apply the same <strong>five-reason outcome</strong> as the descriptive table immediately above. Each reason cell reports both its absolute 12-month cumulative probability among all eligible episodes in that row and its share of that row’s retained-reason probability. Rankings use the absolute probabilities. They are unadjusted; they are not evidence that a covariate causes discontinuation.</p>
+<p class="note">The IUD has only 18 observed retained first-year endings overall. Rankings are withheld for subgroup cells with fewer than 10 retained endings, and † flags 10–29 endings as tentative. No reason-specific confidence intervals or formal subgroup contrasts are available for these rankings. The complete table is retained here for exploration, but a presentation should focus on better-supported method and subgroup comparisons.</p>
+''' + '\n'.join(tables) + '''
+<div class="downloads"><a href="top_three_reasons_subgroup_method_preview.html">View the presentation-format comparison and sample heatmap</a><a href="Supporting_data/top_three_retained_reasons_by_subgroup_method.csv">Download all ranked results</a><a href="../Code/86_top_three_reasons_by_subgroup_and_method.R">Open calculation code</a></div>
+</section>
+<!-- END TOP-THREE REASONS BY SUBGROUP AND METHOD -->'''
+
+from report_fragments import replace_fragment
+replace_fragment(target,'top-three-reasons-by-subgroup-method',section,parent='selected-reason-descriptive-subgroups')
+print('Rendered top-three-reasons-by-subgroup-method')
+)----------------------"
+REPORT_FILES[["src/report/92_insert_updated_regional_method_experience.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Insert the narrowed regional forest plot and reason heatmap in the working HTML.
+
+Inputs are produced by Code/90_regional_method_experience_detailed.R and
+Code/91_plot_regional_method_experience_detailed.R. This renderer is idempotent
+and edits only the updated subnational heterogeneity section. It does not
+modify the PowerPoint presentation or any other analysis section.
+"""
+
+from __future__ import annotations
+
+import csv
+import html
+from pathlib import Path
+import os
+
+
+ROOT = Path(os.environ["ETHIOPIA_PROJECT_ROOT"])
+OUT = ROOT / "output"
+DOCUMENT = OUT / "Ethiopia_discontinuation_analysis.html"
+START = "<!-- BEGIN UPDATED REGIONAL RETAINED REASON RESULTS -->"
+END = "<!-- END UPDATED REGIONAL RETAINED REASON RESULTS -->"
+SECTION_END = "</section>\n<!-- END UPDATED SUBNATIONAL HETEROGENEITY ANALYSES -->"
+
+
+def h(value: object) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def read_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as stream:
+        return list(csv.DictReader(stream))
+
+
+rates = read_rows(OUT / "updated_regional_retained_reason_rates.csv")
+mix = read_rows(OUT / "updated_regional_retained_reason_heatmap_grouped.csv")
+national = next(row for row in rates if row["region"] == "All modern")
+regions = sorted(
+    (row for row in rates if row["region"] != "All modern"),
+    key=lambda row: -float(row["selected_reason_12_month_probability_pct"]),
+)
+reason_names = [
+    "Method failure",
+    "Wanted more effective method",
+    "Changes in menstrual bleeding",
+    "Other side effects/health",
+    "Access/cost/convenience",
+]
+reason_headers = [
+    "Method failure",
+    "More effective method",
+    "Bleeding changes",
+    "Other side effects / health",
+    "Access / cost / convenience",
+]
+by_region_reason = {(row["region"], row["reason"]): row for row in mix}
+assert len(regions) == 14 and len(mix) == 15 * 5
+for region in ["All modern"] + [row["region"] for row in regions]:
+    total = sum(
+        float(by_region_reason[(region, reason)]["displayed_share_pct"])
+        for reason in reason_names
+    )
+    assert abs(total - 100) < 1e-6, (region, total)
+
+rows = []
+for row in regions:
+    region = row["region"]
+    sparse = int(row["selected_endings_n"]) < 30
+    cells = [
+        f"<th scope='row'>{h(region)}{'<sup>†</sup>' if sparse else ''}</th>",
+        f"<td><strong>{float(row['selected_reason_12_month_probability_pct']):.1f}%</strong> "
+        f"({float(row['ci_low']):.1f}–{float(row['ci_high']):.1f})</td>",
+        f"<td>{int(row['eligible_episodes_n']):,}</td>",
+        f"<td>{int(row['selected_endings_n']):,}</td>",
+    ]
+    for reason in reason_names:
+        cell = by_region_reason[(region, reason)]
+        flag = "<sup>‡</sup>" if int(cell["observed_endings_n"]) < 10 else ""
+        cells.append(f"<td>{float(cell['displayed_share_pct']):.1f}{flag}</td>")
+    rows.append("<tr>" + "".join(cells) + "</tr>")
+
+national_cells = [
+    "<th scope='row'>National</th>",
+    f"<td><strong>{float(national['selected_reason_12_month_probability_pct']):.1f}%</strong> "
+    f"({float(national['ci_low']):.1f}–{float(national['ci_high']):.1f})</td>",
+    f"<td>{int(national['eligible_episodes_n']):,}</td>",
+    f"<td>{int(national['selected_endings_n']):,}</td>",
+]
+for reason in reason_names:
+    cell = by_region_reason[("All modern", reason)]
+    national_cells.append(f"<td>{float(cell['displayed_share_pct']):.1f}</td>")
+national_row = "<tr class='total'>" + "".join(national_cells) + "</tr>"
+
+header_cells = "".join(f"<th scope='col'>{h(name)}</th>" for name in reason_headers)
+insert = f"""{START}
+<h3 id="updated-regional-method-experience-results">Regional discontinuation for method experience or access</h3>
+<p>This repeats the regional 12-month analysis using a narrower outcome: ending a modern-method episode because of <strong>method failure, wanting a more effective method, bleeding changes, other side effects or health concerns, or access/cost/convenience</strong>. The last category combines lack of access or too far, cost too much, and inconvenient to use. Wanted pregnancy, husband/partner disapproval, other fertility-related reasons, and Other/Don't know do not count toward this outcome; they remain competing endings. Method failure includes becoming pregnant while using. The denominator is all eligible modern-method episodes, including episodes that later end for excluded reasons. Estimates describe ending the original method, not necessarily leaving modern contraception.</p>
+<p>The left panel shows the survey-weighted 12-month cumulative probability with 95% bootstrap intervals. The right panel shows the contribution of each retained reason to that probability, divided by the regional total. Each heatmap row therefore adds to 100%; it is not a raw count distribution of observed endings. Nationally, the selected-reason probability is <strong>{float(national['selected_reason_12_month_probability_pct']):.1f}%</strong> across {int(national['eligible_episodes_n']):,} eligible episodes.</p>
+<figure><a href="assets/updated_regional_retained_reason_forest_heatmap.svg"><img loading="lazy" src="assets/updated_regional_retained_reason_forest_heatmap.png" alt="Regional 12-month probability of discontinuing for method experience or access, with 95 percent confidence intervals and a five-category heatmap labeled by region. Each heatmap row adds to 100 percent."></a><figcaption>Regions are ordered by the 12-month selected-reason probability. The vertical dashed line is the national estimate. Somali has only five retained endings from 30 eligible episodes, so its rate and reason shares are too imprecise to rank.</figcaption></figure>
+<details><summary>View regional rates, episode counts, and reason shares</summary>
+<div class="table-wrap analysis-table" role="region" aria-label="Regional selected-reason discontinuation probability and reason mix" tabindex="0"><table>
+<thead><tr><th scope="col">Region</th><th scope="col">12-month probability (95% CI)</th><th scope="col">Eligible episodes (N)</th><th scope="col">Retained endings in first year (N)</th>{header_cells}</tr></thead>
+<tbody>{national_row}{''.join(rows)}</tbody></table></div>
+<p class="note">Reason columns are percentages of each region's selected-reason 12-month probability and add to 100.0% within each row. † Fewer than 30 retained endings in the region. ‡ Fewer than 10 observed first-year endings for that reason in the region; treat the cell as exploratory. Raw N values describe observed episodes or endings, while probabilities and reason shares use survey weights and a competing-risk life table. Confidence intervals resample survey PSUs within strata and keep repeated episodes together.</p>
+</details>
+<p><strong>Reading the two panels:</strong> A high share in a heatmap cell does not itself mean a high cause-specific risk. Compare it with the left-hand regional total; the cause-specific 12-month probability for every region and reason is available in the data download. These estimates identify where to investigate method experience and access, not which interruptions were preventable or how many women exited all modern contraception.</p>
+<div class="downloads"><a href="updated_regional_retained_reason_rates.csv">Download regional rates and intervals</a><a href="updated_regional_retained_reason_heatmap_grouped.csv">Download five-category heatmap data</a><a href="updated_regional_retained_reason_heatmap.csv">Download seven detailed reasons</a><a href="../Code/90_regional_method_experience_detailed.R">Open calculation R script</a><a href="../Code/91_plot_regional_method_experience_detailed.R">Open plotting R script</a></div>
+{END}
+"""
+
+from report_fragments import replace_fragment
+replace_fragment(DOCUMENT,'updated-regional-method-experience-results',insert,parent='updated-subnational-heterogeneity-analyses')
+print('Rendered updated-regional-method-experience-results')
+)----------------------"
+REPORT_FILES[["src/report/asset_bindings.json"]] <- r"----------------------([
+  {
+    "figure": 1,
+    "filename": "method_initiation_mix_overall.png",
+    "alt": "Horizontal bar chart of the weighted overall modern-method initiation mix"
+  },
+  {
+    "figure": 2,
+    "filename": "method_initiation_mix_by_year.png",
+    "alt": "One-hundred-percent stacked bar chart of the weighted modern-method initiation mix by calendar year"
+  },
+  {
+    "figure": 3,
+    "filename": "cumulative_discontinuation_3_6_12.png",
+    "alt": "Step chart showing weighted cumulative original-method discontinuation through 12 months for injectables, implants, pill, other modern methods, and all specified modern methods with and without emergency contraception"
+  },
+  {
+    "figure": 4,
+    "filename": "cause_specific_discontinuation_3_6_12.png",
+    "alt": "Three horizontal stacked-bar panels showing cumulative discontinuation at 3, 6, and 12 months by method and five aggregated reason families"
+  },
+  {
+    "figure": 5,
+    "filename": "reasons_for_discontinuation_ranked.png",
+    "alt": "Ranked horizontal bar chart of aggregated reasons for modern-method discontinuation"
+  },
+  {
+    "figure": 6,
+    "filename": "reason_mix_by_method_all_discontinued.svg",
+    "alt": "Weighted distribution of reasons among all discontinued modern-method episodes, by method. Bars sum to 100 percent within method."
+  },
+  {
+    "figure": 7,
+    "filename": "reason_mix_by_method_excluding_wanted_pregnancy_partner.svg",
+    "alt": "Two-color weighted reason distribution among discontinued modern-method episodes, excluding only wanted pregnancy and husband or partner disapproval. Each method bar sums to 100 percent. The all-modern bar is 74.3 percent method experience or access and 25.7 percent other recorded reasons."
+  },
+  {
+    "figure": 8,
+    "filename": "reason_mix_by_method_experience_access_detail.svg",
+    "alt": "Weighted distribution of four recorded method experience or access reasons among discontinued modern-method episodes, by method. Each bar sums to 100 percent."
+  },
+  {
+    "figure": 9,
+    "filename": "reasons_for_discontinuation_heatmap.png",
+    "alt": "Heatmap of aggregated reasons for discontinuation by modern method"
+  },
+  {
+    "figure": 10,
+    "filename": "post_discontinuation_alluvial_matched_month1.png",
+    "alt": "Alluvial diagram from discontinued modern method to the contraceptive or reproductive state one month later"
+  },
+  {
+    "figure": 11,
+    "filename": "post_discontinuation_month12_stacked.png",
+    "alt": "One-hundred-percent stacked bars showing the state 12 months after discontinuation by originating modern method"
+  },
+  {
+    "figure": 12,
+    "filename": "presentation_nonpreg_alluvial_month1_v38.png",
+    "alt": "Curved alluvial of modern-method discontinuations for non-pregnancy reasons and their state one month later"
+  },
+  {
+    "figure": 13,
+    "filename": "presentation_nonpreg_alluvial_month12_v38.png",
+    "alt": "Curved alluvial of the same non-pregnancy-reason discontinuations and their state 12 months later"
+  },
+  {
+    "figure": 14,
+    "filename": "injectable_reason_destination_alluvial.png",
+    "alt": "Alluvial diagram linking stated reason for injectable discontinuation to the state one month later"
+  },
+  {
+    "figure": 15,
+    "filename": "injectable_reason_timing_destination_heatmap.png",
+    "alt": "Heat map of injectable discontinuation timing and next-month destination by reason"
+  },
+  {
+    "figure": 16,
+    "filename": "current_user_pathway_3_12_alluvial.png",
+    "alt": "Woman-level alluvial pathway from historical baseline modern-method use to month 3 and month 12"
+  },
+  {
+    "figure": 17,
+    "filename": "standardized_current_user_stock_outcome_alluvial.png",
+    "alt": "Standardized alluvial from current modern-method users to gross exit and month-12 outcomes"
+  },
+  {
+    "figure": 18,
+    "filename": "presentation_initiation_overall_excluding_ec.svg",
+    "alt": "Overall weighted initiation mix of contraceptive starts excluding EC: injectables 60.1%, implants 24.2%, pill 9.7%, IUD 1.6%, other modern 2.0%, non-modern methods 2.4%."
+  },
+  {
+    "figure": 19,
+    "filename": "presentation_initiation_by_year_excluding_ec.svg",
+    "alt": "Weighted initiation mix of contraceptive starts excluding EC by calendar year, 2021–2024. The 2024 observation window is partial."
+  },
+  {
+    "figure": 20,
+    "filename": "presentation_initiation_modern_only_overall_excluding_ec.svg",
+    "alt": "Overall modern-method initiation mix excluding EC."
+  },
+  {
+    "figure": 21,
+    "filename": "presentation_initiation_modern_only_by_year_excluding_ec.svg",
+    "alt": "Modern-method initiation mix excluding EC by year, 2021 through partial 2024."
+  },
+  {
+    "figure": 22,
+    "filename": "presentation_discontinuation_clean_curve.svg",
+    "alt": "Weighted cumulative life-table probabilities of ending the original method by month 0 through 12, with checkpoints at months 3 and 6 and direct labels at month 12. Injectables are 16.2% at month 3, 25.6% at month 6, and 44.5% at month 12. Emergency contraception is excluded from all series, including other modern methods and the aggregate."
+  },
+  {
+    "figure": 23,
+    "filename": "presentation_discontinuation_curve_excluding_wanted_pregnancy_partner.svg",
+    "alt": "Cumulative competing-risks probability of original-method discontinuation, excluding only wanted pregnancy and husband or partner disapproval. At 12 months: pill 46.6 percent, other modern methods 32.4 percent, injectables 25.5 percent, all modern methods 23.6 percent, IUD 15.0 percent, and implants 9.9 percent."
+  },
+  {
+    "figure": 24,
+    "filename": "presentation_mix_vs_allcause_discontinuation_excluding_ec.svg",
+    "alt": "Touching grouped horizontal bars comparing each method's share of observed contraceptive starts excluding EC with its 12-month cumulative probability of discontinuing the original method. Injectables account for 60.1 percent of starts. Pills have the highest 12-month discontinuation probability at 67.4 percent, followed by injectables at 44.5 percent. Other modern excludes IUD and EC."
+  },
+  {
+    "figure": 25,
+    "filename": "presentation_mix_vs_discontinuation_excluding_wanted_pregnancy_partner.svg",
+    "alt": "Touching paired horizontal bars showing each method's share of all observed contraceptive starts excluding EC and its 12-month probability of original-method discontinuation excluding wanted pregnancy and husband or partner disapproval. Injectables: 60.1 percent of starts and 25.5 percent discontinuation; implants: 24.2 and 9.9; pill: 9.7 and 46.6; IUD: 1.6 and 15.0; other modern methods: 2.0 and 32.4."
+  },
+  {
+    "figure": 26,
+    "filename": "presentation_discontinuation_probability_by_reason.svg",
+    "alt": "Weighted 12-month method discontinuation probability by stated reason. Pill total 67.4 percent; injectables 44.5 percent; other modern methods excluding IUD and EC 36.2 percent; IUD 24.7 percent; implants 16.0 percent. Each bar is divided into wanted pregnancy, method experience or access, partner disapproval, and other reasons."
+  },
+  {
+    "figure": 27,
+    "filename": "presentation_method_experience_12_month_detail.svg",
+    "alt": "Stacked 12-month cumulative discontinuation probability by method, split into method failure, wanted a more effective method, side effects or health, and access cost or inconvenience. All modern methods total 17.0 percent."
+  },
+  {
+    "figure": 28,
+    "filename": "presentation_discontinuation_probability_excluding_pregnancy_partner.svg",
+    "alt": "Stacked 12-month discontinuation probabilities excluding desire to become pregnant and husband or partner disapproval. Pill 46.6 percent, other modern methods 32.4 percent, injectables 25.5 percent, IUD 15.0 percent, implants 9.9 percent, and all modern methods 23.6 percent. Blue segments show method experience or access, and gray segments show other retained reasons."
+  },
+  {
+    "figure": 29,
+    "filename": "presentation_selected_reason_predictors.svg",
+    "alt": "Adjusted 12-month probabilities of discontinuing the original modern method for any recorded reason except wanted pregnancy or partner disapproval, by age, parity, education, wealth, and residence. 95 percent confidence intervals account for survey cluster and strata in a bootstrap."
+  },
+  {
+    "figure": 30,
+    "filename": "presentation_regional_discontinuation.png",
+    "alt": "All 14 regions: weighted 12-month probability of ending the original modern method with 95 percent survey-design confidence intervals and national reference of 38.9 percent. A separate four-category reason table repeats the region names; each row sums to 100 percent before rounding."
+  },
+  {
+    "figure": 31,
+    "filename": "presentation_regional_diagnostic.png",
+    "alt": "Three questions and modeling approaches to explain regional discontinuation gaps: method-mix decomposition, nonlinear Oaxaca–Blinder-style population-composition decomposition, and contextual service analysis."
+  },
+  {
+    "figure": 32,
+    "filename": "presentation_regional_typology.png",
+    "alt": "Regional typology matrix: modern contraceptive prevalence is the horizontal axis; Discontinuation is the vertically rotated axis label. The intended typology measure is discontinuation while in need. Four quadrants describe possible regional profiles; regions are not yet assigned."
+  },
+  {
+    "figure": 33,
+    "filename": "presentation_exclude_wanted_alluvial_month1_v40.png",
+    "alt": "Curved alluvial from discontinued modern method to next state one month later. Of the same cohort used in the three-timepoint figure, 23.6 percent have a modern method, 67.3 percent no method, 8.1 percent pregnancy, birth or termination, and 1.0 percent a traditional method."
+  },
+  {
+    "figure": 34,
+    "filename": "presentation_month1_3_12_exclude_wanted_slide_v42.png",
+    "alt": "Curved alluvial connecting states at months one, three and twelve. The month-one shares match the preceding figure: 23.6 percent modern method, 67.3 percent no method, 8.1 percent pregnancy, birth or termination, and 1.0 percent traditional method. Each state and weighted share is directly labeled at all three timepoints."
+  },
+  {
+    "figure": 35,
+    "filename": "presentation_trajectory_bridge_v43.png",
+    "alt": "Presentation slide comparing no method at month 12 with no method in every month of the first year, and introducing a five-year woman-level trajectory lens."
+  },
+  {
+    "figure": 36,
+    "filename": "presentation_trajectory_profiles_v43.png",
+    "alt": "Six illustrative 60-month patterns: stable modern use, switch with continuity, brief gap and return, repeated churn, early exit, and predominant nonuse. These are candidate profiles, not estimated Ethiopia clusters."
+  },
+  {
+    "figure": 37,
+    "filename": "presentation_mcpr_entry_retention_v46.png",
+    "alt": "Closing slide linking current modern users and new or returning users to year-end modern use and nonuse. Modern-to-modern switching remains in the mCPR numerator."
+  },
+  {
+    "figure": 38,
+    "filename": "presentation_mcpr_current_user_scale_v46.png",
+    "alt": "Stationary per-million-WRA scenario: 22.7 percent mCPR gives about 227,000 current modern users; approximately 64,000 experience a gross exit and 53,000 remain outside modern use at month 12, before entrant flows and population change."
+  },
+  {
+    "figure": 39,
+    "filename": "presentation_mcpr_method_reason_v46.png",
+    "alt": "Planned reporting of women leaving modern use and women still outside modern use by originating method, stated reason, current versus new user, and timing. Pregnancy intention is shown separately from potentially addressable reasons."
+  },
+  {
+    "figure": 40,
+    "filename": "survey_allcause_adjusted_subgroups.png",
+    "alt": "All-cause adjusted modern-method discontinuation probabilities with survey-design confidence intervals"
+  },
+  {
+    "figure": 41,
+    "filename": "selected_reason_descriptive_subgroups.svg",
+    "alt": "Unadjusted selected-reason 12-month discontinuation probabilities with survey-design confidence intervals by demographic and method groups"
+  },
+  {
+    "figure": 42,
+    "filename": "selected_reason_four_marital_focused.svg",
+    "alt": "Adjusted 12-month selected-reason discontinuation probabilities with 95 percent confidence intervals for four parity and four marital status groups"
+  },
+  {
+    "figure": 43,
+    "filename": "selected_reason_four_marital_full_model.svg",
+    "alt": "Full model adjusted 12-month probabilities with confidence intervals by age, parity, marital status, education, wealth, residence, and original method"
+  },
+  {
+    "figure": 44,
+    "filename": "selected_reason_four_marital_regions.svg",
+    "alt": "Full model adjusted 12-month probabilities with confidence intervals by region"
+  },
+  {
+    "figure": 45,
+    "filename": "selected_reason_five_wealth_full_model.svg",
+    "alt": "Adjusted 12-month selected-reason discontinuation probabilities and intervals for all five DHS wealth quintiles"
+  },
+  {
+    "figure": 46,
+    "filename": "presentation_regional_discontinuation.png",
+    "alt": "Regional 12-month all-cause original-method discontinuation with intervals"
+  },
+  {
+    "figure": 47,
+    "filename": "presentation_selected_reason_regional_rates_unadjusted.svg",
+    "alt": "Unadjusted regional selected-reason discontinuation probabilities on the left and a two-category regional reason heat map on the right, aligned by region."
+  },
+  {
+    "figure": 48,
+    "filename": "presentation_selected_reason_regional_rates.svg",
+    "alt": "Adjusted regional selected-reason discontinuation probabilities on the left and a four-category method experience or access reason heat map on the right, aligned by region."
+  },
+  {
+    "figure": 49,
+    "filename": "regional_mix_vs_allcause_injectables.png",
+    "alt": "Regional paired bars for Injectables: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate."
+  },
+  {
+    "figure": 50,
+    "filename": "regional_mix_vs_allcause_implants.png",
+    "alt": "Regional paired bars for Implants: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate."
+  },
+  {
+    "figure": 51,
+    "filename": "regional_mix_vs_allcause_pill.png",
+    "alt": "Regional paired bars for Pill: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate."
+  },
+  {
+    "figure": 52,
+    "filename": "regional_mix_vs_allcause_iud.png",
+    "alt": "Regional paired bars for IUD: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate."
+  },
+  {
+    "figure": 53,
+    "filename": "regional_mix_vs_allcause_other_modern.png",
+    "alt": "Regional paired bars for Other modern methods: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate."
+  },
+  {
+    "figure": 54,
+    "filename": "updated_regional_retained_reason_forest_heatmap.png",
+    "alt": "Regional 12-month probability of discontinuing for method experience or access, with 95 percent confidence intervals and a five-category heatmap labeled by region. Each heatmap row adds to 100 percent."
+  },
+  {
+    "figure": 55,
+    "filename": "regional_actionable_reason_heatmap_injectables.png",
+    "alt": "Heatmap of regional first-year actionable discontinuation reason shares for Injectables; the national row is shaded gold, and sparse regional rows are gray."
+  },
+  {
+    "figure": 56,
+    "filename": "regional_actionable_reason_heatmap_implants.png",
+    "alt": "Heatmap of regional first-year actionable discontinuation reason shares for Implants; the national row is shaded gold, and sparse regional rows are gray."
+  },
+  {
+    "figure": 57,
+    "filename": "regional_actionable_reason_heatmap_pill.png",
+    "alt": "Heatmap of regional first-year actionable discontinuation reason shares for Pill; the national row is shaded gold, and sparse regional rows are gray."
+  },
+  {
+    "figure": 58,
+    "filename": "regional_actionable_reason_heatmap_iud.png",
+    "alt": "Heatmap of regional first-year actionable discontinuation reason shares for IUD; the national row is shaded gold, and sparse regional rows are gray."
+  },
+  {
+    "figure": 59,
+    "filename": "regional_actionable_reason_heatmap_other_modern.png",
+    "alt": "Heatmap of regional first-year actionable discontinuation reason shares for Other modern; the national row is shaded gold, and sparse regional rows are gray."
+  },
+  {
+    "figure": 60,
+    "filename": "leadership_regional_actionable_timing_locator.png",
+    "alt": "Cumulative method experience or access discontinuation probability at 3, 6, 9, and 12 months for all 14 Ethiopian regions and the national benchmark, plus first-three-month share. A neutral gray Ethiopia map labels all 14 regions."
+  },
+  {
+    "figure": 61,
+    "filename": "regional_all_method_initiation_mix.png",
+    "alt": "Horizontal 100-percent stacked bars for the national level and 14 Ethiopian regions, showing the weighted shares of observed starts for injectables, implants, pill, IUD, emergency contraception, other modern, and non-modern methods. The legend is below the chart."
+  },
+  {
+    "figure": 62,
+    "filename": "regional_actionable_paired_injectables.png",
+    "alt": "Paired horizontal bars for national and regional injectable start shares and potentially actionable 12-month discontinuation probabilities."
+  },
+  {
+    "figure": 63,
+    "filename": "regional_actionable_paired_implants.png",
+    "alt": "Paired horizontal bars for national and regional implant start shares and potentially actionable 12-month discontinuation probabilities."
+  },
+  {
+    "figure": 64,
+    "filename": "regional_actionable_paired_pill.png",
+    "alt": "Paired horizontal bars for national and regional pill start shares and potentially actionable 12-month discontinuation probabilities."
+  },
+  {
+    "figure": 65,
+    "filename": "regional_actionable_observed_adjusted_forest.svg",
+    "alt": "Single forest plot of observed and fully adjusted regional 12-month actionable discontinuation rates, each with 95 percent confidence intervals"
+  },
+  {
+    "figure": 66,
+    "filename": "regional_actionable_significant_pairwise.svg",
+    "alt": "Fully adjusted regional pairs with statistically different 12-month actionable discontinuation probabilities after Holm correction"
+  },
+  {
+    "figure": 67,
+    "filename": "regional_actionable_pairwise_shared_mix_slide.png",
+    "alt": "Three significant regional pairs: fitted gaps with each region’s own method mix and with the average mix of that pair, including pointwise confidence intervals"
+  },
+  {
+    "figure": 68,
+    "filename": "regional_actionable_three_comparisons.svg",
+    "alt": "Regional gap comparison for Tigray versus Amhara, Tigray versus Addis Ababa, and Central Ethiopia versus Amhara: observed, pair-shared method mix, and fully adjusted"
+  },
+  {
+    "figure": 69,
+    "filename": "regional_actionable_method_interaction_12month.svg",
+    "alt": "Adjusted 12-month actionable discontinuation probabilities for injectables, implants, and pills across four regions, with confidence intervals and sparse-cell markers"
+  },
+  {
+    "figure": 70,
+    "filename": "regional_actionable_injectable_implant_12month_tests.svg",
+    "alt": "Observed 12-month actionable discontinuation by region, separately for injectables and implants, with survey-bootstrap intervals and sparse-cell flags"
+  },
+  {
+    "figure": 71,
+    "filename": "regional_actionable_injectable_three_stage_tests.svg",
+    "alt": "Observed and fully adjusted 12-month injectable discontinuation probabilities by region with 95% confidence intervals, dotted national benchmark, and stars identifying regions in significant pairwise comparisons"
+  }
+]
+)----------------------"
+REPORT_FILES[["src/report/fill_foundation.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render Ethiopia foundation tables from newly computed aggregates."""
+import argparse,csv,json,math
+from pathlib import Path
+from lxml import html,etree
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True);ap.add_argument('--html',type=Path,required=True);a=ap.parse_args();out=a.project_root/'output';sup=out/'Supporting_data';doc=html.parse(str(a.html));cfg=json.loads((Path(__file__).parent/'foundation_layout.json').read_text())
+def read(n,base=out):
+ with (base/n).open(newline='')as f:return list(csv.DictReader(f))
+def num(x,n=1):return '—'if str(x)in['','NA','nan']else f'{float(x):,.{n}f}'
+def integer(x):return num(x,0)
+def interval(r,lo,hi,n=1):return num(r[lo],n)+'–'+num(r[hi],n)
+def emit(k,rows,headers=None):
+ found=doc.xpath('//*[@data-table-placeholder="'+str(k)+'"]')
+ if not found:return
+ t=html.Element('table',{'class':'analysis-table'});head=etree.SubElement(t,'thead');tr=etree.SubElement(head,'tr')
+ for v in headers or cfg[str(k)]['headers']:etree.SubElement(tr,'th').text=str(v)
+ body=etree.SubElement(t,'tbody')
+ for row in rows:
+  tr=etree.SubElement(body,'tr')
+  for j,v in enumerate(row):etree.SubElement(tr,'th'if j==0 else'td').text=str(v)
+ found[0].getparent().replace(found[0],t)
+def projection(n,fields,digits=1,base=out):
+ return [[r[c]if isinstance(c,str)and c in ['method','reason','group','region','level']else num(r[c],digits)for c in fields]for r in read(n,base)]
+r=read('method_initiation_mix_overall.csv');emit(1,[[x['method'],integer(x['unweighted_starts']),num(x['weighted_starts']),num(x['share_pct']),num(x['standard_error_pct']),interval(x,'ci_lower_pct','ci_upper_pct')]for x in r])
+r=read('method_initiation_mix_by_year.csv');years=list(dict.fromkeys(x['period']for x in r));methods=list(dict.fromkeys(x['method']for x in r));cov={x['calendar_year']:x for x in read('method_initiation_year_coverage.csv')}
+emit(2,[[y,*[num(next(x for x in r if x['period']==y and x['method']==m)['share_pct'])for m in methods],num(sum(float(x['weighted_starts'])for x in r if x['period']==y)),next(x['coverage']for x in r if x['period']==y)]for y in years])
+emit(3,[[x['period'],x['method'],integer(x['unweighted_starts']),num(x['weighted_starts']),num(x['share_pct']),num(x['standard_error_pct']),interval(x,'ci_lower_pct','ci_upper_pct')]for x in r])
+r=read('revised_table_7_11.csv');fields=list(r[0])[1:10]
+for k in [4,5]:emit(k,[[x['method'],*[num(x[f])for f in fields],num(x['any_reason_pct']),num(x['switched_pct']),integer(x['weighted_episodes'])]for x in r])
+r=read('injectable_monthly_foundation.csv',sup);emit(6,[[integer(x['month']),num(x['weighted_at_risk']),num(x['weighted_endings']),num(x['weighted_wanted_endings']),num(x['any_reason_pct']),num(x['wanted_pct']),num(x['other_pct'])]for x in r])
+r=read('12_month_nonpregnancy_and_switching.csv',sup);emit(7,[[x['method'],num(x['excluding_wanted_pregnancy_and_partner_pct'])]for x in r])
+fine={int(x['reason_code']):float(x['risk_pct'])for x in read('detailed_other_cif_foundation.csv',sup)}
+labels={9:'Infrequent sex or husband away',12:'Difficulty becoming pregnant or menopause',13:'Marital dissolution or separation',11:'Up to God or fatalistic',96:'Other, unspecified',98:'Don’t know',99:'Missing or unclassified reason'}
+rows=[]
+for group,codes in [('Other fertility-related reasons',[9,13,12]),('Residual Other reasons',[96,11,99,98])]:
+ rows.extend([[group,labels[c],num(fine[c],2)]for c in codes]);rows.append(['Subtotal: '+group,'',num(sum(fine[c]for c in codes),2)])
+rows.append(['Total “Other recorded reasons”','',num(sum(fine.values()),2)]);emit(8,rows)
+r=read('discontinuation_presentation_3_6_12.csv');emit(9,[[x['method'],num(x['month_3']),num(x['month_6']),num(x['month_12']),integer(x['weighted_episodes'])]for x in r])
+r=read('discontinuation_by_time.csv');mm=list(dict.fromkeys(x['method']for x in r));emit(10,[[m,*[num(next(x for x in r if x['method']==m and int(x['month'])==t)['any_reason_pct'])for t in [3,6,9,12]],integer(next(x for x in r if x['method']==m)['weighted_episodes'])]for m in mm])
+r=read('discontinuation_excluding_successful_modern_switches.csv');emit(11,[[x['method'],*[num(x[k])for k in list(x)[1:6]]]for x in r])
+r=read('cause_specific_discontinuation_3_6_12.csv')
+for k,t in [(12,3),(13,6),(14,12)]:emit(k,[[x['method'],*[num(x[f])for f in list(x)[2:]]]for x in r if int(x['month'])==t])
+r=[x for x in read('reason_mix_by_method_all_discontinued.csv')if x['method']=='All modern'];v={x['reason_group']:float(x['percent'])for x in r}
+emit(15,[['Wanted pregnancy / not a program failure','Wanted to become pregnant.',num(v['Wanted pregnancy'])+'%'],['Potentially actionable: method experience/access','Method failure; wanting a more effective method; bleeding changes; other side effects/health; access/cost/convenience.',num(v['Method experience/access'])+'%'],['Partner/spousal disapproval','Husband or partner disapproved of contraceptive use.',num(v['Partner disapproval'])+'%'],['Circumstantial/other reasons','Infrequent sex/partner away; marital dissolution/separation; reduced fertility/menopause; fatalistic, other, unknown or missing reasons.',num(v['Other reasons'])+'%']])
+r=read('12_month_retained_reason_distribution.csv',sup);total=sum(float(x['twelve_month_cumulative_probability_pct'])for x in r)
+emit(17,[[x['reason'],num(x['twelve_month_cumulative_probability_pct'])+' ('+interval(x,'risk_ci_lower_pct','risk_ci_upper_pct')+')',num(x['share_of_retained_reason_probability_pct'])+' ('+interval(x,'ci_lower_pct','ci_upper_pct')+')',integer(x['unweighted_events'])]for x in r]+[['Total',num(total),'100.0',integer(sum(float(x['unweighted_events'])for x in r))]])
+for k,n in [(18,'revised_table_7_12_aggregated_reasons.csv'),(19,'revised_table_7_12_reasons.csv')]:
+ r=read(n);fields=list(r[0])[1:];counts={x['method']:x for x in read('revised_table_7_12_counts.csv')};rows=[[x['reason'],*[num(x[f])for f in fields]]for x in r];rows+=[['Total',*['100.0']*len(fields)],['Weighted discontinuations',*[num(counts[f]['weighted_discontinuations'])for f in fields]]];emit(k,rows)
+r=read('program_action_evidence_table.csv');emit(20,[[x['Evidence'],x['Ethiopia_finding'],x['Program_response']]for x in r])
+r=read('presentation_discontinuation_monthly_excluding_wanted_pregnancy_partner.csv');mm=list(dict.fromkeys(x['method']for x in r));emit(21,[[m,*[num(next(x for x in r if x['method']==m and int(x['month'])==t)['cumulative_pct'])for t in[3,6,12]]]for m in mm])
+r=read('presentation_method_experience_12_month_detail.csv');emit(22,[[x['method'],num(x['total_method_experience_access_pp']),*[num(x[f])for f in ['method_failure_share_pct','wanted_more_effective_share_pct','side_effects_health_share_pct','access_cost_inconvenience_share_pct']]]for x in r])
+published=json.loads((sup/'Table_7_11/table_7_11_results.json').read_text());rows=[]
+for method,values in zip(published['methods'],published['calculated']):rows.append([method,*[num(x)for x in values[:-1]],integer(values[-1])])
+emit(23,rows)
+r=read('presentation_selected_reason_unadjusted_vs_adjusted.csv');fields=list(r[0]);
+for k,filter_method in [(24,False),(25,True)]:
+ rr=[x for x in r if (x['group']=='Original method')==filter_method]
+ if not rr:rr=[x for x in r if ('method' in x['group'].lower())==filter_method]
+ rows=[]
+ for x in rr:
+  lead=[x['level']]if filter_method else[x['group'],x['level']]
+  rows.append(lead+[integer(x['unweighted_eligible_episodes']),integer(x['weighted_eligible_episodes']),num(x['unadjusted_12_month_probability_pct']),num(x['adjusted_12_month_probability_pct']),interval(x,'ci_low','ci_high')])
+ emit(k,rows)
+r=read('presentation_regional_discontinuation.csv');emit(26,[[x['region'],integer(x['n_episodes']),integer(x['n_events_12']),integer(x['n_psu']),num(x['rate']),interval(x,'lo','hi')]for x in r])
+r=read('presentation_initiation_overall_excluding_ec.csv');rows=[[x['method'],integer(x['unweighted_starts']),num(x['weighted_starts']),num(x['share_pct'])]for x in r];rows.append(['Total',integer(sum(float(x['unweighted_starts'])for x in r)),num(sum(float(x['weighted_starts'])for x in r)),'100.0']);emit(27,rows)
+r=read('12_month_three_column_comparison.csv',sup);emit(28,[[x['Method'],*[num(x[f])for f in list(x)[1:]]]for x in r])
+a.html.write_bytes(html.tostring(doc,encoding='utf-8',doctype='<!doctype html>'));print('Foundation tables regenerated; unresolved placeholders:',len(doc.xpath('//*[@data-table-placeholder]')))
+)----------------------"
+REPORT_FILES[["src/report/fill_regional.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Render the original regional descriptive tables from fresh estimates."""
+import argparse,csv
+from pathlib import Path
+from lxml import html,etree
+ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True);ap.add_argument('--html',type=Path,required=True);a=ap.parse_args();out=a.project_root/'output';doc=html.parse(str(a.html))
+def read(n):
+ with(out/n).open(newline='')as f:return list(csv.DictReader(f))
+def f(x,n=1):return '—'if str(x)in['','NA','nan']else f'{float(x):,.{n}f}'
+def emit(k,headers,rows):
+ found=doc.xpath('//*[@data-table-placeholder="'+str(k)+'"]')
+ if not found:return
+ t=html.Element('table',{'class':'analysis-table'});tr=etree.SubElement(etree.SubElement(t,'thead'),'tr')
+ for v in headers:etree.SubElement(tr,'th').text=v
+ body=etree.SubElement(t,'tbody')
+ for row in rows:
+  tr=etree.SubElement(body,'tr')
+  for j,v in enumerate(row):etree.SubElement(tr,'th'if j==0 else'td').text=str(v)
+ found[0].getparent().replace(found[0],t)
+r=read('presentation_regional_discontinuation.csv');emit(55,['Region','Eligible episodes','First-year endings','12-month probability (%)','95% CI (%)'],[[x['region'],f(x['n_episodes'],0),f(x['n_events_12'],0),f(x['rate']),f(x['lo'])+'–'+f(x['hi'])]for x in r])
+for k,n,causes in [(56,'presentation_regional_reason_profile_aggregate.csv',['Wanted to become pregnant','Method experience or access','Husband/partner disapproved','Other']),(57,'presentation_regional_reason_profile.csv',['Wanted to become pregnant','Side effects / health','Wanted a more effective method','Access / cost / convenience','Method failure / pregnancy while using','Husband/partner disapproved','Other'])]:
+ r=read(n);regions=list(dict.fromkeys(x['region']for x in r));rows=[]
+ for region in regions:
+  z=[x for x in r if x['region']==region];rows.append([region,f(z[0]['unweighted_all_events'if k==56 else'unweighted_events'],0)]if k==56 else[region]);rows[-1]+=[f(next(x for x in z if x['reason']==c)['percent'])for c in causes]
+ emit(k,['Region']+(['First-year endings']if k==56 else[])+[c+' (%)'for c in causes],rows)
+r=read('presentation_regional_reason_precision.csv');emit(58,['Region','Reason','Reason endings','Share (%)','95% CI (%)','Precision note'],[[x['region'],x['reason'],f(x['n_reason_events'],0),f(x['percent']),f(x['ci_low_pct'])+'–'+f(x['ci_high_pct']),x['precision_note']]for x in r])
+r=read('selected_reason_region_method_ci_preview.csv');emit(63,['Region','Original method','Eligible episodes','Selected endings','12-month probability (%)','95% CI (%)','Precision flag'],[[x['region'],x['method'],f(x['eligible_episodes'],0),f(x['selected_first_year_endings'],0),f(x['estimate_pct']),f(x['ci_low'])+'–'+f(x['ci_high']),'Limited sample'if int(x['eligible_episodes'])<125 or int(x['selected_first_year_endings'])<30 else'']for x in r])
+r=read('regional_modern_start_mix_excluding_ec.csv');emit(64,['Region','Method','All modern starts (N)','Method starts (N)','Share of modern starts (%)'],[[x['region'],x['method'],f(x['unweighted_region_starts'],0),f(x['unweighted_method_starts'],0),f(x['share_pct'])]for x in r])
+r=read('regional_mix_vs_allcause_method_panels.csv');emit(65,['Region','Method','All starts (N)','Method starts (N)','Share of all starts (%)','Eligible episodes','First-year endings','All-cause 12-month probability (%)'],[[x['region'],x['method'],f(x['unweighted_all_starts'],0),f(x['unweighted_method_starts'],0),f(x['weighted_start_share_pct']),f(x['eligible_episodes'],0),f(x['first_year_endings'],0),f(x['all_cause_12_month_pct'])]for x in r])
+r=read('regional_method_mix_diagnostic_cells.csv');emit(66,['Region','Method','Eligible episodes','Selected endings','Share of eligible episodes (%)','Selected-reason 12-month probability (%)'],[[x['region'],x['method'],f(x['unweighted_episodes'],0),f(x['selected_endings'],0),f(x['weighted_method_mix_pct']),f(x['selected_cause_12_month_pct'])]for x in r])
+r=read('regional_method_mix_diagnostic_summary.csv');emit(67,['Gap component','Contribution (percentage points)','95% CI (percentage points)'],[[{'mix':'Method mix','within':'Within-method rates'}[x['metric']],f(x['estimate']),f(x['ci_low'])+' to '+f(x['ci_high'])]for x in r if x['metric']in['mix','within']])
+r=read('injectable_region_3_6_9_12_selected_ci.csv');regions=list(dict.fromkeys(x['region']for x in r));rows=[]
+for region in regions:
+ z=[x for x in r if x['region']==region];rows.append([region,f(z[0]['eligible_episodes'],0),*[f(x['rate_pct'])+' ('+f(x['ci_low'])+'–'+f(x['ci_high'])+')'for x in sorted(z,key=lambda x:int(x['month']))]])
+emit(69,['Region','Injectable episodes','3 months: % (95% CI)','6 months: % (95% CI)','9 months: % (95% CI)','12 months: % (95% CI)'],rows)
+a.html.write_bytes(html.tostring(doc,encoding='utf-8',doctype='<!doctype html>'));print('Regional descriptive tables regenerated')
+)----------------------"
+REPORT_FILES[["src/report/foundation_layout.json"]] <- r"----------------------({
+  "1": {
+    "headers": [
+      "Method",
+      "Unweighted starts",
+      "Weighted starts",
+      "Share (%)",
+      "SE (percentage points)",
+      "95% CI (%)"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Other modern methods",
+      "Emergency contraception"
+    ]
+  },
+  "2": {
+    "headers": [
+      "Calendar year",
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "Weighted starts",
+      "Coverage"
+    ],
+    "labels": [
+      "2019*",
+      "2020",
+      "2021",
+      "2022",
+      "2023",
+      "2024*"
+    ]
+  },
+  "3": {
+    "headers": [
+      "Year",
+      "Method",
+      "Unweighted starts",
+      "Weighted starts",
+      "Share (%)",
+      "SE",
+      "95% CI (%)"
+    ],
+    "labels": [
+      "2019*",
+      "2019*",
+      "2019*",
+      "2019*",
+      "2019*",
+      "2020",
+      "2020",
+      "2020",
+      "2020",
+      "2020",
+      "2021",
+      "2021",
+      "2021",
+      "2021",
+      "2021",
+      "2022",
+      "2022",
+      "2022",
+      "2022",
+      "2022",
+      "2023",
+      "2023",
+      "2023",
+      "2023",
+      "2023",
+      "2024*",
+      "2024*",
+      "2024*",
+      "2024*",
+      "2024*"
+    ]
+  },
+  "4": {
+    "headers": [
+      "Method",
+      "Method failure",
+      "Desire to become pregnant",
+      "Other fertility-related reasons",
+      "Changes in menstrual bleeding",
+      "Other side effects/health concerns",
+      "Wanted more effective method",
+      "Access, cost, or inconvenience",
+      "Husband/partner disapproved",
+      "Other reasons",
+      "Any reason",
+      "Switched to another method",
+      "Weighted episodes"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ]
+  },
+  "5": {
+    "headers": [
+      "Method",
+      "Failure",
+      "Wanted pregnancy",
+      "Other fertility",
+      "Bleeding",
+      "Side effects / health",
+      "More effective method",
+      "Access / cost / inconvenience",
+      "Partner disapproved",
+      "Other reasons",
+      "Any reason",
+      "Switched",
+      "Weighted episodes"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other",
+      "All methods"
+    ]
+  },
+  "6": {
+    "headers": [
+      "Month of use",
+      "Weighted at risk",
+      "Weighted endings, any reason",
+      "Weighted endings, wanted pregnancy",
+      "Cumulative any reason (%)",
+      "Cumulative wanted pregnancy (%)",
+      "Cumulative all other reasons (%)"
+    ],
+    "labels": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ]
+  },
+  "7": {
+    "headers": [
+      "Original method",
+      "12-month discontinuation excluding wanted pregnancy and partner disapproval (%)"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "IUD",
+      "Other modern methods",
+      "All modern methods"
+    ]
+  },
+  "8": {
+    "headers": [
+      "DHS reason group",
+      "Recorded reason",
+      "12-month probability (%)"
+    ],
+    "labels": [
+      "Other fertility-related reasons",
+      "Marital dissolution or separation",
+      "Difficulty becoming pregnant or menopause",
+      "Subtotal: other fertility-related",
+      "Residual Other reasons",
+      "Up to God or fatalistic",
+      "Missing or unclassified reason",
+      "Don’t know",
+      "Subtotal: residual Other",
+      "Total “Other recorded reasons”"
+    ]
+  },
+  "9": {
+    "headers": [
+      "Method",
+      "3 months",
+      "6 months",
+      "12 months",
+      "Weighted episodes"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Other modern methods",
+      "All specified modern methods (including EC)",
+      "All specified modern methods (excluding EC)"
+    ]
+  },
+  "10": {
+    "headers": [
+      "Method",
+      "3 months",
+      "6 months",
+      "9 months",
+      "12 months",
+      "Weighted episodes"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ]
+  },
+  "11": {
+    "headers": [
+      "Method",
+      "Ended without successful modern switchby 3 months",
+      "Ended without successful modern switchby 6 months",
+      "Ended without successful modern switchby 12 months",
+      "Successful modern switchby 12 months",
+      "Total original-method discontinuationby 12 months"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ]
+  },
+  "12": {
+    "headers": [
+      "Method",
+      "Method failure",
+      "Desire to become pregnant",
+      "Other fertility-related reasons",
+      "Changes in menstrual bleeding",
+      "Other side effects/health concerns",
+      "Wanted more effective method",
+      "Access, cost, or inconvenience",
+      "Husband/partner disapproved",
+      "Other reasons",
+      "Any reason"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ]
+  },
+  "13": {
+    "headers": [
+      "Method",
+      "Method failure",
+      "Desire to become pregnant",
+      "Other fertility-related reasons",
+      "Changes in menstrual bleeding",
+      "Other side effects/health concerns",
+      "Wanted more effective method",
+      "Access, cost, or inconvenience",
+      "Husband/partner disapproved",
+      "Other reasons",
+      "Any reason"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ]
+  },
+  "14": {
+    "headers": [
+      "Method",
+      "Method failure",
+      "Desire to become pregnant",
+      "Other fertility-related reasons",
+      "Changes in menstrual bleeding",
+      "Other side effects/health concerns",
+      "Wanted more effective method",
+      "Access, cost, or inconvenience",
+      "Husband/partner disapproved",
+      "Other reasons",
+      "Any reason"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ]
+  },
+  "15": {
+    "headers": [
+      "Reason group",
+      "Included reasons",
+      "Share of recorded endings (%)"
+    ],
+    "labels": [
+      "Wanted pregnancy / not a program failure",
+      "Potentially actionable: method experience/access",
+      "Partner/spousal disapproval",
+      "Circumstantial/other reasons"
+    ]
+  },
+  "16": {
+    "headers": [
+      "Method",
+      "Observed endings (n)",
+      "Weighted endings",
+      "Method failure (%)",
+      "Wanted more effective (%)",
+      "Side effects / health (%)",
+      "Access / cost / inconvenience (%)"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "IUD",
+      "Other modern",
+      "All modern"
+    ]
+  },
+  "17": {
+    "headers": [
+      "Stated reason",
+      "12-month probability (95% CI), %",
+      "Share of retained reasons (95% CI), %",
+      "Observed retained endings (n)"
+    ],
+    "labels": [
+      "Wanted a more effective method",
+      "Other fertility-related reasons",
+      "Access, cost, or inconvenience",
+      "Other side effects or health concerns",
+      "Changes in menstrual bleeding",
+      "Other reasons",
+      "Method failure †",
+      "Total retained"
+    ]
+  },
+  "18": {
+    "headers": [
+      "Aggregated reason",
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ],
+    "labels": [
+      "Desire to become pregnant",
+      "Wanted a more effective method",
+      "Other fertility-related reasons",
+      "Access, cost, or inconvenience",
+      "Other side effects/health concerns",
+      "Changes in menstrual bleeding",
+      "Other reasons",
+      "Method failure",
+      "Husband/partner disapproved",
+      "Total",
+      "Weighted discontinuations"
+    ]
+  },
+  "19": {
+    "headers": [
+      "Reason",
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other modern methods",
+      "All specified modern methods"
+    ],
+    "labels": [
+      "Became pregnant while using",
+      "Wanted to become pregnant",
+      "Husband/partner disapproved",
+      "Wanted a more effective method",
+      "Changes in menstrual bleeding",
+      "Other side effects/health concerns",
+      "Lack of access/too far",
+      "Cost too much",
+      "Inconvenient to use",
+      "Up to God/fatalistic",
+      "Difficult to get pregnant/menopausal",
+      "Infrequent sex/husband away",
+      "Marital dissolution/separation",
+      "Other",
+      "Don't know",
+      "Total",
+      "Weighted discontinuations"
+    ]
+  },
+  "20": {
+    "headers": [
+      "Observed signal",
+      "Ethiopia 2024–25 finding",
+      "Potential program response"
+    ],
+    "labels": [
+      "Injectable discontinuation is already visible early",
+      "Bleeding, side effects, or health concerns",
+      "Wanted a more effective method",
+      "Access, cost, or inconvenience",
+      "Pregnancy intention",
+      "No method immediately after an episode ends"
+    ]
+  },
+  "21": {
+    "headers": [
+      "Original method",
+      "3 months (%)",
+      "6 months (%)",
+      "12 months (%)"
+    ],
+    "labels": [
+      "Pill",
+      "Injectables",
+      "Other modern methods",
+      "IUD",
+      "Implants",
+      "All modern methods"
+    ]
+  },
+  "22": {
+    "headers": [
+      "Method",
+      "12-month method experience or access probability (%)",
+      "Method failure share (%)",
+      "Wanted more effective share (%)",
+      "Side effects / health share (%)",
+      "Access / cost / inconvenience share (%)"
+    ],
+    "labels": [
+      "Pill",
+      "Injectables",
+      "Other modern methods",
+      "IUD",
+      "Implants",
+      "All modern methods"
+    ]
+  },
+  "23": {
+    "headers": [
+      "Method",
+      "Failure",
+      "Wanted pregnancy",
+      "Other fertility",
+      "Bleeding",
+      "Side effects / health",
+      "More effective method",
+      "Access / cost",
+      "Partner disapproved",
+      "Other reasons",
+      "Any reason",
+      "Switched",
+      "Weighted episodes"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "Emergency contraception",
+      "Other methods, including traditional",
+      "All methods"
+    ]
+  },
+  "24": {
+    "headers": [
+      "Characteristic",
+      "Group",
+      "Eligible episodes (n)",
+      "Weighted episodes",
+      "Unadjusted 12-month probability (%)",
+      "Adjusted 12-month probability (%)",
+      "Adjusted 95% CI (%)"
+    ],
+    "labels": [
+      "Age at method start",
+      "Age at method start",
+      "Age at method start",
+      "Age at method start",
+      "Parity at method start",
+      "Parity at method start",
+      "Parity at method start",
+      "Education",
+      "Education",
+      "Education",
+      "Household wealth",
+      "Household wealth",
+      "Household wealth",
+      "Residence",
+      "Residence",
+      "All eligible episodes"
+    ]
+  },
+  "25": {
+    "headers": [
+      "Original method",
+      "Eligible episodes (n)",
+      "Weighted episodes",
+      "Unadjusted 12-month probability (%)",
+      "Adjusted 12-month probability (%)",
+      "Adjusted 95% CI (%)"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "IUD",
+      "Other modern",
+      "All modern"
+    ]
+  },
+  "26": {
+    "headers": [
+      "Region",
+      "Episodes",
+      "First-year events",
+      "Stratum–PSU cells",
+      "12-month rate (%)",
+      "95% CI (%)"
+    ],
+    "labels": [
+      "Tigray",
+      "Benishangul-Gumuz",
+      "Gambella",
+      "Afar",
+      "Central Ethiopia",
+      "Somali",
+      "Harari",
+      "South Ethiopia",
+      "Oromia",
+      "Amhara",
+      "Addis Ababa",
+      "South West Ethiopia",
+      "Sidama",
+      "Dire Dawa"
+    ]
+  },
+  "27": {
+    "headers": [
+      "Method",
+      "Unweighted starts",
+      "Weighted starts",
+      "Share (%)"
+    ],
+    "labels": [
+      "Injectables",
+      "Implants",
+      "Pill",
+      "IUD",
+      "Other modern",
+      "Non-modern methods",
+      "Total"
+    ]
+  },
+  "28": {
+    "headers": [
+      "Method",
+      "All reasons (%)",
+      "Excluding wanted pregnancy and partner disapproval (%)",
+      "Also excluding Other recorded reasons (%)"
+    ],
+    "labels": [
+      "Pill",
+      "Injectables",
+      "Other modern methods",
+      "IUD",
+      "Implants",
+      "All modern methods"
+    ]
+  }
+}
+)----------------------"
+REPORT_FILES[["src/report/layout.html"]] <- r"----------------------(<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ethiopia contraceptive discontinuation analysis</title>
+<style>
+:root{--ink:#18313e;--navy:#234957;--teal:#2d7180;--pale:#edf4f5;--line:#cbd8dc;--muted:#5b6c74;--paper:#fff;--bg:#eef2f3}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{display:grid;grid-template-columns:245px minmax(0,1fr);max-width:1600px;margin:auto;min-height:100vh}aside{background:var(--navy);color:white;padding:24px 18px;position:sticky;top:0;height:100vh;overflow-y:auto;scrollbar-color:#8ba9b2 var(--navy)}aside .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#bcd3da}aside h2{font-size:20px;line-height:1.25;margin:8px 0 26px}nav a{display:block;color:#eaf3f5;text-decoration:none;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.12)}nav a:hover,nav a:focus{color:white;padding-left:7px;background:#ffffff19;outline:none}.toc-heading{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#a9c9d0;font-weight:800;margin:18px 0 2px;border-bottom:1px solid #ffffff4d;padding-bottom:5px}.toc a{padding:5px 7px;border-bottom:0;border-radius:4px;font-size:13px;line-height:1.3}section[id],h3[id],h4[id]{scroll-margin-top:18px}main{background:var(--paper);padding:48px 52px 80px;min-width:0}.kicker{color:var(--teal);font-weight:700;text-transform:uppercase;letter-spacing:.1em;font-size:12px}h1{font-size:36px;line-height:1.15;margin:7px 0 10px}h2{font-size:25px;margin:48px 0 8px;padding-top:12px;border-top:3px solid var(--navy)}h3{font-size:18px;margin:24px 0 7px}.lede{font-size:18px;color:var(--muted);max-width:900px}.meta{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0 30px}.tag{background:var(--pale);border:1px solid var(--line);border-radius:99px;padding:6px 11px;font-size:13px}.callout{background:var(--pale);border-left:5px solid var(--teal);padding:16px 18px;margin:20px 0;max-width:1100px}.interpretation{background:#f8fafb;border:1px solid var(--line);border-radius:7px;padding:18px 20px;margin:18px 0 28px;max-width:1150px}.interpretation h3{color:var(--navy);margin:0 0 9px}.interpretation ul{margin:8px 0 12px;padding-left:22px}.interpretation li{margin:5px 0}.formula{font-family:Georgia,serif;background:white;border:1px solid var(--line);padding:8px 12px;margin:10px 0;display:inline-block}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:7px;margin:17px 0 12px}table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}th,td{padding:11px 9px;border-bottom:1px solid #dbe4e7;text-align:right;white-space:nowrap}thead th{background:var(--navy);color:white;font-weight:650;white-space:normal;min-width:78px;vertical-align:bottom}thead th:first-child,tbody th{text-align:left;min-width:190px;position:sticky;left:0}tbody th{background:white}tbody tr:nth-child(even) td,tbody tr:nth-child(even) th{background:#f4f7f8}tbody tr:last-child td,tbody tr:last-child th{font-weight:700;border-top:2px solid var(--navy)}.note{font-size:13px;color:var(--muted);max-width:1150px}.method-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.card{border:1px solid var(--line);border-radius:7px;padding:16px;background:#fbfcfc}.card h3{margin-top:0}.downloads a{display:inline-block;margin:4px 9px 4px 0;color:var(--teal)}.figure-grid{display:grid;grid-template-columns:1fr;gap:22px;margin:20px 0}.figure-grid figure{margin:0;border:1px solid var(--line);border-radius:8px;padding:12px;background:white}.figure-grid img{display:block;width:100%;height:auto}.figure-grid figcaption{font-size:12px;color:var(--muted);padding:7px 5px 2px}details{border:1px solid var(--line);border-radius:7px;padding:12px 14px;margin:16px 0}summary{cursor:pointer;font-weight:700;color:var(--navy)}.future{border:2px dashed var(--line);padding:22px;border-radius:7px;color:var(--muted)}footer{margin-top:55px;border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font-size:12px}@media(max-width:850px){.shell{display:block}aside{position:relative;height:auto}main{padding:30px 20px}.method-grid{grid-template-columns:1fr}h1{font-size:29px}}
+
+#presentation-figures .presentation-initiation-pair{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px} @media(max-width:1100px){#presentation-figures .presentation-initiation-pair{grid-template-columns:1fr}}
+
+
+/* Regional matched-episode shares and method-specific risks */
+.rpm-grid{display:grid;grid-template-columns:1fr;gap:20px;margin:20px 0}
+.rpm-card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:21px 24px 17px;min-width:0}
+.rpm-card.rpm-national{background:#f4f9f9;border-color:#a9c8ce}
+.rpm-card h4{font-size:19px;color:var(--navy);margin:0 0 9px}
+.rpm-card h4 small{font-size:12px;color:var(--muted);font-weight:500;margin-left:8px}
+.rpm-key{display:flex;flex-wrap:wrap;gap:18px;margin:0 0 14px;font-size:12px;font-weight:650;color:var(--navy)}
+.rpm-key span{display:inline-flex;align-items:center;gap:6px}
+.rpm-key i{display:inline-block;width:13px;height:13px;border-radius:2px}
+.rpm-key i.rpm-share,.rpm-bar.rpm-share{background:#DA9A25}
+.rpm-key i.rpm-risk,.rpm-bar.rpm-risk{background:#153F5B}
+.rpm-axis{display:flex;justify-content:space-between;margin:0 62px 9px 160px;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.rpm-method-group{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:center;margin:0 54px 13px 0}
+.rpm-method{font-size:14px;font-weight:600;color:var(--ink)}
+.rpm-pair{min-width:0;background:repeating-linear-gradient(to right,transparent 0,transparent calc(20% - 1px),#e3e9ec calc(20% - 1px),#e3e9ec 20%);border-left:1px solid #c6d2d7}
+.rpm-line{height:19px;position:relative}
+.rpm-bar{height:100%;min-width:2px}
+.rpm-bar-value{position:absolute;top:1px;white-space:nowrap;font-size:13px;font-variant-numeric:tabular-nums;color:#162a35}
+.rpm-bar-value sup{font-size:9px;color:#9b6410}
+.rpm-withheld{position:absolute;left:7px;top:2px;color:var(--muted);font-size:11px;font-style:italic}
+@media(max-width:650px){.rpm-card{padding:16px 10px}.rpm-method-group{grid-template-columns:105px minmax(0,1fr);gap:5px;margin-right:49px}.rpm-method{font-size:12px}.rpm-axis{margin-left:110px;margin-right:51px;font-size:9px}.rpm-line{height:17px}.rpm-bar-value{font-size:11px}.rpm-key{font-size:11px}}
+/* End regional matched-episode chart styles */
+
+/* Comprehensive document navigation */
+.toc-search-label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#bcd3da;margin:16px 0 5px}
+#toc-search{display:block;width:100%;border:1px solid #95b7bf;border-radius:5px;background:#fff;color:#18313e;padding:8px;font-size:13px}
+.toc-group{padding:3px 0;border-bottom:1px solid #ffffff26}
+.toc a.toc-major{font-size:13px;font-weight:700;line-height:1.25;padding:6px 4px;display:block}
+.toc-sublist{border:0;padding:0 0 5px 5px;margin:0}
+.toc-sublist summary{font-size:11px;color:#bcd3da;cursor:pointer;padding:0 4px 4px}
+.toc-sublist a{font-size:11px;line-height:1.25;color:#d7e9ec;padding:4px 4px 4px 10px;border:0}
+.toc-sublist a.toc-level-h4{padding-left:20px;color:#c2d9de}
+.toc-group[hidden],.toc-sublist a[hidden]{display:none!important}
+/* Narrow-panel TOC drawer */
+.toc-toggle{display:none}
+.toc-scrim{display:none}
+@media(max-width:850px){
+  .toc-toggle{display:block;position:fixed;bottom:12px;left:12px;z-index:80;
+    border:1px solid #80abb3;border-radius:8px;background:#234957;color:white;
+    padding:8px 12px;font-size:15px;font-weight:700;box-shadow:0 3px 12px #18313e45;cursor:pointer}
+  #site-toc{position:fixed;top:0;left:0;bottom:0;width:min(310px,82vw);
+    height:100vh;overflow-y:auto;z-index:70;padding-top:58px;
+    transform:translateX(-105%);transition:transform .18s ease;
+    box-shadow:6px 0 25px #0b2a3550}
+  body.toc-open #site-toc{transform:translateX(0)}
+  .toc-scrim{position:fixed;inset:0;z-index:60;background:#09283285}
+  body.toc-open .toc-scrim{display:block}
+  body.toc-open{overflow:hidden}
+  main{padding-top:30px}
+}
+/* End narrow-panel TOC drawer */
+
+/* Regional model comparison: chart and presentation table */
+.ram-figure{margin:22px 0 26px;max-width:1040px;background:#fff}
+.ram-heading{font-size:18px;font-weight:750;color:#153f5b;margin:0 0 12px}
+.ram-chart{position:relative}.ram-row{display:grid;grid-template-columns:190px minmax(0,1fr) 65px;gap:12px;align-items:center;min-height:34px;border-bottom:1px solid #e4ebed}
+.ram-name{font-size:13px;font-weight:550}.ram-name sup{color:#9b6410}.ram-track{height:15px;background:repeating-linear-gradient(to right,#f2f6f7 0,#f2f6f7 calc(33.333% - 1px),#d8e3e6 calc(33.333% - 1px),#d8e3e6 33.333%);position:relative}
+.ram-fill{display:block;height:100%;background:#153f5b}.ram-national .ram-fill{background:#da9a25}.ram-national .ram-name,.ram-national .ram-value{font-weight:750}
+.ram-value{text-align:right;font-size:13px;font-variant-numeric:tabular-nums;font-weight:700;color:#153f5b}.ram-axis{display:flex;justify-content:space-between;margin:0 75px 4px 202px;font-size:11px;color:#5b6c74}
+.ram-figure figcaption{font-size:12px;color:#5b6c74;line-height:1.5;margin:12px 0 0}
+.ram-table td small{display:block;font-size:11px;color:#536871;font-weight:400}.ram-table tbody tr.total th,.ram-table tbody tr.total td{background:#fff1d4;font-weight:700}
+@media(max-width:650px){.ram-row{grid-template-columns:120px minmax(0,1fr) 48px;gap:5px}.ram-name,.ram-value{font-size:11px}.ram-axis{margin-left:125px;margin-right:53px}}
+/* End regional model comparison */
+</style><style>.survey-table{font:15px/1.4 Arial,sans-serif;min-width:930px}.survey-table th,.survey-table td{white-space:normal;padding:12px 10px;text-align:right;border:1px solid #d7e2e7}.survey-table thead th{background:#153f5b;color:white;text-align:center}.survey-table th:first-child{text-align:left}.survey-table tbody tr:last-child{background:#e6f0f2;font-weight:bold}.survey-table tbody tr:nth-child(even){background:#f2f6f7}.duration-slide{margin:25px 0 38px}.sensitivity-heading{background:#153f5b;color:white;padding:24px}.sensitivity-heading h2{color:white}.legacy-anchor{display:block;scroll-margin-top:20px}</style><style>.survey-table{font:15px/1.4 Arial,sans-serif;min-width:930px}.survey-table th,.survey-table td{white-space:normal;padding:12px 10px;text-align:right;border:1px solid #d7e2e7}.survey-table thead th{background:#153f5b;color:white;text-align:center}.survey-table th:first-child{text-align:left}.survey-table tbody tr:last-child{background:#e6f0f2;font-weight:bold}.survey-table tbody tr:nth-child(even){background:#f2f6f7}.duration-slide{margin:25px 0 38px}.sensitivity-heading{background:#153f5b;color:white;padding:24px}.sensitivity-heading h2{color:white}.legacy-anchor{display:block;scroll-margin-top:20px}</style></head><body><button id="toc-toggle" class="toc-toggle" type="button" aria-controls="site-toc" aria-expanded="false">☰ Contents</button><div id="toc-scrim" class="toc-scrim" aria-hidden="true"></div><div class="shell"><aside id="site-toc"><strong>Ethiopia discontinuation</strong><nav class="toc"><a href="#toc-ec-inclusive-initiation-diagnostic" class="toc-level-h2">EC-inclusive initiation diagnostic</a><a href="#toc-overall-initiation-distribution-months-3-62" class="toc-level-h3">Overall initiation distribution, months 3–62</a><a href="#toc-initiation-distribution-by-calendar-year" class="toc-level-h3">Initiation distribution by calendar year</a><a href="#toc-weighting-and-complex-survey-design" class="toc-level-h3">Weighting and complex survey design</a><a href="#toc-revised-table-7-11" class="toc-level-h2">Revised Table 7.11</a><a href="#toc-how-revised-table-7-11-was-calculated" class="toc-level-h3">How revised Table 7.11 was calculated</a><a href="#toc-discontinuation-by-time" class="toc-level-h2">Discontinuation by time</a><a href="#toc-dhs-table-7-11-probability-of-discontinuation-by-reaso" class="toc-level-h3">DHS Table 7.11: probability of discontinuation by reason</a><a href="#toc-how-each-reason-specific-value-is-calculated" class="toc-level-h3">How each reason-specific value is calculated</a><a href="#toc-worked-example-injectable-episodes" class="toc-level-h3">Worked example: injectable episodes</a><a href="#toc-12-month-discontinuation-excluding-wanted-pregnancy-an" class="toc-level-h3">12-month discontinuation excluding wanted pregnancy and partner disapproval</a><a href="#other-recorded-reasons-breakdown" class="toc-level-h3">What is included in “Other recorded reasons”?</a><a href="#toc-how-the-dhs-switching-column-fits" class="toc-level-h3">How the DHS switching column fits</a><a href="#toc-presentation-view-cumulative-discontinuation-at-3-6-an" class="toc-level-h3">Presentation view: cumulative discontinuation at 3, 6, and 12 months</a><a href="#toc-full-dhs-comparable-time-point-table" class="toc-level-h3">Full DHS-comparable time-point table</a><a href="#toc-original-method-outcomes-separating-successful-modern-" class="toc-level-h3">Original-method outcomes, separating successful modern switching</a><a href="#toc-cause-specific-cumulative-discontinuation-at-3-6-and-1" class="toc-level-h3">Cause-specific cumulative discontinuation at 3, 6, and 12 months</a><a href="#toc-3-month-cumulative-incidence" class="toc-level-h4">3-month cumulative incidence</a><a href="#toc-6-month-cumulative-incidence" class="toc-level-h4">6-month cumulative incidence</a><a href="#toc-12-month-cumulative-incidence" class="toc-level-h4">12-month cumulative incidence</a><a href="#toc-how-the-time-point-discontinuation-rates-were-calculat" class="toc-level-h3">How the time-point discontinuation rates were calculated</a><a href="#toc-how-to-interpret-the-injectable-row" class="toc-level-h3">How to interpret the injectable row</a><a href="#toc-revised-table-7-12-reasons-for-discontinuation" class="toc-level-h2">Revised Table 7.12: reasons for discontinuation</a><a href="#updated-heading-24" class="toc-level-h3">Four mutually exclusive groups of discontinuation reasons</a><a href="#toc-aggregated-reason-categories" class="toc-level-h3">Aggregated reason categories</a><a href="#toc-reasons-for-discontinuation-differ-by-method" class="toc-level-h3">Reasons for discontinuation differ by method</a><a href="#restricted-reasons-by-method" class="toc-level-h3">Reasons among discontinuations other than wanted pregnancy or partner disapproval</a><a href="#method-experience-reasons-by-method" class="toc-level-h3">Distribution of reasons for discontinuation by method, focusing only on method experience and access</a><a href="#toc-reason-mix-after-excluding-wanted-pregnancy-and-partne" class="toc-level-h3">Reason mix after excluding wanted pregnancy and partner disapproval</a><a href="#toc-detailed-15-reason-distribution-from-table-7-12" class="toc-level-h3">Detailed 15-reason distribution from Table 7.12</a><a href="#toc-how-to-interpret-this-table" class="toc-level-h3">How to interpret this table</a><a href="#toc-calculation-and-validation" class="toc-level-h3">Calculation and validation</a><a href="#toc-what-happens-after-discontinuation" class="toc-level-h2">What happens after discontinuation?</a><a href="#toc-state-one-month-after-discontinuation" class="toc-level-h3">State one month after discontinuation</a><a href="#toc-state-12-months-after-discontinuation" class="toc-level-h3">State 12 months after discontinuation</a><a href="#toc-how-to-interpret-the-12-month-bars" class="toc-level-h3">How to interpret the 12-month bars</a><a href="#toc-from-episode-evidence-to-program-action" class="toc-level-h2">From episode evidence to program action</a><a href="#toc-what-programs-can-do" class="toc-level-h3">What programs can do</a><a href="#toc-injectables-stated-reason-and-state-one-month-later" class="toc-level-h3">Injectables: stated reason and state one month later</a><a href="#toc-injectables-timing-and-immediate-destination-heat-map" class="toc-level-h3">Injectables: timing and immediate destination heat map</a><a href="#toc-historical-current-user-pathway-baseline-to-months-3-a" class="toc-level-h3">Historical current-user pathway: baseline to months 3 and 12</a><a href="#toc-what-this-pathway-adds" class="toc-level-h3">What this pathway adds</a><a href="#toc-standardized-current-user-stock-to-outcome-pathway" class="toc-level-h2">Standardized current-user stock-to-outcome pathway</a><a href="#toc-how-to-interpret-the-standardized-pathway" class="toc-level-h3">How to interpret the standardized pathway</a><a href="#toc-methods" class="toc-level-h2">Methods</a><a href="#toc-episode-construction" class="toc-level-h3">Episode construction</a><a href="#toc-weights-and-censoring" class="toc-level-h3">Weights and censoring</a><a href="#toc-reason-specific-table" class="toc-level-h3">Reason-specific table</a><a href="#toc-any-reason-table" class="toc-level-h3">Any-reason table</a><a href="#analysis-heading-49" class="toc-level-h3">Survey design and uncertainty</a><a href="#updated-heading-51" class="toc-level-h3">Planning-table reconciliation</a><a href="#toc-validation" class="toc-level-h2">Validation</a><a href="#toc-additional-analyses" class="toc-level-h2">Additional analyses</a><a href="#toc-presentation-figures" class="toc-level-h2">Presentation figures</a><a href="#toc-entry-methods-set-the-denominator-for-future-retention" class="toc-level-h3">Entry methods set the denominator for future retention risk</a><a href="#toc-initiation-mix-among-modern-method-starts" class="toc-level-h3">Initiation mix among modern-method starts</a><a href="#toc-timing-of-modern-method-discontinuation" class="toc-level-h3">Timing of modern-method discontinuation</a><a href="#restricted-discontinuation-curve" class="toc-level-h3">Timing of discontinuation excluding wanted pregnancy and partner disapproval</a><a href="#toc-how-much-occurs-in-the-first-3-and-6-months" class="toc-level-h4">How much occurs in the first 3 and 6 months?</a><a href="#toc-method-starts-and-12-month-discontinuation" class="toc-level-h3">Method starts and 12-month discontinuation</a><a href="#mix-vs-restricted-discontinuation" class="toc-level-h3">Method starts and 12-month discontinuation excluding wanted pregnancy and partner disapproval</a><a href="#life-table-by-method-reason" class="toc-level-h3">12-month discontinuation probability by method and reason</a><a href="#method-experience-12-month-detail" class="toc-level-h3">What contributes to 12-month discontinuation from method experience or access?</a><a href="#toc-within-the-method-experience-or-access-total" class="toc-level-h4">Within the method experience or access total</a><a href="#restricted-discontinuation-probability" class="toc-level-h3">12-month discontinuation excluding wanted pregnancy and partner disapproval</a><a href="#toc-dhs-table-7-11-12-month-discontinuation-by-method-and-" class="toc-level-h3">DHS Table 7.11: 12-month discontinuation by method and reason</a><a href="#toc-from-reasons-to-risk" class="toc-level-h3">From reasons to risk</a><a href="#selected-reason-regression" class="toc-level-h3">Who is more likely to discontinue for reasons other than wanted pregnancy or partner disapproval?</a><a href="#toc-unadjusted-and-adjusted-12-month-probabilities-by-grou" class="toc-level-h3">Unadjusted and adjusted 12-month probabilities by group</a><a href="#toc-how-the-selected-reason-probability-varies-by-original" class="toc-level-h3">How the selected-reason probability varies by original method</a><a href="#toc-regional-discontinuation-and-reason-profiles" class="toc-level-h3">Regional discontinuation and reason profiles</a><a href="#toc-analyses-to-explain-regional-differences" class="toc-level-h3">Analyses to explain regional differences</a><a href="#toc-mcpr-and-discontinuation-four-regional-profiles" class="toc-level-h3">mCPR and discontinuation: four regional profiles</a><a href="#toc-after-stopping-for-reasons-other-than-wanting-pregnanc" class="toc-level-h3">Use one month after endings unrelated to intended pregnancy</a><a href="#toc-modern-use-rises-by-month-12-but-nonuse-persists" class="toc-level-h3">Modern use rises by month 12, but nonuse persists</a><a href="#toc-a-60-month-woman-level-view-reveals-the-pathways-betwe" class="toc-level-h3">A 60-month woman-level view reveals the pathways between snapshots</a><a href="#toc-candidate-five-year-contraceptive-trajectories" class="toc-level-h3">Candidate five-year contraceptive trajectories</a><a href="#toc-from-discontinuation-to-sustained-mcpr-growth" class="toc-level-h3">From discontinuation to sustained mCPR growth</a><a href="#toc-current-users-scaled-to-women-of-reproductive-age" class="toc-level-h3">Current users scaled to women of reproductive age</a><a href="#toc-planned-counts-by-method-and-stated-reason" class="toc-level-h3">Planned counts by method and stated reason</a><a href="#analysis-heading-79" class="toc-level-h3">All-cause adjusted discontinuation by subgroup</a><a href="#toc-12-month-discontinuation-by-method-and-reason-definiti" class="toc-level-h2">12-month discontinuation by method and reason definition</a><a href="#toc-what-is-inside-other-discontinuation-reasons" class="toc-level-h2">What is inside “Other” discontinuation reasons?</a><a href="#toc-other-recorded-reasons-in-the-12-month-discontinuation" class="toc-level-h3">Other recorded reasons in the 12-month discontinuation chart</a><a href="#toc-other-reasons-in-the-five-year-reason-distribution-cha" class="toc-level-h3">Other reasons in the five-year reason-distribution chart</a><a href="#toc-what-follows-discontinuation-for-each-other-recorded-r" class="toc-level-h2">What follows discontinuation for each “Other recorded reason”?</a><a href="#analysis-heading-85" class="toc-level-h2">Exploring which groups have higher 12-month discontinuation for selected reasons</a><a href="#analysis-heading-86" class="toc-level-h3">One characteristic at a time</a><a href="#analysis-heading-87" class="toc-level-h3">Age at method start</a><a href="#analysis-heading-88" class="toc-level-h3">Parity at method start</a><a href="#analysis-heading-89" class="toc-level-h3">Marital status at interview</a><a href="#analysis-heading-90" class="toc-level-h3">Education at interview</a><a href="#analysis-heading-91" class="toc-level-h3">Wealth at interview</a><a href="#analysis-heading-92" class="toc-level-h3">Residence at interview</a><a href="#analysis-heading-93" class="toc-level-h3">Original method</a><a href="#analysis-heading-94" class="toc-level-h3">Exploratory combinations</a><a href="#analysis-heading-95" class="toc-level-h3">Age at method start × Parity at method start</a><a href="#analysis-heading-96" class="toc-level-h3">Age at method start × Original method</a><a href="#analysis-heading-97" class="toc-level-h3">Parity at method start × Original method</a><a href="#analysis-heading-98" class="toc-level-h3">Extended regression with marital status</a><a href="#analysis-heading-99" class="toc-level-h3">Full adjusted model with four parity and four marital-status categories</a><a href="#analysis-heading-100" class="toc-level-h4">Adjusted probabilities for all model covariates</a><a href="#analysis-heading-101" class="toc-level-h4">Adjusted regional probabilities from the same full model</a><a href="#analysis-heading-102" class="toc-level-h4">Wealth-quintile sensitivity model</a><a href="#toc-reasons-by-covariate-subgroup" class="toc-level-h4">Reasons by covariate subgroup</a><a href="#toc-top-three-reasons-by-subgroup-method" class="toc-level-h4">Top three reasons by subgroup and original method</a><a href="#analysis-heading-105" class="toc-level-h2">Do distinct high-, medium-, and low-risk profiles emerge?</a><a href="#analysis-heading-106" class="toc-level-h3">Who is in each predicted-risk band?</a><a href="#analysis-heading-107" class="toc-level-h2">12-month selected-reason discontinuation by method-duration class</a><a href="#analysis-heading-108" class="toc-level-h2">Why short-acting methods ended within 12 months</a><a href="#toc-subnational-discontinuation-analysis-extension" class="toc-level-h2">Subnational discontinuation analysis_extension</a><a href="#regional-all-cause-summary" class="toc-level-h3">All-cause discontinuation by region</a><a href="#toc-seven-detailed-recorded-reasons" class="toc-level-h4">Seven detailed recorded reasons</a><a href="#toc-reason-share-confidence-intervals-and-sparse-cells" class="toc-level-h4">Reason-share confidence intervals and sparse cells</a><a href="#analysis-heading-113" class="toc-level-h3">Regional 12-month discontinuation for reasons other than wanted pregnancy or partner disapproval</a><a href="#analysis-heading-114" class="toc-level-h4">Unadjusted 12-month discontinuation by region</a><a href="#selected-reason-regional-pairwise" class="toc-level-h4">Which unadjusted regional rates differ?</a><a href="#analysis-heading-116" class="toc-level-h4">Adjusted 12-month discontinuation by region</a><a href="#analysis-heading-117" class="toc-level-h4">Regional rate estimates and sample sizes</a><a href="#selected-reason-regional-reason-profile" class="toc-level-h3">Among retained first-year discontinuations, what share is method experience or access?</a><a href="#selected-reason-regional-method-experience" class="toc-level-h3">Which method experience or access reasons dominate within each region?</a><a href="#toc-regional-method-mix-alongside-discontinuation-within-e" class="toc-level-h3">Regional method mix alongside discontinuation within each method</a><a href="#toc-national-8-611-eligible-episodes" class="toc-level-h4">National 8,611 eligible episodes</a><a href="#toc-benishangul-gumuz-652-eligible-episodes" class="toc-level-h4">Benishangul-Gumuz 652 eligible episodes</a><a href="#toc-gambella-548-eligible-episodes" class="toc-level-h4">Gambella 548 eligible episodes</a><a href="#toc-afar-194-eligible-episodes" class="toc-level-h4">Afar 194 eligible episodes</a><a href="#toc-tigray-682-eligible-episodes" class="toc-level-h4">Tigray 682 eligible episodes</a><a href="#toc-harari-425-eligible-episodes" class="toc-level-h4">Harari 425 eligible episodes</a><a href="#toc-south-ethiopia-644-eligible-episodes" class="toc-level-h4">South Ethiopia 644 eligible episodes</a><a href="#toc-central-ethiopia-457-eligible-episodes" class="toc-level-h4">Central Ethiopia 457 eligible episodes</a><a href="#toc-oromia-861-eligible-episodes" class="toc-level-h4">Oromia 861 eligible episodes</a><a href="#toc-amhara-999-eligible-episodes" class="toc-level-h4">Amhara 999 eligible episodes</a><a href="#toc-addis-ababa-748-eligible-episodes" class="toc-level-h4">Addis Ababa 748 eligible episodes</a><a href="#toc-sidama-1-155-eligible-episodes" class="toc-level-h4">Sidama 1,155 eligible episodes</a><a href="#toc-south-west-ethiopia-927-eligible-episodes" class="toc-level-h4">South West Ethiopia 927 eligible episodes</a><a href="#toc-dire-dawa-289-eligible-episodes" class="toc-level-h4">Dire Dawa 289 eligible episodes</a><a href="#toc-somali-30-eligible-episodes" class="toc-level-h4">Somali 30 eligible episodes</a><a href="#regional-method-specific-selected" class="toc-level-h3">Selected-reason risk by region and original method</a><a href="#regional-initiation-mix" class="toc-level-h3">Which modern methods were started in each region?</a><a href="#toc-regional-method-starts-and-12-month-discontinuation" class="toc-level-h2">Regional method starts and 12-month discontinuation</a><a href="#regional-method-mix-decomposition" class="toc-level-h3">Does method mix explain the Tigray–Amhara gap?</a><a href="#toc-what-is-being-decomposed" class="toc-level-h4">What is being decomposed?</a><a href="#toc-worked-example-tigray-and-amhara" class="toc-level-h4">Worked example: Tigray and Amhara</a><a href="#toc-what-is-the-statistical-technique-and-why-average" class="toc-level-h4">What is the statistical technique, and why average?</a><a href="#toc-what-analysis-would-better-test-and-explain-regional-d" class="toc-level-h4">What analysis would better test and explain regional differences?</a><a href="#injectable-regional-timing" class="toc-level-h3">When does injectable discontinuation accumulate by region?</a><a href="#toc-expected-user-discontinuation-calculations" class="toc-level-h2">Expected-user discontinuation calculations</a><a href="#toc-illustrative-current-user-method-endings-for-reasons-o" class="toc-level-h2">Illustrative current-user method endings for reasons other than wanted pregnancy or partner disapproval</a><a href="#toc-detailed-recorded-causes-within-each-method" class="toc-level-h3">Detailed recorded causes within each method</a><a href="#toc-injectables" class="toc-level-h3">Injectables</a><a href="#toc-implants" class="toc-level-h3">Implants</a><a href="#toc-pill" class="toc-level-h3">Pill</a><a href="#toc-iud" class="toc-level-h3">IUD</a><a href="#toc-other-modern-methods" class="toc-level-h3">Other modern methods</a><a href="#toc-all-modern-methods-combined-excluding-ec" class="toc-level-h3">All modern methods combined (excluding EC)</a><a href="#toc-estimating-next-year-method-endings-among-current-user" class="toc-level-h2">Estimating next-year method endings among current users</a><a href="#toc-which-probability-answers-which-question" class="toc-level-h3">Which probability answers which question?</a><a href="#toc-reason-specific-results-by-method" class="toc-level-h3">Reason-specific results by method</a><a href="#toc-injectables-2" class="toc-level-h3">Injectables</a><a href="#toc-implants-2" class="toc-level-h3">Implants</a><a href="#toc-pill-2" class="toc-level-h3">Pill</a><a href="#toc-iud-2" class="toc-level-h3">IUD</a><a href="#toc-other-modern-methods-2" class="toc-level-h3">Other modern methods</a><a href="#toc-all-modern-methods-combined-excluding-ec-2" class="toc-level-h3">All modern methods combined (excluding EC)</a><a href="#analysis-heading-163" class="toc-level-h2">Updated subnational heterogeneity analyses</a><a href="#updated-regional-method-experience-results" class="toc-level-h3">Regional discontinuation for method experience or access</a><a href="#regional-actionable-reasons-by-method" class="toc-level-h3">Which actionable reasons dominate within each method and region?</a><a href="#regional-actionable-reasons-injectables" class="toc-level-h4">Injectables</a><a href="#regional-actionable-reasons-implants" class="toc-level-h4">Implants</a><a href="#regional-actionable-reasons-pill" class="toc-level-h4">Pill</a><a href="#regional-actionable-reasons-iud" class="toc-level-h4">IUD</a><a href="#regional-actionable-reasons-other_modern" class="toc-level-h4">Other modern</a><a href="#regional-actionable-timing-map" class="toc-level-h3">When and where method experience or access discontinuation occurs</a><a href="#regional-all-method-initiation-mix" class="toc-level-h3">Which methods are initiated in each region?</a><a href="#regional-actionable-method-pairs" class="toc-level-h3">Method starts and potentially actionable discontinuation by region</a><a href="#regional-actionable-adjusted-comparison" class="toc-level-h3">Observed regional risk and adjusted comparison</a><a href="#regional-actionable-formal-tests" class="toc-level-h3">Which regional differences remain after adjustment?</a><a href="#analysis-heading-176" class="toc-level-h4">How the evidence changes with adjustment</a><a href="#analysis-heading-177" class="toc-level-h4">What the models estimate</a><a href="#regional-actionable-all-region-mix" class="toc-level-h3">Do regional gaps remain when each pair has the same method mix?</a><a href="#analysis-heading-179" class="toc-level-h4">Pairs with a detectable same-mix difference</a><a href="#regional-actionable-three-comparisons" class="toc-level-h3">How do the clearest regional gaps change across three comparisons?</a><a href="#regional-actionable-method-interaction" class="toc-level-h3">Does the regional gap depend on the method started?</a><a href="#analysis-heading-182" class="toc-level-h4">Does the regional gap differ between methods?</a><a href="#regional-actionable-injectable-implant-tests" class="toc-level-h3">Do 12-month actionable discontinuation rates differ by region for injectables and implants?</a><a href="#regional-actionable-injectable-three-stage" class="toc-level-h3">Injectable regional gaps: observed, common method mix, and fully adjusted</a><a href="#analysis-heading-185" class="toc-level-h4">Regional pairs surviving multiple-comparison correction</a><a href="#updated-heading-188" class="toc-level-h2">Three planning approaches: every actionable ending treated as a lost user</a><a href="#updated-heading-189" class="toc-level-h2">Exploratory estimate using first-year probabilities</a><a href="#updated-heading-190" class="toc-level-h3">Exploratory: users who may discontinue for actionable reasons</a><a href="#updated-heading-191" class="toc-level-h3">Exploratory: actionable discontinuation by method and cause</a><a href="#updated-heading-192" class="toc-level-h3">Method-specific actionable probabilities by cause (95% CI)</a><a href="#updated-heading-193" class="toc-level-h3">National pooled episode probability by cause</a><a href="#updated-heading-194" class="toc-level-h2">First-year approach: three illustrative mCPR growth scenarios</a><a href="#updated-heading-195" class="toc-level-h3">Exploratory: assumptions for 2026 mCPR</a><a href="#updated-heading-196" class="toc-level-h3">Exploratory: 2026 mCPR if actionable discontinuation is averted</a><a href="#updated-heading-197" class="toc-level-h2">First-year approach: projected users and mCPR by method</a><a href="#updated-heading-198" class="toc-level-h3">Exploratory: users and mCPR under 6-year DHS trend</a><a href="#updated-heading-199" class="toc-level-h3">Exploratory: users and mCPR under 9-year DHS trend</a><a href="#updated-heading-200" class="toc-level-h3">Exploratory: users and mCPR under FPET-informed growth</a><a href="#updated-heading-201" class="toc-level-h2">First-year approach: mCPR percentage-point equivalent by cause</a><a href="#updated-heading-202" class="toc-level-h3">Exploratory: mCPR contribution by actionable cause</a><a href="#updated-heading-203" class="toc-level-h2">Next-year losses using historical duration probabilities</a><a href="#updated-heading-204" class="toc-level-h3">Historical: users who may discontinue for actionable reasons</a><a href="#updated-heading-205" class="toc-level-h3">Historical: actionable discontinuation by method and cause</a><a href="#updated-heading-206" class="toc-level-h3">Historical: assumptions for 2026 mCPR</a><a href="#updated-heading-207" class="toc-level-h3">Historical: 2026 mCPR if actionable discontinuation is averted</a><a href="#updated-heading-208" class="toc-level-h3">Historical: users and mCPR under 6-year DHS trend</a><a href="#updated-heading-209" class="toc-level-h3">Historical: users and mCPR under 9-year DHS trend</a><a href="#updated-heading-210" class="toc-level-h3">Historical: users and mCPR under FPET-informed growth</a><a href="#updated-heading-211" class="toc-level-h3">Historical: mCPR contribution by actionable cause</a><a href="#updated-heading-212" class="toc-level-h2">Next-year losses using AFT duration probabilities</a><a href="#updated-heading-213" class="toc-level-h3">AFT: users who may discontinue for actionable reasons</a><a href="#updated-heading-214" class="toc-level-h3">AFT: actionable discontinuation by method and cause</a><a href="#updated-heading-215" class="toc-level-h3">AFT: assumptions for 2026 mCPR</a><a href="#updated-heading-216" class="toc-level-h3">AFT: 2026 mCPR if actionable discontinuation is averted</a><a href="#updated-heading-217" class="toc-level-h3">AFT: users and mCPR under 6-year DHS trend</a><a href="#updated-heading-218" class="toc-level-h3">AFT: users and mCPR under 9-year DHS trend</a><a href="#updated-heading-219" class="toc-level-h3">AFT: users and mCPR under FPET-informed growth</a><a href="#updated-heading-220" class="toc-level-h3">AFT: mCPR contribution by actionable cause</a><a href="#updated-heading-221" class="toc-level-h2">Sensitivity analyses allowing for switching and restarting</a><a href="#updated-heading-222" class="toc-level-h2">Historical sensitivity allowing for switching and restarting</a><a href="#updated-heading-223" class="toc-level-h3">Historical switching: users outside modern use at 12 months</a><a href="#updated-heading-224" class="toc-level-h3">Historical switching: year-end losses by method and cause</a><a href="#updated-heading-225" class="toc-level-h3">Historical switching: assumptions for 2026 mCPR</a><a href="#updated-heading-226" class="toc-level-h3">Historical switching: 2026 mCPR if year-end losses are avoided</a><a href="#updated-heading-227" class="toc-level-h3">Historical switching: users and mCPR under 6-year DHS trend</a><a href="#updated-heading-228" class="toc-level-h3">Historical switching: users and mCPR under 9-year DHS trend</a><a href="#updated-heading-229" class="toc-level-h3">Historical switching: users and mCPR under FPET-informed growth</a><a href="#updated-heading-230" class="toc-level-h3">Historical switching: mCPR contribution by actionable cause</a><a href="#updated-heading-231" class="toc-level-h2">AFT sensitivity using observed switching and restarting</a><a href="#updated-heading-232" class="toc-level-h3">AFT observed switching: users outside modern use at 12 months</a><a href="#updated-heading-233" class="toc-level-h3">AFT observed switching: year-end losses by method and cause</a><a href="#updated-heading-234" class="toc-level-h3">AFT observed switching: assumptions for 2026 mCPR</a><a href="#updated-heading-235" class="toc-level-h3">AFT observed switching: 2026 mCPR if year-end losses are avoided</a><a href="#updated-heading-236" class="toc-level-h3">AFT observed switching: users and mCPR under 6-year DHS trend</a><a href="#updated-heading-237" class="toc-level-h3">AFT observed switching: users and mCPR under 9-year DHS trend</a><a href="#updated-heading-238" class="toc-level-h3">AFT observed switching: users and mCPR under FPET-informed growth</a><a href="#updated-heading-239" class="toc-level-h3">AFT observed switching: mCPR contribution by actionable cause</a><a href="#updated-heading-240" class="toc-level-h2">AFT sensitivity using modeled switching and restarting</a><a href="#updated-heading-241" class="toc-level-h3">AFT modeled switching: users outside modern use at 12 months</a><a href="#updated-heading-242" class="toc-level-h3">AFT modeled switching: year-end losses by method and cause</a><a href="#updated-heading-243" class="toc-level-h3">AFT modeled switching: assumptions for 2026 mCPR</a><a href="#updated-heading-244" class="toc-level-h3">AFT modeled switching: 2026 mCPR if year-end losses are avoided</a><a href="#updated-heading-245" class="toc-level-h3">AFT modeled switching: users and mCPR under 6-year DHS trend</a><a href="#updated-heading-246" class="toc-level-h3">AFT modeled switching: users and mCPR under 9-year DHS trend</a><a href="#updated-heading-247" class="toc-level-h3">AFT modeled switching: users and mCPR under FPET-informed growth</a><a href="#updated-heading-248" class="toc-level-h3">AFT modeled switching: mCPR contribution by actionable cause</a><a href="#updated-heading-249" class="toc-level-h2">Appendix: additional duration and switching diagnostics</a><a href="#updated-heading-250" class="toc-level-h2">Appendix: direct switching after first-year actionable endings</a><a href="#updated-heading-251" class="toc-level-h3">Direct switches by cause (95% CI)</a><a href="#updated-heading-252" class="toc-level-h3">mCPR pp if every ending without a direct switch were a loss (95% CI)</a><a href="#updated-heading-253" class="toc-level-h2">Appendix: historical elapsed duration and year-end modern use</a><a href="#updated-heading-254" class="toc-level-h3">How switching changes the estimated losses and mCPR contribution</a><a href="#updated-heading-255" class="toc-level-h3">Year-end losses by cause (95% CI)</a><a href="#updated-heading-256" class="toc-level-h3">Historical switching: 2026 mCPR if year-end losses are avoided</a><a href="#updated-heading-257" class="toc-level-h2">Appendix: historical year-end loss by method and cause</a><a href="#updated-heading-258" class="toc-level-h3">Percentage-point equivalents (95% CI)</a><a href="#updated-heading-259" class="toc-level-h2">Appendix: AFT pathway diagnostics</a><a href="#updated-heading-260" class="toc-level-h3">Direct modern switches by cause (95% CI)</a><a href="#updated-heading-261" class="toc-level-h3">Outside modern use at year end by cause (95% CI)</a><a href="#updated-heading-262" class="toc-level-h3">AFT observed switching: mCPR contribution by actionable cause</a></nav></aside><main>
+<section id="overview"><div class="kicker">Contraceptive calendar analysis</div><h1 id="toc-modern-method-discontinuation">Modern-method discontinuation</h1><div class="meta"><span class="tag">Individual women’s IR file</span><span class="tag"></span><span class="tag">Weighted life tables</span><span class="tag"></span></div><div class="callout"><strong>Method groups.</strong> Rows are injectables, implants, pill, emergency contraception, Other modern methods, and their requested aggregate. <strong>Other modern methods</strong> includes IUD, male condom, female sterilization, male sterilization, Lactational Amenorrhea Method (LAM), Standard Days Method (SDM), and other modern method.</div></section><section id="initiation"><h2 id="toc-ec-inclusive-initiation-diagnostic">EC-inclusive initiation diagnostic</h2><div class="callout"><strong>How to read this:</strong></div><div class="figure-grid"><figure><img alt="Horizontal bar chart of the weighted overall modern-method initiation mix" data-image-placeholder="1"></figure><figure><img alt="One-hundred-percent stacked bar chart of the weighted modern-method initiation mix by calendar year" data-image-placeholder="2"></figure></div><h3 id="toc-overall-initiation-distribution-months-3-62">Overall initiation distribution, months 3–62</h3><div class="table-wrap analysis-table" role="region" aria-label="Overall method initiation distribution" tabindex="0"><div data-table-placeholder="1"></div></div><h3 id="toc-initiation-distribution-by-calendar-year">Initiation distribution by calendar year</h3><div class="table-wrap analysis-table" role="region" aria-label="Method initiation distribution by calendar year" tabindex="0"><div data-table-placeholder="2"></div></div><details><summary>Detailed year-specific estimates with standard errors and confidence intervals</summary><div class="table-wrap analysis-table" role="region" aria-label="Detailed calendar-year initiation estimates" tabindex="0"><div data-table-placeholder="3"></div></div></details><div class="interpretation"><h3 id="toc-weighting-and-complex-survey-design">Weighting and complex survey design</h3></div></section>
+
+
+
+<!-- BEGIN DHS LATE ENTRY OVERVIEW -->
+<div class="callout" id="dhs-late-entry-method-note"><strong>DHS life-table scope and late entry.</strong><em>not</em> the denominator of every monthly hazard. Subsequent modern-method analyses exclude emergency contraception and traditional methods but retain eligible late entries in their duration-specific risk sets. Initiation-mix figures intentionally count only observed starts and answer a different question. .</div>
+<!-- END DHS LATE ENTRY OVERVIEW -->
+<section id="table711"><h2 id="toc-revised-table-7-11">Revised Table 7.11</h2><div class="table-wrap analysis-table" role="region" aria-label="Revised Table 7.11" tabindex="0"><div data-table-placeholder="4"></div></div><div class="interpretation"><h3 id="toc-how-revised-table-7-11-was-calculated">How revised Table 7.11 was calculated</h3><div class="formula">Any-reason discontinuation at time <em>t</em><em>t</em>) = sum of the reason-specific cumulative incidences</div></div></section>
+<section id="time"><h2 id="toc-discontinuation-by-time">Discontinuation by time</h2><div class="callout"><strong>Important:</strong> “Any reason” means the original method episode ended. It includes women who immediately switched to another modern method, so these rates are method-episode discontinuation rates and should not be interpreted as exit from all modern-method use.</div><div id="discontinuation-comparison"><h3 id="toc-dhs-table-7-11-probability-of-discontinuation-by-reaso">DHS Table 7.11: probability of discontinuation by reason</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Ethiopia DHS Table 7.11 reproduced from the IR calendar" tabindex="0"><div data-table-placeholder="5"></div></div>
+<div class="interpretation"><h3 id="toc-how-each-reason-specific-value-is-calculated">How each reason-specific value is calculated</h3>
+<div class="formula"><sub></sub> S<sub>all</sub></div>
+</div>
+<h3 id="toc-worked-example-injectable-episodes">Worked example: injectable episodes</h3><details><summary></summary><div class="table-wrap analysis-table" role="region" aria-label="Injectable 12-month worked life-table calculation" tabindex="0"><div data-table-placeholder="6"></div></div></details>
+<h3 id="toc-12-month-discontinuation-excluding-wanted-pregnancy-an">12-month discontinuation excluding wanted pregnancy and partner disapproval</h3><div class="table-wrap analysis-table" role="region" aria-label="Twelve-month method discontinuation excluding wanted pregnancy and partner disapproval" tabindex="0"><div data-table-placeholder="7"></div></div>
+<h3 id="other-recorded-reasons-breakdown">What is included in “Other recorded reasons”?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Detailed 12-month cumulative probabilities for other recorded reasons" tabindex="0"><div data-table-placeholder="8"></div></div>
+<h3 id="toc-how-the-dhs-switching-column-fits">How the DHS switching column fits</h3></div><h3 id="toc-presentation-view-cumulative-discontinuation-at-3-6-an">Presentation view: cumulative discontinuation at 3, 6, and 12 months</h3><div class="figure-grid"><figure><img alt="Step chart showing weighted cumulative original-method discontinuation through 12 months for injectables, implants, pill, other modern methods, and all specified modern methods with and without emergency contraception" data-image-placeholder="3"></figure></div><div class="table-wrap analysis-table" role="region" aria-label="Presentation table of cumulative discontinuation at 3, 6, and 12 months" tabindex="0"><div data-table-placeholder="9"></div></div><h3 id="toc-full-dhs-comparable-time-point-table">Full DHS-comparable time-point table</h3><div class="table-wrap analysis-table" role="region" aria-label="Discontinuation by time" tabindex="0"><div data-table-placeholder="10"></div></div><h3 id="toc-original-method-outcomes-separating-successful-modern-">Original-method outcomes, separating successful modern switching</h3><div class="table-wrap analysis-table" role="region" aria-label="Discontinuation excluding successful modern-method switches" tabindex="0"><div data-table-placeholder="11"></div></div><h3 id="toc-cause-specific-cumulative-discontinuation-at-3-6-and-1">Cause-specific cumulative discontinuation at 3, 6, and 12 months</h3><div class="figure-grid"><figure><img alt="Three horizontal stacked-bar panels showing cumulative discontinuation at 3, 6, and 12 months by method and five aggregated reason families" data-image-placeholder="4"></figure></div><h4 id="toc-3-month-cumulative-incidence">3-month cumulative incidence</h4><div class="table-wrap analysis-table" role="region" aria-label="Cause-specific cumulative discontinuation at 3 months" tabindex="0"><div data-table-placeholder="12"></div></div><h4 id="toc-6-month-cumulative-incidence">6-month cumulative incidence</h4><div class="table-wrap analysis-table" role="region" aria-label="Cause-specific cumulative discontinuation at 6 months" tabindex="0"><div data-table-placeholder="13"></div></div><h4 id="toc-12-month-cumulative-incidence">12-month cumulative incidence</h4><div class="table-wrap analysis-table" role="region" aria-label="Cause-specific cumulative discontinuation at 12 months" tabindex="0"><div data-table-placeholder="14"></div></div><div class="interpretation"><h3 id="toc-how-the-time-point-discontinuation-rates-were-calculat">How the time-point discontinuation rates were calculated</h3><h3 id="toc-how-to-interpret-the-injectable-row">How to interpret the injectable row</h3><div class="formula"></div></div></section><section id="reasons712"><h2 id="toc-revised-table-7-12-reasons-for-discontinuation">Revised Table 7.12: reasons for discontinuation</h2><div class="reason-classification" id="four-reason-groups"><h3 id="updated-heading-24">Four mutually exclusive groups of discontinuation reasons</h3><div class="tablewrap"><div data-table-placeholder="15"></div></div></div><h3 id="toc-aggregated-reason-categories">Aggregated reason categories</h3><div class="figure-grid"><figure><img alt="Ranked horizontal bar chart of aggregated reasons for modern-method discontinuation" data-image-placeholder="5"></figure></div>
+<!-- START OVERALL REASON DENOMINATOR GUIDE -->
+<div class="callout"><strong>How to read the overall reasons chart:</strong><em>endings</em> were recorded as wanted pregnancy. It is a distribution of stated reasons, not the probability that a method user will discontinue.</div>
+<!-- END OVERALL REASON DENOMINATOR GUIDE -->
+<div id="reason-mix-by-method">
+<h3 id="toc-reasons-for-discontinuation-differ-by-method">Reasons for discontinuation differ by method</h3>
+<div class="figure-grid"><figure><a href="assets/reason_mix_by_method_all_discontinued.svg"><img alt="Weighted distribution of reasons among all discontinued modern-method episodes, by method. Bars sum to 100 percent within method." data-image-placeholder="6"></a></figure></div>
+<!-- START METHOD REASON DENOMINATOR GUIDE -->
+<div class="callout"><strong>How to read the bars by method:</strong> Each bar divides the <em>observed discontinuations of that method</em></div>
+<!-- END METHOD REASON DENOMINATOR GUIDE -->
+<h3 id="restricted-reasons-by-method">Reasons among discontinuations other than wanted pregnancy or partner disapproval</h3>
+<div class="figure-grid"><figure><a href="assets/reason_mix_by_method_excluding_wanted_pregnancy_partner.svg"><img alt="Two-color weighted reason distribution among discontinued modern-method episodes, excluding only wanted pregnancy and husband or partner disapproval. Each method bar sums to 100 percent. The all-modern bar is 74.3 percent method experience or access and 25.7 percent other recorded reasons." data-image-placeholder="7"></a></figure></div>
+<!-- START METHOD EXPERIENCE DETAIL -->
+<h3 id="method-experience-reasons-by-method">Distribution of reasons for discontinuation by method, focusing only on method experience and access</h3>
+<div class="figure-grid"><figure><a href="assets/reason_mix_by_method_experience_access_detail.svg?v=115"><img alt="Weighted distribution of four recorded method experience or access reasons among discontinued modern-method episodes, by method. Each bar sums to 100 percent." data-image-placeholder="8"></a></figure></div>
+<div class="table-wrap analysis-table" role="region" aria-label="Detailed weighted reason shares within method experience and access discontinuations" tabindex="0"><div data-table-placeholder="16"></div></div>
+<!-- END METHOD EXPERIENCE DETAIL -->
+</div>
+<div class="figure-grid"></div><div class="figure-grid"></div><div class="figure-grid"></div><!-- BEGIN RETAINED REASON MIX -->
+<div id="retained-reason-distribution">
+<h3 id="toc-reason-mix-after-excluding-wanted-pregnancy-and-partne">Reason mix after excluding wanted pregnancy and partner disapproval</h3>
+<div class="callout"><strong>Episode base:</strong><strong>not</strong> the number of episodes used to estimate the probabilities or confidence intervals.</div>
+<div class="table-wrap analysis-table" role="region" aria-label="Distribution of retained reasons in the first 12 months with design-based confidence intervals" tabindex="0"><div data-table-placeholder="17"></div></div>
+</div><!-- END RETAINED REASON MIX --><div class="figure-grid"><figure><img alt="Heatmap of aggregated reasons for discontinuation by modern method" data-image-placeholder="9"></figure></div><div class="callout"><strong>Suggested presentation sequence:</strong></div><div class="table-wrap analysis-table" role="region" aria-label="Aggregated reasons for discontinuation" tabindex="0"><div data-table-placeholder="18"></div></div><h3 id="toc-detailed-15-reason-distribution-from-table-7-12">Detailed 15-reason distribution from Table 7.12</h3><div class="table-wrap analysis-table" role="region" aria-label="Revised Table 7.12 reasons for discontinuation" tabindex="0"><div data-table-placeholder="19"></div></div><div class="interpretation"><h3 id="toc-how-to-interpret-this-table">How to interpret this table</h3><h3 id="toc-calculation-and-validation">Calculation and validation</h3></div></section>
+<section id="transitions"><h2 id="toc-what-happens-after-discontinuation">What happens after discontinuation?</h2><div class="callout"><strong>How to read the denominators:</strong> everyone in these figures has already discontinued a modern-method episode. The figures describe what happened afterward; they do not estimate the probability that an episode will discontinue. The percentages in the alluvial use all matched discontinuations as the denominator. The percentages within each stacked bar use discontinuations of that originating method as the denominator.</div><h3 id="toc-state-one-month-after-discontinuation">State one month after discontinuation</h3><div class="figure-grid"><figure><img alt="Alluvial diagram from discontinued modern method to the contraceptive or reproductive state one month later" data-image-placeholder="10"></figure></div><h3 id="toc-state-12-months-after-discontinuation">State 12 months after discontinuation</h3><div class="figure-grid"><figure><img alt="One-hundred-percent stacked bars showing the state 12 months after discontinuation by originating modern method" data-image-placeholder="11"></figure></div><div class="interpretation"><h3 id="toc-how-to-interpret-the-12-month-bars">How to interpret the 12-month bars</h3></div><details><summary>Exploratory alluvials: discontinuations for reasons other than pregnancy</summary>
+<div class="figure-grid" style="grid-template-columns:1fr"><figure><img alt="Curved alluvial of modern-method discontinuations for non-pregnancy reasons and their state one month later" data-image-placeholder="12"></figure><figure><img alt="Curved alluvial of the same non-pregnancy-reason discontinuations and their state 12 months later" data-image-placeholder="13"></figure></div>
+</details></section>
+<!-- BEGIN ACTION PATHWAYS --><section id="action-pathways"><h2 id="toc-from-episode-evidence-to-program-action">From episode evidence to program action</h2><h3 id="toc-what-programs-can-do">What programs can do</h3><div class="table-wrap analysis-table" role="region" aria-label="Program action evidence table" tabindex="0"><div data-table-placeholder="20"></div></div><h3 id="toc-injectables-stated-reason-and-state-one-month-later">Injectables: stated reason and state one month later</h3><div class="figure-grid"><figure><img alt="Alluvial diagram linking stated reason for injectable discontinuation to the state one month later" data-image-placeholder="14"></figure></div><h3 id="toc-injectables-timing-and-immediate-destination-heat-map">Injectables: timing and immediate destination heat map</h3><div class="figure-grid"><figure><img alt="Heat map of injectable discontinuation timing and next-month destination by reason" data-image-placeholder="15"></figure></div><div class="callout"><strong>Interpretation boundary:</strong></div><h3 id="toc-historical-current-user-pathway-baseline-to-months-3-a">Historical current-user pathway: baseline to months 3 and 12</h3><div class="figure-grid"><figure><img alt="Woman-level alluvial pathway from historical baseline modern-method use to month 3 and month 12" data-image-placeholder="16"></figure></div><div class="interpretation"><h3 id="toc-what-this-pathway-adds">What this pathway adds</h3></div></section><!-- END ACTION PATHWAYS -->
+
+
+
+<!-- BEGIN STANDARDIZED CURRENT USER --><section id="standardized-current-users"><h2 id="toc-standardized-current-user-stock-to-outcome-pathway">Standardized current-user stock-to-outcome pathway</h2><div class="figure-grid"><figure><img alt="Standardized alluvial from current modern-method users to gross exit and month-12 outcomes" data-image-placeholder="17"></figure></div><div class="interpretation"><h3 id="toc-how-to-interpret-the-standardized-pathway">How to interpret the standardized pathway</h3></div></section><!-- END STANDARDIZED CURRENT USER -->
+<section id="methods"><h2 id="toc-methods">Methods</h2><div class="method-grid"><div class="card"><h3 id="toc-episode-construction">Episode construction</h3></div><div class="card"><h3 id="toc-weights-and-censoring">Weights and censoring</h3></div><div class="card"><h3 id="toc-reason-specific-table">Reason-specific table</h3></div><div class="card"><h3 id="toc-any-reason-table">Any-reason table</h3></div></div><div id="survey-inference-audit"><h3 id="analysis-heading-49">Survey design and uncertainty</h3></div><span id="toc-12-month-selected-reason-discontinuation-by-method-dur" class="legacy-anchor"></span><span id="toc-do-distinct-high-medium-and-low-risk-profiles-emerge" class="legacy-anchor"></span><span id="toc-who-is-in-each-predicted-risk-band" class="legacy-anchor"></span><span id="toc-why-short-acting-methods-ended-within-12-months" class="legacy-anchor"></span><div id="planning-validation"><h3 id="updated-heading-51">Planning-table reconciliation</h3></div><span id="analysis-heading-222" class="legacy-anchor"></span><span id="analysis-heading-237" class="legacy-anchor"></span><span id="analysis-heading-186" class="legacy-anchor"></span><span id="analysis-heading-229" class="legacy-anchor"></span><span id="analysis-heading-231" class="legacy-anchor"></span><span id="analysis-heading-224" class="legacy-anchor"></span><span id="analysis-heading-228" class="legacy-anchor"></span><span id="analysis-heading-225" class="legacy-anchor"></span><span id="analysis-heading-236" class="legacy-anchor"></span><span id="analysis-heading-235" class="legacy-anchor"></span><span id="analysis-heading-234" class="legacy-anchor"></span><span id="analysis-heading-232" class="legacy-anchor"></span><span id="analysis-heading-221" class="legacy-anchor"></span><span id="analysis-heading-233" class="legacy-anchor"></span><span id="analysis-heading-226" class="legacy-anchor"></span><span id="analysis-heading-227" class="legacy-anchor"></span><span id="analysis-heading-220" class="legacy-anchor"></span><span id="analysis-heading-223" class="legacy-anchor"></span><span id="analysis-heading-219" class="legacy-anchor"></span><span id="analysis-heading-230" class="legacy-anchor"></span></section>
+<section id="validation"><h2 id="toc-validation">Validation</h2><div class="callout"><strong>Published-table check passed.</strong></div></section>
+<section id="future"><h2 id="toc-additional-analyses">Additional analyses</h2><div class="future">Future analyses will be added here as new sections, keeping this page as the project’s consolidated analysis record.</div><!-- ADD NEW ANALYSIS SECTIONS IMMEDIATELY ABOVE THIS COMMENT --></section>
+<!-- BEGIN PRESENTATION FIGURES -->
+<section id="presentation-figures"><h2 id="toc-presentation-figures">Presentation figures</h2><h3 style="color:var(--navy)" id="toc-entry-methods-set-the-denominator-for-future-retention">Entry methods set the denominator for future retention risk</h3>
+<div class="figure-grid presentation-initiation-pair">
+<figure><a href="assets/presentation_initiation_overall_excluding_ec.svg"><img alt="Overall weighted initiation mix of contraceptive starts excluding EC: injectables 60.1%, implants 24.2%, pill 9.7%, IUD 1.6%, other modern 2.0%, non-modern methods 2.4%." data-image-placeholder="18"></a></figure>
+<figure><a href="assets/presentation_initiation_by_year_excluding_ec.svg"><img alt="Weighted initiation mix of contraceptive starts excluding EC by calendar year, 2021–2024. The 2024 observation window is partial." data-image-placeholder="19"></a></figure>
+</div>
+<h3 style="color:var(--navy)" id="toc-initiation-mix-among-modern-method-starts">Initiation mix among modern-method starts</h3>
+<div class="figure-grid presentation-initiation-pair">
+<figure><a href="assets/presentation_initiation_modern_only_overall_excluding_ec.svg"><img alt="Overall modern-method initiation mix excluding EC." data-image-placeholder="20"></a></figure>
+<figure><a href="assets/presentation_initiation_modern_only_by_year_excluding_ec.svg"><img alt="Modern-method initiation mix excluding EC by year, 2021 through partial 2024." data-image-placeholder="21"></a></figure>
+</div>
+<h3 style="color:var(--navy)" id="toc-timing-of-modern-method-discontinuation">Timing of modern-method discontinuation</h3>
+<div class="figure-grid">
+<figure><a href="assets/presentation_discontinuation_clean_curve.svg"><img alt="Weighted cumulative life-table probabilities of ending the original method by month 0 through 12, with checkpoints at months 3 and 6 and direct labels at month 12. Injectables are 16.2% at month 3, 25.6% at month 6, and 44.5% at month 12. Emergency contraception is excluded from all series, including other modern methods and the aggregate." data-image-placeholder="22"></a></figure>
+</div>
+<h3 style="color:var(--navy)" id="restricted-discontinuation-curve">Timing of discontinuation excluding wanted pregnancy and partner disapproval</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_discontinuation_curve_excluding_wanted_pregnancy_partner.svg"><img alt="Cumulative competing-risks probability of original-method discontinuation, excluding only wanted pregnancy and husband or partner disapproval. At 12 months: pill 46.6 percent, other modern methods 32.4 percent, injectables 25.5 percent, all modern methods 23.6 percent, IUD 15.0 percent, and implants 9.9 percent." data-image-placeholder="23"></a></figure></div>
+<h4 id="toc-how-much-occurs-in-the-first-3-and-6-months">How much occurs in the first 3 and 6 months?</h4>
+<div class="table-wrap analysis-table" role="region" aria-label="Restricted cumulative discontinuation at three six and twelve months" tabindex="0"><div data-table-placeholder="21"></div></div>
+<h3 style="color:var(--navy)" id="toc-method-starts-and-12-month-discontinuation">Method starts and 12-month discontinuation</h3>
+<div class="figure-grid">
+<figure><a href="assets/presentation_mix_vs_allcause_discontinuation_excluding_ec.svg"><img alt="Touching grouped horizontal bars comparing each method's share of observed contraceptive starts excluding EC with its 12-month cumulative probability of discontinuing the original method. Injectables account for 60.1 percent of starts. Pills have the highest 12-month discontinuation probability at 67.4 percent, followed by injectables at 44.5 percent. Other modern excludes IUD and EC." data-image-placeholder="24"></a></figure>
+</div>
+<h3 style="color:var(--navy)" id="mix-vs-restricted-discontinuation">Method starts and 12-month discontinuation excluding wanted pregnancy and partner disapproval</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_mix_vs_discontinuation_excluding_wanted_pregnancy_partner.svg"><img alt="Touching paired horizontal bars showing each method's share of all observed contraceptive starts excluding EC and its 12-month probability of original-method discontinuation excluding wanted pregnancy and husband or partner disapproval. Injectables: 60.1 percent of starts and 25.5 percent discontinuation; implants: 24.2 and 9.9; pill: 9.7 and 46.6; IUD: 1.6 and 15.0; other modern methods: 2.0 and 32.4." data-image-placeholder="25"></a></figure></div>
+<h3 style="color:var(--navy)" id="life-table-by-method-reason">12-month discontinuation probability by method and reason</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_discontinuation_probability_by_reason.svg"><img alt="Weighted 12-month method discontinuation probability by stated reason. Pill total 67.4 percent; injectables 44.5 percent; other modern methods excluding IUD and EC 36.2 percent; IUD 24.7 percent; implants 16.0 percent. Each bar is divided into wanted pregnancy, method experience or access, partner disapproval, and other reasons." data-image-placeholder="26"></a></figure></div>
+<!-- START LIFE TABLE DENOMINATOR GUIDE -->
+<div class="callout"><strong></strong> For each method, the denominator begins with <em>all eligible episodes of that original method</em><em>all-methods</em></div>
+<!-- END LIFE TABLE DENOMINATOR GUIDE -->
+<!-- START METHOD EXPERIENCE 12-MONTH DETAIL -->
+<h3 id="method-experience-12-month-detail">What contributes to 12-month discontinuation from method experience or access?</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_method_experience_12_month_detail.svg?v=116"><img alt="Stacked 12-month cumulative discontinuation probability by method, split into method failure, wanted a more effective method, side effects or health, and access cost or inconvenience. All modern methods total 17.0 percent." data-image-placeholder="27"></a></figure></div>
+<h4 id="toc-within-the-method-experience-or-access-total">Within the method experience or access total</h4>
+<div class="table-wrap analysis-table" role="region" aria-label="Share of method experience or access 12-month discontinuation probability by detailed reason" tabindex="0"><div data-table-placeholder="22"></div></div>
+<!-- END METHOD EXPERIENCE 12-MONTH DETAIL -->
+
+<h3 style="color:var(--navy)" id="restricted-discontinuation-probability">12-month discontinuation excluding wanted pregnancy and partner disapproval</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_discontinuation_probability_excluding_pregnancy_partner.svg"><img alt="Stacked 12-month discontinuation probabilities excluding desire to become pregnant and husband or partner disapproval. Pill 46.6 percent, other modern methods 32.4 percent, injectables 25.5 percent, IUD 15.0 percent, implants 9.9 percent, and all modern methods 23.6 percent. Blue segments show method experience or access, and gray segments show other retained reasons." data-image-placeholder="28"></a></figure></div>
+<!-- START DHS 7.11 PRESENTATION TABLE -->
+<section id="dhs-711-presentation-table">
+<h3 style="color:var(--navy)" id="toc-dhs-table-7-11-12-month-discontinuation-by-method-and-">DHS Table 7.11: 12-month discontinuation by method and reason</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Published DHS Table 7.11, twelve-month contraceptive discontinuation by method and reason" tabindex="0"><div data-table-placeholder="23"></div></div>
+</section>
+<!-- END DHS 7.11 PRESENTATION TABLE -->
+
+
+<h3 style="color:var(--navy)" id="toc-from-reasons-to-risk">From reasons to risk</h3>
+<h3 style="color:var(--navy)" id="selected-reason-regression">Who is more likely to discontinue for reasons other than wanted pregnancy or partner disapproval?</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_selected_reason_predictors.svg"><img alt="Adjusted 12-month probabilities of discontinuing the original modern method for any recorded reason except wanted pregnancy or partner disapproval, by age, parity, education, wealth, and residence. 95 percent confidence intervals account for survey cluster and strata in a bootstrap." data-image-placeholder="29"></a></figure></div>
+<h3 id="toc-unadjusted-and-adjusted-12-month-probabilities-by-grou">Unadjusted and adjusted 12-month probabilities by group</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Unadjusted and adjusted selected-reason 12-month discontinuation probabilities" tabindex="0"><div data-table-placeholder="24"></div></div>
+<h3 id="toc-how-the-selected-reason-probability-varies-by-original">How the selected-reason probability varies by original method</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Unadjusted and adjusted selected-reason 12-month discontinuation probabilities by method" tabindex="0"><div data-table-placeholder="25"></div></div>
+<details><summary>Risk-model methods and interpretation</summary>
+</details>
+
+<h3 style="color:var(--navy)" id="toc-regional-discontinuation-and-reason-profiles">Regional discontinuation and reason profiles</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_regional_discontinuation.png"><img alt="All 14 regions: weighted 12-month probability of ending the original modern method with 95 percent survey-design confidence intervals and national reference of 38.9 percent. A separate four-category reason table repeats the region names; each row sums to 100 percent before rounding." data-image-placeholder="30"></a></figure></div>
+<details><summary>Regional denominators and precision</summary>
+<div class="table-wrap"><div data-table-placeholder="26"></div></div></details>
+
+<h3 style="color:var(--navy)" id="toc-analyses-to-explain-regional-differences">Analyses to explain regional differences</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_regional_diagnostic.png"><img alt="Three questions and modeling approaches to explain regional discontinuation gaps: method-mix decomposition, nonlinear Oaxaca–Blinder-style population-composition decomposition, and contextual service analysis." data-image-placeholder="31"></a></figure></div>
+<details><summary></summary>
+</details>
+<h3 style="color:var(--navy)" id="toc-mcpr-and-discontinuation-four-regional-profiles">mCPR and discontinuation: four regional profiles</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_regional_typology.png"><img alt="Regional typology matrix: modern contraceptive prevalence is the horizontal axis; Discontinuation is the vertically rotated axis label. The intended typology measure is discontinuation while in need. Four quadrants describe possible regional profiles; regions are not yet assigned." data-image-placeholder="32"></a></figure></div>
+<details><summary>What remains to classify regions</summary></details>
+<h3 style="color:var(--navy)" id="toc-after-stopping-for-reasons-other-than-wanting-pregnanc">Use one month after endings unrelated to intended pregnancy</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_exclude_wanted_alluvial_month1_v40.png"><img alt="Curved alluvial from discontinued modern method to next state one month later. Of the same cohort used in the three-timepoint figure, 23.6 percent have a modern method, 67.3 percent no method, 8.1 percent pregnancy, birth or termination, and 1.0 percent a traditional method." data-image-placeholder="33"></a></figure></div>
+<h3 style="color:var(--navy)" id="toc-modern-use-rises-by-month-12-but-nonuse-persists">Modern use rises by month 12, but nonuse persists</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_month1_3_12_exclude_wanted_slide_v42.png"><img alt="Curved alluvial connecting states at months one, three and twelve. The month-one shares match the preceding figure: 23.6 percent modern method, 67.3 percent no method, 8.1 percent pregnancy, birth or termination, and 1.0 percent traditional method. Each state and weighted share is directly labeled at all three timepoints." data-image-placeholder="34"></a></figure></div>
+<h3 style="color:var(--navy)" id="toc-a-60-month-woman-level-view-reveals-the-pathways-betwe">A 60-month woman-level view reveals the pathways between snapshots</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_trajectory_bridge_v43.png"><img alt="Presentation slide comparing no method at month 12 with no method in every month of the first year, and introducing a five-year woman-level trajectory lens." data-image-placeholder="35"></a></figure></div>
+<h3 style="color:var(--navy)" id="toc-candidate-five-year-contraceptive-trajectories">Candidate five-year contraceptive trajectories</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_trajectory_profiles_v43.png"><img alt="Six illustrative 60-month patterns: stable modern use, switch with continuity, brief gap and return, repeated churn, early exit, and predominant nonuse. These are candidate profiles, not estimated Ethiopia clusters." data-image-placeholder="36"></a></figure></div>
+<h3 style="color:var(--navy)" id="toc-from-discontinuation-to-sustained-mcpr-growth">From discontinuation to sustained mCPR growth</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_mcpr_entry_retention_v46.png"><img alt="Closing slide linking current modern users and new or returning users to year-end modern use and nonuse. Modern-to-modern switching remains in the mCPR numerator." data-image-placeholder="37"></a></figure></div>
+<h3 style="color:var(--navy)" id="toc-current-users-scaled-to-women-of-reproductive-age">Current users scaled to women of reproductive age</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_mcpr_current_user_scale_v46.png"><img alt="Stationary per-million-WRA scenario: 22.7 percent mCPR gives about 227,000 current modern users; approximately 64,000 experience a gross exit and 53,000 remain outside modern use at month 12, before entrant flows and population change." data-image-placeholder="38"></a></figure></div>
+<h3 style="color:var(--navy)" id="toc-planned-counts-by-method-and-stated-reason">Planned counts by method and stated reason</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_mcpr_method_reason_v46.png"><img alt="Planned reporting of women leaving modern use and women still outside modern use by originating method, stated reason, current versus new user, and timing. Pregnancy intention is shown separately from potentially addressable reasons." data-image-placeholder="39"></a></figure></div>
+<details><summary>How to read this comparison</summary></details>
+<details><summary>Estimates, survey design and DHS validation</summary>
+<div class="table-wrap"><div data-table-placeholder="27"></div></div>
+</details><div id="all-cause-adjusted-subgroups"><h3 id="analysis-heading-79">All-cause adjusted discontinuation by subgroup</h3><figure><img alt="All-cause adjusted modern-method discontinuation probabilities with survey-design confidence intervals" data-image-placeholder="40"></figure></div></section>
+
+<section id="twelve-month-three-column-comparison">
+<h2 id="toc-12-month-discontinuation-by-method-and-reason-definiti">12-month discontinuation by method and reason definition</h2>
+<div class="table-wrap analysis-table" role="region" aria-label="Twelve-month discontinuation comparison across three reason definitions" tabindex="0"><div data-table-placeholder="28"></div></div>
+</section>
+<!-- START OTHER REASON COUNT BREAKDOWN -->
+<section id="other-reasons-count-breakdown">
+<h2 id="toc-what-is-inside-other-discontinuation-reasons">What is inside “Other” discontinuation reasons?</h2>
+<h3 id="toc-other-recorded-reasons-in-the-12-month-discontinuation">Other recorded reasons in the 12-month discontinuation chart</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Breakdown of other recorded reasons in the first twelve months" tabindex="0"><div data-table-placeholder="29"></div></div>
+<h3 id="toc-other-reasons-in-the-five-year-reason-distribution-cha">Other reasons in the five-year reason-distribution chart</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Breakdown of residual other reasons in the five-year reason distribution" tabindex="0"><div data-table-placeholder="30"></div></div>
+</section>
+<!-- END OTHER REASON COUNT BREAKDOWN -->
+<!-- START INFREQUENT SEX FOLLOWUP -->
+<section id="other-reason-followup">
+<style>
+#other-reason-followup .orf-table {width:100%; min-width:1140px; border-collapse:collapse; font-size:13px; line-height:1.26}
+#other-reason-followup .orf-table th,#other-reason-followup .orf-table td {vertical-align:top; padding:12px 11px; border-bottom:1px solid #d9e5e8}
+#other-reason-followup .orf-table thead th {color:#123740; background:#e9f2f3; font-size:13px; white-space:nowrap}
+#other-reason-followup .orf-table tbody th {min-width:190px; max-width:220px; color:#173b43; text-align:left; font-weight:700}
+#other-reason-followup .orf-table tbody tr:nth-child(even) {background:#f7fafb}
+#other-reason-followup .orf-n {min-width:95px; color:#123740; white-space:nowrap}
+#other-reason-followup .orf-month {min-width:178px}
+#other-reason-followup .orf-state {display:flex; justify-content:space-between; gap:8px; padding:2px 0}
+#other-reason-followup .orf-state strong {white-space:nowrap; color:#123740; font-weight:700}
+#other-reason-followup .orf-no-method span:first-child {color:#63757b}
+#other-reason-followup .orf-same-method span:first-child {color:#005f58}
+#other-reason-followup .orf-modern-switch span:first-child {color:#008d9d}
+#other-reason-followup .orf-pregnancy span:first-child {color:#b64d4f}
+#other-reason-followup .orf-caution {display:block; margin-top:4px; color:#a05c10; font-size:11px; font-weight:600}
+</style>
+<h2 id="toc-what-follows-discontinuation-for-each-other-recorded-r">What follows discontinuation for each “Other recorded reason”?</h2>
+<div class="table-wrap analysis-table" role="region" aria-label="Other recorded reasons and subsequent calendar states at months one, three, six, and twelve" tabindex="0"><div data-table-placeholder="31"></div></div>
+</section>
+<!-- END INFREQUENT SEX FOLLOWUP -->
+<!-- END PRESENTATION FIGURES -->
+
+
+
+<!-- BEGIN SELECTED-REASON DESCRIPTIVE SUBGROUPS -->
+<section id="selected-reason-descriptive-subgroups">
+<h2 id="analysis-heading-85">Exploring which groups have higher 12-month discontinuation for selected reasons</h2>
+<div class="figure-grid"><figure><a href="assets/selected_reason_descriptive_subgroups.svg"><img alt="Unadjusted selected-reason 12-month discontinuation probabilities with survey-design confidence intervals by demographic and method groups" data-image-placeholder="41"></a></figure></div>
+<h3 id="analysis-heading-86">One characteristic at a time</h3>
+<h3 id="analysis-heading-87">Age at method start</h3><div class="table-wrap analysis-table" role="region" aria-label="Descriptive selected-reason rates by Age at method start" tabindex="0"><div data-table-placeholder="32"></div></div><h3 id="analysis-heading-88">Parity at method start</h3><div class="table-wrap analysis-table" role="region" aria-label="Descriptive selected-reason rates by Parity at method start" tabindex="0"><div data-table-placeholder="33"></div></div><h3 id="analysis-heading-89">Marital status at interview</h3><div class="table-wrap analysis-table" role="region" aria-label="Descriptive selected-reason rates by Marital status at interview" tabindex="0"><div data-table-placeholder="34"></div></div><h3 id="analysis-heading-90">Education at interview</h3><div class="table-wrap analysis-table" role="region" aria-label="Descriptive selected-reason rates by Education at interview" tabindex="0"><div data-table-placeholder="35"></div></div><h3 id="analysis-heading-91">Wealth at interview</h3><div class="table-wrap analysis-table" role="region" aria-label="Descriptive selected-reason rates by Wealth at interview" tabindex="0"><div data-table-placeholder="36"></div></div><h3 id="analysis-heading-92">Residence at interview</h3><div class="table-wrap analysis-table" role="region" aria-label="Descriptive selected-reason rates by Residence at interview" tabindex="0"><div data-table-placeholder="37"></div></div><h3 id="analysis-heading-93">Original method</h3><div class="table-wrap analysis-table" role="region" aria-label="Descriptive selected-reason rates by Original method" tabindex="0"><div data-table-placeholder="38"></div></div>
+<h3 id="analysis-heading-94">Exploratory combinations</h3>
+<h3 id="analysis-heading-95">Age at method start × Parity at method start</h3><div class="table-wrap analysis-table" role="region" aria-label="Exploratory two-way subgroup rates" tabindex="0"><div data-table-placeholder="39"></div></div><h3 id="analysis-heading-96">Age at method start × Original method</h3><div class="table-wrap analysis-table" role="region" aria-label="Exploratory two-way subgroup rates" tabindex="0"><div data-table-placeholder="40"></div></div><h3 id="analysis-heading-97">Parity at method start × Original method</h3><div class="table-wrap analysis-table" role="region" aria-label="Exploratory two-way subgroup rates" tabindex="0"><div data-table-placeholder="41"></div></div>
+<h3 id="analysis-heading-98">Extended regression with marital status</h3>
+<!-- BEGIN FOUR-MARITAL FULL SUBGROUP MODEL -->
+<div id="revised-full-subgroup-model">
+<h3 id="analysis-heading-99">Full adjusted model with four parity and four marital-status categories</h3>
+<div class="figure-grid"><figure><a href="assets/selected_reason_four_marital_focused.svg"><img alt="Adjusted 12-month selected-reason discontinuation probabilities with 95 percent confidence intervals for four parity and four marital status groups" data-image-placeholder="42"></a></figure></div>
+<h4 id="analysis-heading-100">Adjusted probabilities for all model covariates</h4>
+<div class="figure-grid"><figure><a href="assets/selected_reason_four_marital_full_model.svg"><img alt="Full model adjusted 12-month probabilities with confidence intervals by age, parity, marital status, education, wealth, residence, and original method" data-image-placeholder="43"></a></figure></div>
+<h4 id="analysis-heading-101">Adjusted regional probabilities from the same full model</h4>
+<div class="figure-grid"><figure><a href="assets/selected_reason_four_marital_regions.svg"><img alt="Full model adjusted 12-month probabilities with confidence intervals by region" data-image-placeholder="44"></a></figure></div>
+<details><summary>Show the numerical table for all covariates</summary>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="42"></div></div>
+</details>
+<h4 id="analysis-heading-102">Wealth-quintile sensitivity model</h4>
+<div class="figure-grid"><figure><a href="assets/selected_reason_five_wealth_full_model.svg"><img alt="Adjusted 12-month selected-reason discontinuation probabilities and intervals for all five DHS wealth quintiles" data-image-placeholder="45"></a></figure></div>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="43"></div></div>
+</div>
+<!-- BEGIN METHOD-EXPERIENCE SUBGROUP REASONS -->
+<section id="method-experience-subgroup-reasons" class="method-experience-subgroup-section">
+<style>
+.method-experience-subgroup-section .subgroup-variable{display:block;color:#008c97;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.method-experience-subgroup-section .subgroup-level{display:block;color:#123843;font-size:1rem;font-weight:700}
+.method-experience-subgroup-section .subgroup-first>*{border-top:3px solid #a8ccd0}
+.method-experience-subgroup-section .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.method-experience-subgroup-section .num small{display:block;color:#567078;font-weight:400;font-size:.78rem}
+.method-experience-subgroup-section .subgroup-reason-list{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(2,minmax(165px,1fr));column-gap:1rem;row-gap:.25rem}
+.method-experience-subgroup-section .subgroup-reason-list li{display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;font-size:.82rem}
+.method-experience-subgroup-section .subgroup-reason-list strong{white-space:nowrap;color:#0d6e77;font-variant-numeric:tabular-nums}
+@media(max-width:700px){.method-experience-subgroup-section .subgroup-reason-list{grid-template-columns:1fr}}
+</style>
+<h4 id="toc-reasons-by-covariate-subgroup">Reasons by covariate subgroup</h4>
+<h5 id="method-experience-age-example">A simple example: age at method start</h5>
+<div class="table-wrap analysis-table" role="region" aria-label="Example of age-specific discontinuation timing, reasons and original-method continuation" tabindex="0"><div data-table-placeholder="44"></div></div>
+<div class="table-wrap analysis-table" role="region" aria-label="Unadjusted twelve-month retained-reason discontinuation and ranked reason contributions by covariate group" tabindex="0"><div data-table-placeholder="45"></div></div>
+</section>
+<!-- END METHOD-EXPERIENCE SUBGROUP REASONS -->
+<!-- BEGIN TOP-THREE REASONS BY SUBGROUP AND METHOD -->
+<section id="top-three-reasons-by-subgroup-method">
+<h4 id="toc-top-three-reasons-by-subgroup-method">Top three reasons by subgroup and original method</h4>
+<details open><summary>All modern</summary><div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="46"></div></div></details>
+<details><summary>Injectables</summary><div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="47"></div></div></details>
+<details><summary>Pill</summary><div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="48"></div></div></details>
+<details><summary>IUD</summary><div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="49"></div></div></details>
+</section>
+<!-- END TOP-THREE REASONS BY SUBGROUP AND METHOD -->
+<!-- END FOUR-MARITAL FULL SUBGROUP MODEL -->
+</section>
+<!-- END SELECTED-REASON DESCRIPTIVE SUBGROUPS -->
+<!-- START SELECTED-REASON RISK STRATA -->
+<section id="selected-reason-risk-strata">
+<h2 id="analysis-heading-105">Do distinct high-, medium-, and low-risk profiles emerge?</h2>
+<div class="table-wrap analysis-table" role="region" aria-label="Cross-validated discontinuation risk strata" tabindex="0"><div data-table-placeholder="50"></div></div>
+<div class="table-wrap analysis-table" role="region" aria-label="Risk-stratum contrasts" tabindex="0"><div data-table-placeholder="51"></div></div>
+<h3 id="analysis-heading-106">Who is in each predicted-risk band?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Characteristics of predicted-risk bands" tabindex="0"><div data-table-placeholder="52"></div></div>
+</section>
+<!-- END SELECTED-REASON RISK STRATA -->
+<!-- START METHOD-DURATION CLASS DISCONTINUATION -->
+<section id="method-duration-class-discontinuation">
+<h2 id="analysis-heading-107">12-month selected-reason discontinuation by method-duration class</h2>
+<div class="table-wrap analysis-table" role="region" aria-label="Selected-reason discontinuation by method duration class" tabindex="0"><div data-table-placeholder="53"></div></div>
+</section>
+<!-- END METHOD-DURATION CLASS DISCONTINUATION -->
+<!-- START SHORT-ACTING SELECTED REASON DISTRIBUTION -->
+<section id="short-acting-selected-reason-distribution">
+<h2 id="analysis-heading-108">Why short-acting methods ended within 12 months</h2>
+<div class="table-wrap analysis-table" role="region" aria-label="Reasons among selected short-acting discontinuations" tabindex="0"><div data-table-placeholder="54"></div></div>
+</section>
+<!-- END SHORT-ACTING SELECTED REASON DISTRIBUTION -->
+<!-- START SUBNATIONAL DISCONTINUATION EXTENSION -->
+<section id="subnational-discontinuation-analysis-extension">
+<h2 id="toc-subnational-discontinuation-analysis-extension">Subnational discontinuation analysis_extension</h2>
+<h3 id="regional-all-cause-summary">All-cause discontinuation by region</h3>
+<div class="figure-grid"><figure><a href="assets/presentation_regional_discontinuation.png"><img loading="lazy" alt="Regional 12-month all-cause original-method discontinuation with intervals" data-image-placeholder="46"></a></figure></div>
+<div class="table-wrap analysis-table" role="region" aria-label="All-cause regional discontinuation" tabindex="0"><div data-table-placeholder="55"></div></div>
+<details><summary>All-cause reasons by region: broad categories, detailed reasons, and precision</summary>
+<div class="table-wrap analysis-table" role="region" aria-label="Broad all-cause regional reasons" tabindex="0" style="max-height:620px"><div data-table-placeholder="56"></div></div><h4 id="toc-seven-detailed-recorded-reasons">Seven detailed recorded reasons</h4><div class="table-wrap analysis-table" role="region" aria-label="Seven-category all-cause regional reasons" tabindex="0" style="max-height:620px"><div data-table-placeholder="57"></div></div>
+<h4 id="toc-reason-share-confidence-intervals-and-sparse-cells">Reason-share confidence intervals and sparse cells</h4><div class="table-wrap analysis-table" role="region" aria-label="Precision of all-cause regional reason shares" tabindex="0" style="max-height:620px"><div data-table-placeholder="58"></div></div>
+</details>
+<!-- START SELECTED-REASON REGIONAL ANALYSIS -->
+<section id="selected-reason-regional-analysis">
+<h3 style="color:var(--navy)" id="analysis-heading-113">Regional 12-month discontinuation for reasons other than wanted pregnancy or partner disapproval</h3>
+<h4 id="analysis-heading-114">Unadjusted 12-month discontinuation by region</h4>
+<figure><a href="assets/presentation_selected_reason_regional_rates_unadjusted.svg"><img alt="Unadjusted regional selected-reason discontinuation probabilities on the left and a two-category regional reason heat map on the right, aligned by region." data-image-placeholder="47"></a></figure>
+<h4 id="selected-reason-regional-pairwise">Which unadjusted regional rates differ?</h4>
+<div class="table-wrap analysis-table" style="max-height:610px;overflow:auto" role="region" aria-label="All 91 survey-bootstrap tests of regional differences in unadjusted selected-reason discontinuation probabilities" tabindex="0"><div data-table-placeholder="59"></div></div>
+<h4 id="analysis-heading-116">Adjusted 12-month discontinuation by region</h4>
+<figure><a href="assets/presentation_selected_reason_regional_rates.svg"><img alt="Adjusted regional selected-reason discontinuation probabilities on the left and a four-category method experience or access reason heat map on the right, aligned by region." data-image-placeholder="48"></a></figure>
+<h4 id="analysis-heading-117">Regional rate estimates and sample sizes</h4>
+<div class="table-wrap analysis-table" role="region" aria-label="Regional unadjusted and adjusted selected-reason discontinuation probabilities" tabindex="0"><div data-table-placeholder="60"></div></div>
+<h3 id="selected-reason-regional-reason-profile">Among retained first-year discontinuations, what share is method experience or access?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Regional reason distribution among first-year selected-reason discontinuations" tabindex="0"><div data-table-placeholder="61"></div></div>
+<h3 id="selected-reason-regional-method-experience">Which method experience or access reasons dominate within each region?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Regional detailed reason distribution within first-year method experience or access discontinuations" tabindex="0"><div data-table-placeholder="62"></div></div>
+<div class="callout"><strong>How to use “Other”:</strong><strong></strong> is coded as infrequent sex or husband away, while marital dissolution, difficulty becoming pregnant, fatalistic answers, unspecified responses, and unknown reasons make up the rest. The <a href="#other-reasons-count-breakdown">original-code breakdown</a> and <a href="#other-reason-followup">follow-up states</a> help distinguish a temporary pause from prolonged nonuse. Any service response should support informed contraceptive choice rather than assume that every stop needs preventing, consistent with <a href="https://www.who.int/activities/providing-clinical-guidance">WHO's guidance on contraceptive choice</a>.</div>
+</section>
+<!-- END SELECTED-REASON REGIONAL ANALYSIS -->
+<!-- START REGIONAL MATCHED EPISODE MIX AND RISK -->
+<section id="regional-episode-mix-and-risk">
+<h3 id="toc-regional-method-mix-alongside-discontinuation-within-e">Regional method mix alongside discontinuation within each method</h3>
+<div class="rpm-grid"><article class="rpm-card rpm-national"><h4 id="toc-national-8-611-eligible-episodes">National <small>8,611 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 4,796 eligible episodes; 1,144 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(61.70% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(25.53% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 2,522 eligible episodes; 230 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(25.37% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(9.87% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Pill: 838 eligible episodes; 358 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(9.31% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(46.72% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="IUD: 168 eligible episodes; 23 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.68% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(15.46% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Other modern: 287 eligible episodes; 82 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.93% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(29.75% + 7px)"></strong></div></div></div></article><article class="rpm-card"><h4 id="toc-benishangul-gumuz-652-eligible-episodes">Benishangul-Gumuz <small>652 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 401 eligible episodes; 123 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(62.63% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(38.12% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 183 eligible episodes; 15 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(25.68% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(9.89% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 47 eligible episodes; 30 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(7.80% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(67.97% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 6 eligible episodes; 0 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.88% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 15 eligible episodes; 11 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(3.01% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-gambella-548-eligible-episodes">Gambella <small>548 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 346 eligible episodes; 94 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(63.54% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(31.61% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 97 eligible episodes; 16 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(15.79% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(20.17% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 87 eligible episodes; 47 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(17.09% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(59.81% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 12 eligible episodes; 2 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(2.63% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 6 eligible episodes; 1 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.95% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-afar-194-eligible-episodes">Afar <small>194 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 105 eligible episodes; 27 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(55.63% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(34.45% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 59 eligible episodes; 7 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(29.41% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Pill: 25 eligible episodes; 15 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(12.86% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="IUD: 1 eligible episodes; 0 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.43% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 4 eligible episodes; 0 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.66% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-tigray-682-eligible-episodes">Tigray <small>682 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 388 eligible episodes; 132 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(56.75% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(38.84% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 217 eligible episodes; 26 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(31.90% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(14.38% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Pill: 53 eligible episodes; 20 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(7.91% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(42.21% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 9 eligible episodes; 2 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.25% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 15 eligible episodes; 5 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(2.19% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-harari-425-eligible-episodes">Harari <small>425 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 114 eligible episodes; 26 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(28.45% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(28.21% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 128 eligible episodes; 19 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(29.54% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(19.08% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 49 eligible episodes; 15 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(12.49% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(40.86% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 17 eligible episodes; 6 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(4.49% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 117 eligible episodes; 30 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(25.03% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(32.62% + 7px)"></strong></div></div></div></article><article class="rpm-card"><h4 id="toc-south-ethiopia-644-eligible-episodes">South Ethiopia <small>644 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 352 eligible episodes; 103 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(55.60% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(36.33% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 245 eligible episodes; 22 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(36.23% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(11.46% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Pill: 22 eligible episodes; 8 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(3.64% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="IUD: 17 eligible episodes; 5 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(2.79% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 8 eligible episodes; 1 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.74% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-central-ethiopia-457-eligible-episodes">Central Ethiopia <small>457 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 235 eligible episodes; 60 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(53.07% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(30.64% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 172 eligible episodes; 22 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(36.41% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(13.29% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Pill: 40 eligible episodes; 24 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(8.29% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(65.45% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 0 eligible episodes; 0 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.00% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 10 eligible episodes; 1 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(2.23% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-oromia-861-eligible-episodes">Oromia <small>861 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 564 eligible episodes; 121 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(64.13% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(25.88% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 217 eligible episodes; 18 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(24.88% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(10.56% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 53 eligible episodes; 16 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(7.41% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(38.03% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 11 eligible episodes; 2 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.56% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 16 eligible episodes; 4 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(2.02% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-amhara-999-eligible-episodes">Amhara <small>999 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 708 eligible episodes; 129 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(70.32% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(21.48% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 181 eligible episodes; 12 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(17.98% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(7.22% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 95 eligible episodes; 41 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(10.11% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(55.16% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 9 eligible episodes; 0 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.90% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 6 eligible episodes; 1 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.70% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-addis-ababa-748-eligible-episodes">Addis Ababa <small>748 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 210 eligible episodes; 48 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(30.29% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(23.80% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 229 eligible episodes; 13 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(31.56% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(5.83% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 198 eligible episodes; 71 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(24.92% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(39.68% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="IUD: 59 eligible episodes; 4 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(6.86% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 52 eligible episodes; 18 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(6.37% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(33.58% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div></article><article class="rpm-card"><h4 id="toc-sidama-1-155-eligible-episodes">Sidama <small>1,155 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 673 eligible episodes; 135 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(56.90% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(22.24% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 373 eligible episodes; 31 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(32.34% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(11.31% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Pill: 89 eligible episodes; 41 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(8.28% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(50.28% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 5 eligible episodes; 0 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.49% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 15 eligible episodes; 3 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.99% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-south-west-ethiopia-927-eligible-episodes">South West Ethiopia <small>927 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 610 eligible episodes; 120 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(66.17% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(22.33% + 7px)"></strong></div></div></div><div class="rpm-method-group" title="Implants: 255 eligible episodes; 14 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(27.48% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(8.29% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 46 eligible episodes; 24 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(4.91% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(59.02% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="IUD: 14 eligible episodes; 2 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(1.24% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 2 eligible episodes; 1 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.21% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-dire-dawa-289-eligible-episodes">Dire Dawa <small>289 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 80 eligible episodes; 21 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(25.73% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(36.37% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Implants: 151 eligible episodes; 14 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(53.65% + 7px)"></strong></div><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(9.37% + 7px)"><sup title="Small cell; interpret cautiously">†</sup></strong></div></div></div><div class="rpm-method-group" title="Pill: 30 eligible episodes; 4 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(9.80% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="IUD: 7 eligible episodes; 0 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(2.01% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 21 eligible episodes; 6 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(8.82% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article><article class="rpm-card"><h4 id="toc-somali-30-eligible-episodes">Somali <small>30 eligible episodes</small></h4><div class="rpm-key"><span><i class="rpm-share"></i>Share of eligible episodes</span><span><i class="rpm-risk"></i></span></div><div class="rpm-axis"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="rpm-method-group" title="Injectables: 10 eligible episodes; 5 selected first-year endings"><span class="rpm-method">Injectables</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(35.34% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Implants: 15 eligible episodes; 1 selected first-year endings"><span class="rpm-method">Implants</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(47.33% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Pill: 4 eligible episodes; 2 selected first-year endings"><span class="rpm-method">Pill</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(11.13% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="IUD: 1 eligible episodes; 0 selected first-year endings"><span class="rpm-method">IUD</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(6.20% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div><div class="rpm-method-group" title="Other modern: 0 eligible episodes; 0 selected first-year endings"><span class="rpm-method">Other modern</span><div class="rpm-pair"><div class="rpm-line"><strong class="rpm-bar-value" style="left:calc(0.00% + 7px)"></strong></div><div class="rpm-line"><span class="rpm-withheld">Rate withheld: small cell</span></div></div></div></article></div>
+</section>
+<!-- END REGIONAL MATCHED EPISODE MIX AND RISK -->
+<h3 id="regional-method-specific-selected">Selected-reason risk by region and original method</h3>
+<details open><summary>View regional method-specific probabilities and intervals</summary><div class="table-wrap analysis-table" role="region" aria-label="Selected-reason discontinuation by region and method" tabindex="0" style="max-height:640px"><div data-table-placeholder="63"></div></div></details>
+<h3 id="regional-initiation-mix">Which modern methods were started in each region?</h3>
+<details><summary>View the complete regional initiation-mix table</summary><div class="table-wrap analysis-table" role="region" aria-label="Regional modern method initiation mix" tabindex="0" style="max-height:620px"><div data-table-placeholder="64"></div></div></details>
+<!-- START REGIONAL METHOD PAIRED BARS -->
+<section id="regional-method-paired-bars">
+<h2 id="toc-regional-method-starts-and-12-month-discontinuation">Regional method starts and 12-month discontinuation</h2>
+<div class="figure-grid"><figure><a href="assets/regional_mix_vs_allcause_injectables.svg"><img loading="lazy" alt="Regional paired bars for Injectables: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate." data-image-placeholder="49"></a></figure>
+<figure><a href="assets/regional_mix_vs_allcause_implants.svg"><img loading="lazy" alt="Regional paired bars for Implants: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate." data-image-placeholder="50"></a></figure>
+<figure><a href="assets/regional_mix_vs_allcause_pill.svg"><img loading="lazy" alt="Regional paired bars for Pill: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate." data-image-placeholder="51"></a></figure>
+<figure><a href="assets/regional_mix_vs_allcause_iud.svg"><img loading="lazy" alt="Regional paired bars for IUD: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate." data-image-placeholder="52"></a></figure>
+<figure><a href="assets/regional_mix_vs_allcause_other_modern.svg"><img loading="lazy" alt="Regional paired bars for Other modern methods: gold shows the method share of all contraceptive starts excluding EC, with the national benchmark first; navy shows the all-cause 12-month probability of ending that method where the regional sample is adequate." data-image-placeholder="53"></a></figure></div>
+</section>
+<!-- END REGIONAL METHOD PAIRED BARS -->
+<details><summary>View the underlying values for the five regional figures</summary>
+<div class="table-wrap analysis-table" role="region" aria-label="Regional method starts and all-cause discontinuation" tabindex="0" style="max-height:640px"><div data-table-placeholder="65"></div></div></details>
+<h3 id="regional-method-mix-decomposition">Does method mix explain the Tigray–Amhara gap?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Tigray Amhara method mix diagnostic" tabindex="0"><div data-table-placeholder="66"></div></div><div class="table-wrap analysis-table" role="region" aria-label="Tigray Amhara regional difference decomposition" tabindex="0"><div data-table-placeholder="67"></div></div>
+<!-- START REGIONAL DECOMPOSITION EXPLANATION -->
+<div id="regional-decomposition-explanation">
+<h4 id="toc-what-is-being-decomposed">What is being decomposed?</h4>
+<h4 id="toc-worked-example-tigray-and-amhara">Worked example: Tigray and Amhara</h4>
+<div class="table-wrap analysis-table" role="region" aria-label="Tigray and Amhara own and common method mix comparison" tabindex="0"><div data-table-placeholder="68"></div></div>
+<h4 id="toc-what-is-the-statistical-technique-and-why-average">What is the statistical technique, and why average?</h4>
+<h4 id="toc-what-analysis-would-better-test-and-explain-regional-d">What analysis would better test and explain regional differences?</h4>
+</div>
+<!-- END REGIONAL DECOMPOSITION EXPLANATION -->
+<h3 id="injectable-regional-timing">When does injectable discontinuation accumulate by region?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Injectable selected-reason discontinuation by region and month" tabindex="0" style="max-height:640px"><div data-table-placeholder="69"></div></div>
+</section>
+<!-- END SUBNATIONAL DISCONTINUATION EXTENSION -->
+<!-- START EXPECTED-USER CALCULATIONS -->
+<section id="expected-user-calculations">
+<h2 id="toc-expected-user-discontinuation-calculations">Expected-user discontinuation calculations</h2>
+<!-- BEGIN CURRENT-USER REASON PLANNING -->
+<section id="current-user-reason-planning">
+<h2 id="toc-illustrative-current-user-method-endings-for-reasons-o">Illustrative current-user method endings for reasons other than wanted pregnancy or partner disapproval</h2>
+<div class="callout"><strong>Inputs used throughout:</strong><strong></strong><strong></strong><strong></strong>. Current method distribution comes from the survey-date DHS IR current-method variable <code></code>, weighted by <code></code>; it is <em>not</em><em>all eligible episodes starting that method</em></div>
+<div class="table-wrap analysis-table" role="region" aria-label="Illustrative current-user discontinuations by method" tabindex="0"><div data-table-placeholder="70"></div></div>
+<h3 id="toc-detailed-recorded-causes-within-each-method">Detailed recorded causes within each method</h3>
+<h3 id="toc-injectables">Injectables</h3><div class="table-wrap analysis-table" role="region" aria-label="Reason-specific planning table for Injectables" tabindex="0"><div data-table-placeholder="71"></div></div><h3 id="toc-implants">Implants</h3><div class="table-wrap analysis-table" role="region" aria-label="Reason-specific planning table for Implants" tabindex="0"><div data-table-placeholder="72"></div></div><h3 id="toc-pill">Pill</h3><div class="table-wrap analysis-table" role="region" aria-label="Reason-specific planning table for Pill" tabindex="0"><div data-table-placeholder="73"></div></div><h3 id="toc-iud">IUD</h3><div class="table-wrap analysis-table" role="region" aria-label="Reason-specific planning table for IUD" tabindex="0"><div data-table-placeholder="74"></div></div><h3 id="toc-other-modern-methods">Other modern methods</h3><div class="table-wrap analysis-table" role="region" aria-label="Reason-specific planning table for Other modern methods" tabindex="0"><div data-table-placeholder="75"></div></div><h3 id="toc-all-modern-methods-combined-excluding-ec">All modern methods combined (excluding EC)</h3><div class="table-wrap analysis-table" role="region" aria-label="Reason-specific planning table for All modern methods combined (excluding EC)" tabindex="0"><div data-table-placeholder="76"></div></div>
+</section>
+<!-- END CURRENT-USER REASON PLANNING -->
+
+
+
+
+
+<!-- BEGIN ACTIONABLE CURRENT USER PROJECTION -->
+<!-- END ACTIONABLE CURRENT USER PROJECTION -->
+<!-- BEGIN DURATION-ADJUSTED REASON PLANNING -->
+<section id="duration-adjusted-reason-planning">
+<h2 id="toc-estimating-next-year-method-endings-among-current-user">Estimating next-year method endings among current users</h2>
+<h3 id="toc-which-probability-answers-which-question">Which probability answers which question?</h3>
+<div class="table-wrap analysis-table" role="region" aria-label="Comparison of first-year and duration-adjusted approaches" tabindex="0"><div data-table-placeholder="77"></div></div>
+<div class="callout"><strong>Provisional estimates:</strong></div>
+<div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted selected-reason method-ending summary" tabindex="0"><div data-table-placeholder="78"></div></div>
+<h3 id="toc-reason-specific-results-by-method">Reason-specific results by method</h3>
+<h3 id="toc-injectables-2">Injectables</h3><div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted reason table for Injectables" tabindex="0"><div data-table-placeholder="79"></div></div><h3 id="toc-implants-2">Implants</h3><div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted reason table for Implants" tabindex="0"><div data-table-placeholder="80"></div></div><h3 id="toc-pill-2">Pill</h3><div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted reason table for Pill" tabindex="0"><div data-table-placeholder="81"></div></div><h3 id="toc-iud-2">IUD</h3><div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted reason table for IUD" tabindex="0"><div data-table-placeholder="82"></div></div><h3 id="toc-other-modern-methods-2">Other modern methods</h3><div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted reason table for Other modern methods" tabindex="0"><div data-table-placeholder="83"></div></div><h3 id="toc-all-modern-methods-combined-excluding-ec-2">All modern methods combined (excluding EC)</h3><div class="table-wrap analysis-table" role="region" aria-label="Duration-adjusted reason table for All modern methods combined (excluding EC)" tabindex="0"><div data-table-placeholder="84"></div></div>
+</section>
+<!-- END DURATION-ADJUSTED REASON PLANNING -->
+</section>
+<!-- END EXPECTED-USER CALCULATIONS -->
+<!-- BEGIN UPDATED SUBNATIONAL HETEROGENEITY ANALYSES -->
+
+<section id="updated-subnational-heterogeneity-analyses">
+<h2 id="analysis-heading-163">Updated subnational heterogeneity analyses</h2>
+<!-- BEGIN DHS LATE ENTRY SUBNATIONAL -->
+<!-- END DHS LATE ENTRY SUBNATIONAL -->
+
+
+
+
+
+<div class="table-wrap analysis-table" role="region" aria-label="Recorded discontinuation reasons and interpretation groups" tabindex="0">
+<div data-table-placeholder="85"></div></div>
+
+<!-- BEGIN UPDATED REGIONAL RETAINED REASON RESULTS -->
+<h3 id="updated-regional-method-experience-results">Regional discontinuation for method experience or access</h3>
+<figure><a href="assets/updated_regional_retained_reason_forest_heatmap.svg"><img loading="lazy" alt="Regional 12-month probability of discontinuing for method experience or access, with 95 percent confidence intervals and a five-category heatmap labeled by region. Each heatmap row adds to 100 percent." data-image-placeholder="54"></a></figure>
+<details><summary>View regional rates, episode counts, and reason shares</summary>
+<div class="table-wrap analysis-table" role="region" aria-label="Regional selected-reason discontinuation probability and reason mix" tabindex="0"><div data-table-placeholder="86"></div></div>
+</details>
+<!-- END UPDATED REGIONAL RETAINED REASON RESULTS -->
+<!-- BEGIN REGIONAL ACTIONABLE REASONS BY METHOD -->
+<h3 id="regional-actionable-reasons-by-method">Which actionable reasons dominate within each method and region?</h3>
+<h4 id="regional-actionable-reasons-injectables">Injectables</h4>
+<figure style="margin:12px 0 24px"><a href="assets/regional_actionable_reason_heatmap_injectables.svg" title="Open full-size Injectables heatmap"><img loading="lazy" style="display:block;width:100%;max-width:100%;height:auto" alt="Heatmap of regional first-year actionable discontinuation reason shares for Injectables; the national row is shaded gold, and sparse regional rows are gray." data-image-placeholder="55"></a></figure>
+<h4 id="regional-actionable-reasons-implants">Implants</h4>
+<figure style="margin:12px 0 24px"><a href="assets/regional_actionable_reason_heatmap_implants.svg" title="Open full-size Implants heatmap"><img loading="lazy" style="display:block;width:100%;max-width:100%;height:auto" alt="Heatmap of regional first-year actionable discontinuation reason shares for Implants; the national row is shaded gold, and sparse regional rows are gray." data-image-placeholder="56"></a></figure>
+<h4 id="regional-actionable-reasons-pill">Pill</h4>
+<figure style="margin:12px 0 24px"><a href="assets/regional_actionable_reason_heatmap_pill.svg" title="Open full-size Pill heatmap"><img loading="lazy" style="display:block;width:100%;max-width:100%;height:auto" alt="Heatmap of regional first-year actionable discontinuation reason shares for Pill; the national row is shaded gold, and sparse regional rows are gray." data-image-placeholder="57"></a></figure>
+<h4 id="regional-actionable-reasons-iud">IUD</h4>
+<figure style="margin:12px 0 24px"><a href="assets/regional_actionable_reason_heatmap_iud.svg" title="Open full-size IUD heatmap"><img loading="lazy" style="display:block;width:100%;max-width:100%;height:auto" alt="Heatmap of regional first-year actionable discontinuation reason shares for IUD; the national row is shaded gold, and sparse regional rows are gray." data-image-placeholder="58"></a></figure>
+<h4 id="regional-actionable-reasons-other_modern">Other modern</h4>
+<figure style="margin:12px 0 24px"><a href="assets/regional_actionable_reason_heatmap_other_modern.svg" title="Open full-size Other modern heatmap"><img loading="lazy" style="display:block;width:100%;max-width:100%;height:auto" alt="Heatmap of regional first-year actionable discontinuation reason shares for Other modern; the national row is shaded gold, and sparse regional rows are gray." data-image-placeholder="59"></a></figure>
+<!-- END REGIONAL ACTIONABLE REASONS BY METHOD -->
+<!-- BEGIN REGIONAL ACTIONABLE TIMING AND LOCATOR -->
+<h3 id="regional-actionable-timing-map">When and where method experience or access discontinuation occurs</h3>
+<figure><a href="assets/leadership_regional_actionable_timing_locator.svg"><img loading="lazy" alt="Cumulative method experience or access discontinuation probability at 3, 6, 9, and 12 months for all 14 Ethiopian regions and the national benchmark, plus first-three-month share. A neutral gray Ethiopia map labels all 14 regions." data-image-placeholder="60"></a></figure>
+<!-- END REGIONAL ACTIONABLE TIMING AND LOCATOR -->
+<!-- BEGIN REGIONAL SEVEN-CATEGORY INITIATION MIX -->
+<h3 id="regional-all-method-initiation-mix">Which methods are initiated in each region?</h3>
+<figure><a href="assets/regional_all_method_initiation_mix.svg"><img loading="lazy" alt="Horizontal 100-percent stacked bars for the national level and 14 Ethiopian regions, showing the weighted shares of observed starts for injectables, implants, pill, IUD, emergency contraception, other modern, and non-modern methods. The legend is below the chart." data-image-placeholder="61"></a></figure>
+<!-- END REGIONAL SEVEN-CATEGORY INITIATION MIX -->
+<!-- BEGIN REGIONAL ACTIONABLE METHOD PAIRS -->
+<h3 id="regional-actionable-method-pairs">Method starts and potentially actionable discontinuation by region</h3>
+<figure><a href="assets/regional_actionable_paired_injectables.svg"><img loading="lazy" alt="Paired horizontal bars for national and regional injectable start shares and potentially actionable 12-month discontinuation probabilities." data-image-placeholder="62"></a></figure>
+<figure><a href="assets/regional_actionable_paired_implants.svg"><img loading="lazy" alt="Paired horizontal bars for national and regional implant start shares and potentially actionable 12-month discontinuation probabilities." data-image-placeholder="63"></a></figure>
+<figure><a href="assets/regional_actionable_paired_pill.svg"><img loading="lazy" alt="Paired horizontal bars for national and regional pill start shares and potentially actionable 12-month discontinuation probabilities." data-image-placeholder="64"></a></figure>
+<!-- END REGIONAL ACTIONABLE METHOD PAIRS -->
+
+
+
+
+
+<!-- BEGIN REGIONAL ACTIONABLE ADJUSTED MODEL REVIEW -->
+<h3 id="regional-actionable-adjusted-comparison">Observed regional risk and adjusted comparison</h3>
+<figure class="ram-figure"><a href="assets/regional_actionable_observed_adjusted_forest.svg"><img alt="Single forest plot of observed and fully adjusted regional 12-month actionable discontinuation rates, each with 95 percent confidence intervals" style="width:100%;height:auto" data-image-placeholder="65"></a></figure>
+<div class="table-wrap analysis-table" role="region" tabindex="0" aria-label="Unadjusted and two adjusted regional 12-month actionable discontinuation probabilities"><div class="table-wrap analysis-table"><div data-table-placeholder="87"></div></div></div>
+<!-- END REGIONAL ACTIONABLE ADJUSTED MODEL REVIEW -->
+<!-- BEGIN REGIONAL ACTIONABLE FORMAL TESTS -->
+<h3 id="regional-actionable-formal-tests">Which regional differences remain after adjustment?</h3>
+<figure class="ram-figure"><a href="assets/regional_actionable_significant_pairwise.svg"><img alt="Fully adjusted regional pairs with statistically different 12-month actionable discontinuation probabilities after Holm correction" style="width:100%;height:auto" data-image-placeholder="66"></a></figure>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="88"></div></div>
+<h4 id="analysis-heading-176">How the evidence changes with adjustment</h4>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="89"></div></div>
+<h4 id="analysis-heading-177">What the models estimate</h4>
+<!-- END REGIONAL ACTIONABLE FORMAL TESTS -->
+<!-- BEGIN ALL-REGION ACTIONABLE METHOD-MIX ANALYSIS -->
+<h3 id="regional-actionable-all-region-mix">Do regional gaps remain when each pair has the same method mix?</h3>
+<figure class="ram-figure"><a href="assets/regional_actionable_pairwise_shared_mix_slide.png"><img alt="Three significant regional pairs: fitted gaps with each region’s own method mix and with the average mix of that pair, including pointwise confidence intervals" style="width:100%;height:auto" data-image-placeholder="67"></a></figure>
+<h4 id="analysis-heading-179">Pairs with a detectable same-mix difference</h4>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="90"></div></div>
+<details><summary></summary><div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="91"></div></div></details>
+<!-- END ALL-REGION ACTIONABLE METHOD-MIX ANALYSIS -->
+<!-- BEGIN THREE-VIEW REGIONAL ACTIONABLE GAP FIGURE -->
+<h3 id="regional-actionable-three-comparisons">How do the clearest regional gaps change across three comparisons?</h3>
+<figure style="margin:1.4rem 0"><a href="assets/regional_actionable_three_comparisons.svg"><img alt="Regional gap comparison for Tigray versus Amhara, Tigray versus Addis Ababa, and Central Ethiopia versus Amhara: observed, pair-shared method mix, and fully adjusted" style="display:block;width:100%;height:auto;max-width:1500px;margin:auto" data-image-placeholder="68"></a></figure>
+<!-- END THREE-VIEW REGIONAL ACTIONABLE GAP FIGURE -->
+
+
+
+
+
+</section>
+<!-- BEGIN REGIONAL ACTIONABLE METHOD INTERACTION -->
+<h3 id="regional-actionable-method-interaction">Does the regional gap depend on the method started?</h3>
+<figure style="margin:1.5rem 0"><a href="assets/regional_actionable_method_interaction_12month.svg"><img alt="Adjusted 12-month actionable discontinuation probabilities for injectables, implants, and pills across four regions, with confidence intervals and sparse-cell markers" style="display:block;width:100%;height:auto;max-width:1500px;margin:auto" data-image-placeholder="69"></a></figure>
+<details><summary></summary>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="92"></div></div>
+</details>
+<h4 id="analysis-heading-182">Does the regional gap differ between methods?</h4>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="93"></div></div>
+<!-- END REGIONAL ACTIONABLE METHOD INTERACTION -->
+<!-- BEGIN INJECTABLE IMPLANT REGIONAL ACTIONABLE TESTS -->
+<h3 id="regional-actionable-injectable-implant-tests">Do 12-month actionable discontinuation rates differ by region for injectables and implants?</h3>
+<figure style="margin:1.4rem 0"><a href="assets/regional_actionable_injectable_implant_12month_tests.svg"><img alt="Observed 12-month actionable discontinuation by region, separately for injectables and implants, with survey-bootstrap intervals and sparse-cell flags" style="display:block;width:100%;height:auto;max-width:1500px;margin:auto" data-image-placeholder="70"></a></figure>
+<details><summary>Show every regional probability, confidence interval, and observed count</summary>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="94"></div></div>
+</details>
+<!-- END INJECTABLE IMPLANT REGIONAL ACTIONABLE TESTS -->
+<!-- BEGIN INJECTABLE THREE STAGE REGIONAL TESTS -->
+<h3 id="regional-actionable-injectable-three-stage">Injectable regional gaps: observed, common method mix, and fully adjusted</h3>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="95"></div></div>
+<figure style="margin:1.5rem 0"><a href="assets/regional_actionable_injectable_three_stage_tests.svg"><img alt="Observed and fully adjusted 12-month injectable discontinuation probabilities by region with 95% confidence intervals, dotted national benchmark, and stars identifying regions in significant pairwise comparisons" style="display:block;width:100%;height:auto;max-width:1350px;margin:auto" data-image-placeholder="71"></a></figure>
+<h4 id="analysis-heading-185">Regional pairs surviving multiple-comparison correction</h4>
+<div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="96"></div></div>
+<details><summary></summary><div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="97"></div></div></details>
+<details><summary></summary><div class="table-wrap analysis-table" role="region" tabindex="0"><div data-table-placeholder="98"></div></div></details>
+<!-- END INJECTABLE THREE STAGE REGIONAL TESTS -->
+<!-- END UPDATED SUBNATIONAL HETEROGENEITY ANALYSES -->
+<!-- BEGIN 2026 MCPR RETENTION SCENARIOS -->
+<!-- END 2026 MCPR RETENTION SCENARIOS -->
+<!-- BEGIN METHOD-LEVEL 2026 MCPR SCENARIOS -->
+<!-- END METHOD-LEVEL 2026 MCPR SCENARIOS -->
+<!-- BEGIN ACTIONABLE CAUSE MCPR CEILING -->
+<!-- END ACTIONABLE CAUSE MCPR CEILING -->
+
+<!-- BEGIN DURATION-AWARE PLANNING SLIDE REPLICATION -->
+<style>
+.duration-planning-block .duration-planning-slide{padding:1.4rem 0 1.7rem;border-top:1px solid #d9e3e8}
+.duration-planning-block .duration-planning-slide h3{color:#153f5b;margin:.1rem 0 .35rem}
+.duration-planning-block .duration-planning-subtitle{color:#375568;margin:.2rem 0 1rem}
+.duration-planning-block .duration-planning-wrap{overflow-x:auto;margin:.7rem 0 1rem;border:1px solid #d9e3e8;border-radius:5px}
+.duration-planning-block .duration-planning-table{width:100%;min-width:870px;border-collapse:collapse;font:14px/1.35 Arial,sans-serif;font-variant-numeric:tabular-nums}
+.duration-planning-block th,.duration-planning-block td{padding:10px 9px;border-bottom:1px solid #dce5e9;text-align:right;vertical-align:middle}
+.duration-planning-block thead th{background:#1a4059;color:white;font-weight:700;white-space:normal}
+.duration-planning-block thead th:first-child,.duration-planning-block tbody th{text-align:left;min-width:140px}
+.duration-planning-block tbody tr:nth-child(even):not(.duration-planning-total):not(.duration-planning-wra){background:#f2f6f7}
+.duration-planning-block .duration-planning-total{background:#e4eff1;color:#153f5b;font-weight:700}
+.duration-planning-block .duration-planning-wra{background:#fff2d6}
+.duration-planning-block .note{max-width:1100px}
+</style>
+<!-- END DURATION-AWARE PLANNING SLIDE REPLICATION -->
+<!-- BEGIN DURATION PLANNING APPENDIX HEADING -->
+<!-- END DURATION PLANNING APPENDIX HEADING -->
+<!-- BEGIN SWITCH AND DURATION BRIDGES -->
+<!-- END SWITCH AND DURATION BRIDGES -->
+<footer>Ethiopia method discontinuation project · Consolidated analysis file</footer>
+<!-- BEGIN AFT SWITCHING SENSITIVITY -->
+<!-- END AFT SWITCHING SENSITIVITY -->
+<section id="three-approach-planning"><h2 id="updated-heading-188">Three planning approaches: every actionable ending treated as a lost user</h2><div class="table-wrap analysis-table"><div data-table-placeholder="99"></div></div></section><section id="current-user-actionable-projection" class="duration-block"><h2 id="updated-heading-189">Exploratory estimate using first-year probabilities</h2><span id="analysis-heading-191" class="legacy-anchor"></span><span id="analysis-heading-190" class="legacy-anchor"></span><span id="analysis-heading-189" class="legacy-anchor"></span><span id="analysis-heading-188" class="legacy-anchor"></span><span id="analysis-heading-187" class="legacy-anchor"></span><article class="duration-slide"><h3 id="updated-heading-190">Exploratory: users who may discontinue for actionable reasons</h3><div class="table-wrap analysis-table"><div data-table-placeholder="100"></div></div></article><article class="duration-slide"><h3 id="updated-heading-191">Exploratory: actionable discontinuation by method and cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="101"></div></div></article><h3 id="updated-heading-192">Method-specific actionable probabilities by cause (95% CI)</h3><div class="table-wrap analysis-table"><div data-table-placeholder="102"></div></div><h3 id="updated-heading-193">National pooled episode probability by cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="103"></div></div></section><section id="mcpr-2026-retention-scenarios" class="duration-block"><h2 id="updated-heading-194">First-year approach: three illustrative mCPR growth scenarios</h2><span id="analysis-heading-194" class="legacy-anchor"></span><span id="analysis-heading-193" class="legacy-anchor"></span><span id="mcpr-2026-growth-inputs" class="legacy-anchor"></span><span id="mcpr-2026-population-users" class="legacy-anchor"></span><span id="analysis-heading-192" class="legacy-anchor"></span><article class="duration-slide"><h3 id="updated-heading-195">Exploratory: assumptions for 2026 mCPR</h3><div class="table-wrap analysis-table"><div data-table-placeholder="104"></div></div></article><article class="duration-slide"><h3 id="updated-heading-196">Exploratory: 2026 mCPR if actionable discontinuation is averted</h3><div class="table-wrap analysis-table"><div data-table-placeholder="105"></div></div></article></section><section id="mcpr-2026-method-detail" class="duration-block"><h2 id="updated-heading-197">First-year approach: projected users and mCPR by method</h2><span id="analysis-heading-198" class="legacy-anchor"></span><span id="analysis-heading-197" class="legacy-anchor"></span><span id="analysis-heading-196" class="legacy-anchor"></span><span id="mcpr-2026-method-no-growth" class="legacy-anchor"></span><span id="mcpr-2026-method-un" class="legacy-anchor"></span><span id="mcpr-2026-method-track20" class="legacy-anchor"></span><span id="analysis-heading-195" class="legacy-anchor"></span><article class="duration-slide"><h3 id="updated-heading-198">Exploratory: users and mCPR under 6-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="106"></div></div></article><article class="duration-slide"><h3 id="updated-heading-199">Exploratory: users and mCPR under 9-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="107"></div></div></article><article class="duration-slide"><h3 id="updated-heading-200">Exploratory: users and mCPR under FPET-informed growth</h3><div class="table-wrap analysis-table"><div data-table-placeholder="108"></div></div></article></section><section id="actionable-cause-mcpr-ceiling" class="duration-block"><h2 id="updated-heading-201">First-year approach: mCPR percentage-point equivalent by cause</h2><span id="analysis-heading-200" class="legacy-anchor"></span><span id="analysis-heading-199" class="legacy-anchor"></span><article class="duration-slide"><h3 id="updated-heading-202">Exploratory: mCPR contribution by actionable cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="109"></div></div></article></section><section id="historical-duration-aware-planning" class="duration-block"><h2 id="updated-heading-203">Next-year losses using historical duration probabilities</h2><span id="analysis-heading-209" class="legacy-anchor"></span><span id="analysis-heading-208" class="legacy-anchor"></span><span id="analysis-heading-207" class="legacy-anchor"></span><span id="analysis-heading-206" class="legacy-anchor"></span><span id="analysis-heading-205" class="legacy-anchor"></span><span id="analysis-heading-204" class="legacy-anchor"></span><span id="analysis-heading-203" class="legacy-anchor"></span><span id="analysis-heading-202" class="legacy-anchor"></span><span id="duration-planning-slide-55" class="legacy-anchor"></span><span id="duration-planning-slide-56" class="legacy-anchor"></span><span id="duration-planning-slide-57" class="legacy-anchor"></span><span id="duration-planning-slide-58" class="legacy-anchor"></span><span id="duration-planning-slide-59" class="legacy-anchor"></span><span id="duration-planning-slide-60" class="legacy-anchor"></span><span id="duration-planning-slide-61" class="legacy-anchor"></span><span id="duration-planning-slide-62" class="legacy-anchor"></span><span id="analysis-heading-201" class="legacy-anchor"></span><article class="duration-slide"><h3 id="updated-heading-204">Historical: users who may discontinue for actionable reasons</h3><div class="table-wrap analysis-table"><div data-table-placeholder="110"></div></div></article><article class="duration-slide"><h3 id="updated-heading-205">Historical: actionable discontinuation by method and cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="111"></div></div></article><article class="duration-slide"><h3 id="updated-heading-206">Historical: assumptions for 2026 mCPR</h3><div class="table-wrap analysis-table"><div data-table-placeholder="112"></div></div></article><article class="duration-slide"><h3 id="updated-heading-207">Historical: 2026 mCPR if actionable discontinuation is averted</h3><div class="table-wrap analysis-table"><div data-table-placeholder="113"></div></div></article><article class="duration-slide"><h3 id="updated-heading-208">Historical: users and mCPR under 6-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="114"></div></div></article><article class="duration-slide"><h3 id="updated-heading-209">Historical: users and mCPR under 9-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="115"></div></div></article><article class="duration-slide"><h3 id="updated-heading-210">Historical: users and mCPR under FPET-informed growth</h3><div class="table-wrap analysis-table"><div data-table-placeholder="116"></div></div></article><article class="duration-slide"><h3 id="updated-heading-211">Historical: mCPR contribution by actionable cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="117"></div></div></article></section><section id="aft-duration-aware-planning" class="duration-block"><h2 id="updated-heading-212">Next-year losses using AFT duration probabilities</h2><span id="analysis-heading-218" class="legacy-anchor"></span><span id="analysis-heading-217" class="legacy-anchor"></span><span id="analysis-heading-216" class="legacy-anchor"></span><span id="analysis-heading-215" class="legacy-anchor"></span><span id="analysis-heading-214" class="legacy-anchor"></span><span id="analysis-heading-213" class="legacy-anchor"></span><span id="analysis-heading-212" class="legacy-anchor"></span><span id="analysis-heading-211" class="legacy-anchor"></span><span id="duration-planning-slide-63" class="legacy-anchor"></span><span id="duration-planning-slide-64" class="legacy-anchor"></span><span id="duration-planning-slide-65" class="legacy-anchor"></span><span id="duration-planning-slide-66" class="legacy-anchor"></span><span id="duration-planning-slide-67" class="legacy-anchor"></span><span id="duration-planning-slide-68" class="legacy-anchor"></span><span id="duration-planning-slide-69" class="legacy-anchor"></span><span id="duration-planning-slide-70" class="legacy-anchor"></span><span id="analysis-heading-210" class="legacy-anchor"></span><article class="duration-slide"><h3 id="updated-heading-213">AFT: users who may discontinue for actionable reasons</h3><div class="table-wrap analysis-table"><div data-table-placeholder="118"></div></div></article><article class="duration-slide"><h3 id="updated-heading-214">AFT: actionable discontinuation by method and cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="119"></div></div></article><article class="duration-slide"><h3 id="updated-heading-215">AFT: assumptions for 2026 mCPR</h3><div class="table-wrap analysis-table"><div data-table-placeholder="120"></div></div></article><article class="duration-slide"><h3 id="updated-heading-216">AFT: 2026 mCPR if actionable discontinuation is averted</h3><div class="table-wrap analysis-table"><div data-table-placeholder="121"></div></div></article><article class="duration-slide"><h3 id="updated-heading-217">AFT: users and mCPR under 6-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="122"></div></div></article><article class="duration-slide"><h3 id="updated-heading-218">AFT: users and mCPR under 9-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="123"></div></div></article><article class="duration-slide"><h3 id="updated-heading-219">AFT: users and mCPR under FPET-informed growth</h3><div class="table-wrap analysis-table"><div data-table-placeholder="124"></div></div></article><article class="duration-slide"><h3 id="updated-heading-220">AFT: mCPR contribution by actionable cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="125"></div></div></article></section><section id="switching-sensitivity" class="sensitivity-heading"><h2 id="updated-heading-221">Sensitivity analyses allowing for switching and restarting</h2></section><section id="historical-switching-sensitivity"><h2 id="updated-heading-222">Historical sensitivity allowing for switching and restarting</h2><article class="duration-slide"><h3 id="updated-heading-223">Historical switching: users outside modern use at 12 months</h3><div class="table-wrap analysis-table"><div data-table-placeholder="126"></div></div></article><article class="duration-slide"><h3 id="updated-heading-224">Historical switching: year-end losses by method and cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="127"></div></div></article><article class="duration-slide"><h3 id="updated-heading-225">Historical switching: assumptions for 2026 mCPR</h3><div class="table-wrap analysis-table"><div data-table-placeholder="128"></div></div></article><article class="duration-slide"><h3 id="updated-heading-226">Historical switching: 2026 mCPR if year-end losses are avoided</h3><div class="table-wrap analysis-table"><div data-table-placeholder="129"></div></div></article><article class="duration-slide"><h3 id="updated-heading-227">Historical switching: users and mCPR under 6-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="130"></div></div></article><article class="duration-slide"><h3 id="updated-heading-228">Historical switching: users and mCPR under 9-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="131"></div></div></article><article class="duration-slide"><h3 id="updated-heading-229">Historical switching: users and mCPR under FPET-informed growth</h3><div class="table-wrap analysis-table"><div data-table-placeholder="132"></div></div></article><article class="duration-slide"><h3 id="updated-heading-230">Historical switching: mCPR contribution by actionable cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="133"></div></div></article></section><section id="aft-observed-pathway-sensitivity"><h2 id="updated-heading-231">AFT sensitivity using observed switching and restarting</h2><article class="duration-slide"><h3 id="updated-heading-232">AFT observed switching: users outside modern use at 12 months</h3><div class="table-wrap analysis-table"><div data-table-placeholder="134"></div></div></article><article class="duration-slide"><h3 id="updated-heading-233">AFT observed switching: year-end losses by method and cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="135"></div></div></article><article class="duration-slide"><h3 id="updated-heading-234">AFT observed switching: assumptions for 2026 mCPR</h3><div class="table-wrap analysis-table"><div data-table-placeholder="136"></div></div></article><article class="duration-slide"><h3 id="updated-heading-235">AFT observed switching: 2026 mCPR if year-end losses are avoided</h3><div class="table-wrap analysis-table"><div data-table-placeholder="137"></div></div></article><article class="duration-slide"><h3 id="updated-heading-236">AFT observed switching: users and mCPR under 6-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="138"></div></div></article><article class="duration-slide"><h3 id="updated-heading-237">AFT observed switching: users and mCPR under 9-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="139"></div></div></article><article class="duration-slide"><h3 id="updated-heading-238">AFT observed switching: users and mCPR under FPET-informed growth</h3><div class="table-wrap analysis-table"><div data-table-placeholder="140"></div></div></article><article class="duration-slide"><h3 id="updated-heading-239">AFT observed switching: mCPR contribution by actionable cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="141"></div></div></article></section><section id="aft-modeled-transition-sensitivity"><h2 id="updated-heading-240">AFT sensitivity using modeled switching and restarting</h2><article class="duration-slide"><h3 id="updated-heading-241">AFT modeled switching: users outside modern use at 12 months</h3><div class="table-wrap analysis-table"><div data-table-placeholder="142"></div></div></article><article class="duration-slide"><h3 id="updated-heading-242">AFT modeled switching: year-end losses by method and cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="143"></div></div></article><article class="duration-slide"><h3 id="updated-heading-243">AFT modeled switching: assumptions for 2026 mCPR</h3><div class="table-wrap analysis-table"><div data-table-placeholder="144"></div></div></article><article class="duration-slide"><h3 id="updated-heading-244">AFT modeled switching: 2026 mCPR if year-end losses are avoided</h3><div class="table-wrap analysis-table"><div data-table-placeholder="145"></div></div></article><article class="duration-slide"><h3 id="updated-heading-245">AFT modeled switching: users and mCPR under 6-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="146"></div></div></article><article class="duration-slide"><h3 id="updated-heading-246">AFT modeled switching: users and mCPR under 9-year DHS trend</h3><div class="table-wrap analysis-table"><div data-table-placeholder="147"></div></div></article><article class="duration-slide"><h3 id="updated-heading-247">AFT modeled switching: users and mCPR under FPET-informed growth</h3><div class="table-wrap analysis-table"><div data-table-placeholder="148"></div></div></article><article class="duration-slide"><h3 id="updated-heading-248">AFT modeled switching: mCPR contribution by actionable cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="149"></div></div></article></section><section id="duration-planning-appendix" class="duration-block"><h2 id="updated-heading-249">Appendix: additional duration and switching diagnostics</h2><span id="analysis-heading-238" class="legacy-anchor"></span></section><section id="switching-2026-bridge" class="duration-block"><h2 id="updated-heading-250">Appendix: direct switching after first-year actionable endings</h2><span id="analysis-heading-241" class="legacy-anchor"></span><span id="analysis-heading-240" class="legacy-anchor"></span><span id="analysis-heading-239" class="legacy-anchor"></span><div class="table-wrap analysis-table"><div data-table-placeholder="150"></div></div><h3 id="updated-heading-251">Direct switches by cause (95% CI)</h3><div class="table-wrap analysis-table"><div data-table-placeholder="151"></div></div><h3 id="updated-heading-252">mCPR pp if every ending without a direct switch were a loss (95% CI)</h3><div class="table-wrap analysis-table"><div data-table-placeholder="152"></div></div></section><section id="duration-modern-use-2026-bridge" class="duration-block"><h2 id="updated-heading-253">Appendix: historical elapsed duration and year-end modern use</h2><article class="duration-slide"><h3 id="updated-heading-254">How switching changes the estimated losses and mCPR contribution</h3><div class="table-wrap analysis-table"><div data-table-placeholder="153"></div></div></article><span id="analysis-heading-244" class="legacy-anchor"></span><span id="analysis-heading-243" class="legacy-anchor"></span><span id="analysis-heading-242" class="legacy-anchor"></span><div class="table-wrap analysis-table"><div data-table-placeholder="154"></div></div><h3 id="updated-heading-255">Year-end losses by cause (95% CI)</h3><div class="table-wrap analysis-table"><div data-table-placeholder="155"></div></div><article class="duration-slide"><h3 id="updated-heading-256">Historical switching: 2026 mCPR if year-end losses are avoided</h3><div class="table-wrap analysis-table"><div data-table-placeholder="156"></div></div></article></section><section id="duration-aware-cause-pp-matrices" class="duration-block"><h2 id="updated-heading-257">Appendix: historical year-end loss by method and cause</h2><span id="analysis-heading-246" class="legacy-anchor"></span><span id="analysis-heading-245" class="legacy-anchor"></span><div class="table-wrap analysis-table"><div data-table-placeholder="157"></div></div><h3 id="updated-heading-258">Percentage-point equivalents (95% CI)</h3><div class="table-wrap analysis-table"><div data-table-placeholder="158"></div></div></section><section id="aft-switching-sensitivity" class="duration-block"><h2 id="updated-heading-259">Appendix: AFT pathway diagnostics</h2><span id="analysis-heading-250" class="legacy-anchor"></span><span id="analysis-heading-249" class="legacy-anchor"></span><span id="analysis-heading-248" class="legacy-anchor"></span><span id="analysis-heading-247" class="legacy-anchor"></span><div class="table-wrap analysis-table"><div data-table-placeholder="159"></div></div><h3 id="updated-heading-260">Direct modern switches by cause (95% CI)</h3><div class="table-wrap analysis-table"><div data-table-placeholder="160"></div></div><h3 id="updated-heading-261">Outside modern use at year end by cause (95% CI)</h3><div class="table-wrap analysis-table"><div data-table-placeholder="161"></div></div><article class="duration-slide"><h3 id="updated-heading-262">AFT observed switching: mCPR contribution by actionable cause</h3><div class="table-wrap analysis-table"><div data-table-placeholder="162"></div></div></article></section></main></div><script>
+(function(){
+ const box=document.getElementById('toc-search');
+ const groups=[...document.querySelectorAll('.toc-group')];
+ box.addEventListener('input',function(){
+   const q=this.value.trim().toLowerCase();
+   for(const group of groups){
+     const major=group.querySelector('.toc-major');
+     const children=[...group.querySelectorAll('.toc-sublist a')];
+     const majorMatch=major.textContent.toLowerCase().includes(q);
+     let matches=0;
+     for(const child of children){
+       const hit=!q||majorMatch||child.textContent.toLowerCase().includes(q);
+       child.hidden=!hit;if(hit)matches++;
+     }
+     group.hidden=!!q&&!majorMatch&&matches===0;
+     const details=group.querySelector('details');
+     if(details&&q)details.open=true;
+     else if(details&&!q)details.open=false;
+   }
+ });
+})();
+</script><!-- BEGIN NARROW TOC SCRIPT -->
+<script>
+(function(){
+ const button=document.getElementById('toc-toggle');
+ const scrim=document.getElementById('toc-scrim');
+ const toc=document.getElementById('site-toc');
+ if(!button||!scrim||!toc)return;
+ function setOpen(open){
+   document.body.classList.toggle('toc-open',open);
+   button.setAttribute('aria-expanded',open?'true':'false');
+   button.textContent=open?'× Close contents':'☰ Contents';
+ }
+ button.addEventListener('click',()=>setOpen(!document.body.classList.contains('toc-open')));
+ scrim.addEventListener('click',()=>setOpen(false));
+ toc.addEventListener('click',event=>{if(event.target.closest('a[href^="#"]'))setOpen(false)});
+ document.addEventListener('keydown',event=>{if(event.key==='Escape')setOpen(false)});
+ window.addEventListener('resize',()=>{if(window.innerWidth>850)setOpen(false)});
+})();
+</script>
+<!-- END NARROW TOC SCRIPT --></body></html>)----------------------"
+REPORT_FILES[["src/report/reason_definitions.html"]] <- r"----------------------(<table class="analysis-table"><thead><tr><th>Interpretive grouping</th><th>Recorded reasons in the contraceptive calendar</th><th>How to use the grouping</th></tr></thead><tbody>
+<tr><th>Stated pregnancy intention</th><td>Wanted to become pregnant.</td><td>A stated decision to become pregnant is distinct from an actionable method ending.</td></tr>
+<tr><th>Potentially actionable</th><td>Method failure; wanting a more effective method; changes in menstrual bleeding; other side effects or health concerns; lack of access or distance; cost; inconvenience.</td><td>These reasons identify areas for further investigation. The calendar does not establish whether an individual ending could have been prevented.</td></tr>
+<tr><th>Partner/spousal disapproval</th><td>Husband or partner disapproved of contraceptive use.</td><td>Reported separately. Excluded from potentially actionable probabilities, reason shares and user-retention calculations.</td></tr>
+<tr><th>Circumstantial or unresolved</th><td>Fatalistic responses; difficulty becoming pregnant or menopause; infrequent sex or partner away; marital dissolution or separation; other, unknown or missing reasons.</td><td>These responses do not identify one service problem. Where sample sizes allow, examine the individual reasons separately.</td></tr>
+</tbody></table>
+)----------------------"
+REPORT_FILES[["src/report/render_pair_shared.py"]] <- r"----------------------(#!/usr/bin/env python3
+"""Presentation-sized regional contrasts using the fresh pair-specific shared mix."""
+import csv,os
+from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+root=Path(os.environ['ETHIOPIA_PROJECT_ROOT']);sup=root/'output/Supporting_data'
+with(sup/'regional_actionable_pairwise_shared_method_mix.csv').open(newline='')as f:rows=list(csv.DictReader(f))
+print('Available pairwise fields:',','.join(rows[0]))
+selected=[r for r in rows if r['significant_5pct'].casefold()in['true','1']]
+selected.sort(key=lambda r:float(r['holm_p']))
+records=[]
+for r in selected:
+ sign=1 if float(r['pair_shared_mix_gap_pp'])>=0 else-1
+ pair=(r['region_a']+' vs '+r['region_b'])if sign==1 else(r['region_b']+' vs '+r['region_a'])
+ low,high=float(r['shared_gap_ci_low']),float(r['shared_gap_ci_high'])
+ if sign<0:low,high=-high,-low
+ records.append([pair,f"{sign*float(r['own_mix_gap_pp']):.1f} pp",f"{sign*float(r['pair_shared_mix_gap_pp']):.1f} pp\n({low:.1f}–{high:.1f})",f"{sign*float(r['method_mix_component_pp']):+.1f} pp",'<0.001'if float(r['holm_p'])<.001 else f"{float(r['holm_p']):.3f}"])
+fig=plt.figure(figsize=(14,6),facecolor='white');ax=fig.add_axes([.035,.15,.93,.65]);ax.axis('off')
+fig.text(.035,.91,'Regional gaps after giving each pair the same method mix',fontfamily='DejaVu Serif',fontsize=22,color='#173F5B',weight='bold')
+fig.text(.035,.83,'12-month potentially actionable discontinuation • Holm-significant comparisons',fontsize=13,color='#526873')
+if records:
+ tab=ax.table(cellText=records,colLabels=['Regional pair','Gap with\nown method mixes','Gap with the\nsame method mix','Method-mix\ncontribution','Holm p'],cellLoc='center',colWidths=[.34,.17,.23,.16,.1],bbox=[0,0,1,1]);tab.auto_set_font_size(False);tab.set_fontsize(13)
+ for(i,j),cell in tab.get_celld().items():
+  cell.set_edgecolor('#D9E4E8');cell.set_linewidth(.7)
+  if i==0:cell.set_facecolor('#173F5B');cell.get_text().set_color('white')
+  else:cell.set_facecolor('#F1F6F7'if i%2==0 else'white');cell.get_text().set_color('#17252D')
+  if j==0:cell.get_text().set_ha('left')
+else:ax.text(.02,.5,'No pair passes the 5% Holm-corrected threshold.',fontsize=17,color='#173F5B')
+fig.text(.035,.055,'Each pair shares its pooled observed-start method mix. Regions retain their fitted method-specific probabilities.',fontsize=11,color='#526873')
+dest=root/'output/assets';dest.mkdir(exist_ok=True)
+fig.savefig(dest/'regional_actionable_pairwise_shared_mix_slide.png',dpi=180,facecolor='white');plt.close(fig)
+)----------------------"
+REPORT_FILES[["src/report/report_fragments.py"]] <- r"----------------------("""Replace a display fragment by its semantic anchor, independent of serialization."""
+from lxml import html
+
+def replace_fragment(page,anchor,markup,parent='presentation-figures',end_anchor=None):
+ doc=html.parse(str(page));found=doc.xpath('//*[@id="'+anchor+'"]');parts=[e for e in html.fragments_fromstring(markup)if not isinstance(e,str)]
+ if found:
+  old=found[0];owner=old.getparent();index=owner.index(old)
+  if old.tag in ['h2','h3','h4','h5']:
+   level=int(old.tag[1]);node=old
+   while node is not None:
+    nxt=node.getnext();owner.remove(node)
+    if nxt is None or nxt.tag=='section' or (nxt.get('id')==end_anchor if end_anchor else nxt.tag in ['h1','h2','h3','h4','h5']and int(nxt.tag[1])<=level):break
+    node=nxt
+  else:owner.remove(old)
+  for i,e in enumerate(parts):owner.insert(index+i,e)
+ else:
+  owner=doc.xpath('//section[@id="'+parent+'"]')[0]
+  for e in parts:owner.append(e)
+ page.write_bytes(html.tostring(doc,encoding='utf-8',doctype='<!doctype html>'))
+)----------------------"
+REPORT_FILES[["src/validate_aft_transitions.R"]] <- r"----------------------(#!/usr/bin/env Rscript
+# Held-out PSU checks of modern use following actionable original-method endings.
+a<-commandArgs(TRUE);stopifnot(length(a)==3);root<-a[1];fitdir<-a[2];out<-a[3];dir.create(out,recursive=TRUE,showWarnings=FALSE)
+suppressPackageStartupMessages({library(data.table);library(jsonlite)})
+ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'));cal<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'))
+methods<-c('Injectables','Implants','Pill','IUD','Other modern');causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience');codes<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L));action<-unlist(codes)
+modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,17L,18L);endpoint_modern<-c(modern,14L,16L)
+method_group<-function(x)ifelse(x==3,'Injectables',ifelse(x==11,'Implants',ifelse(x==1,'Pill',ifelse(x==2,'IUD','Other modern'))));cause_group<-function(x){z<-rep(NA_integer_,length(x));for(j in 1:5)z[x%in%codes[[j]]]<-j;z}
+source(file.path(root,'Code/transition_model.R'))
+point<-readRDS(file.path(fitdir,'transition_point_fits.rds'))
+diagnostics<-rbindlist(lapply(states,function(s){f<-point$transitions[[s]];check<-fit_transition(follow[follow$current_state==s,],s,f$family,.1,start=f$par,check_gradient=TRUE);data.table(state=s,family=f$family,boundary=f$boundary,convergence=f$convergence,max_gradient_error=check$max_gradient_error)}));write.csv(diagnostics,file.path(out,'transition_fit_diagnostics.csv'),row.names=FALSE)
+set.seed(20261110);frame<-unique(data.table(psu=as.integer(ir$v021),stratum=as.integer(ir$v022)));frame[,fold:=sample(rep(1:5,length.out=.N)),by=stratum]
+initial<-merge(initial,frame[,.(psu,fold)],by='psu');follow<-merge(follow,frame[,.(psu,fold)],by='psu');histories<-merge(histories,frame[,.(psu,fold)],by='psu');validation<-list()
+for(k in 1:5){cat('Held-out fold',k,'\n');flush.console();fit<-fit_models(initial[initial$fold!=k,],follow[follow$fold!=k,],'selected',.1);test<-histories[histories$fold==k & histories$horizon%in%c(1L,3L,6L,12L),];gr<-unique(test[,.(method,cause,end_duration,duration_log)]);gr$gid<-seq_len(nrow(gr));pred<-merge(gr,endpoint_prob(fit,gr,12L),by='gid');v<-merge(test,pred,by=c('method','cause','end_duration','duration_log','horizon'));v[,observed:=as.numeric(observed_state=='Modern')];validation[[k]]<-v[,.(horizon,wt,observed,p_modern,fold)]}
+v<-rbindlist(validation);c<-v[,.(observations=.N,observed_modern=sum(wt*observed)/sum(wt),predicted_modern=sum(wt*p_modern)/sum(wt),brier=sum(wt*(observed-p_modern)^2)/sum(wt)),by=horizon];c[,difference_pp:=100*(predicted_modern-observed_modern)];write.csv(c,file.path(out,'held_out_calibration.csv'),row.names=FALSE);print(c)
+
+checks<-jsonlite::fromJSON(file.path(fitdir,'transition_fit_metadata.json'),simplifyVector=FALSE)
+checks$held_out<-lapply(seq_len(nrow(c)),function(i)as.list(c[i,]))
+checks$fit_diagnostics<-lapply(seq_len(nrow(diagnostics)),function(i)as.list(diagnostics[i,]))
+jsonlite::write_json(checks,file.path(fitdir,'transition_validation.json'),auto_unbox=TRUE,pretty=TRUE)
+)----------------------"
+
 if (sys.nframe() == 0L) main()

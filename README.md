@@ -1,116 +1,96 @@
 # Contraceptive discontinuation analyses
 
-DHS-based analyses for Ethiopia, Nigeria and DRC, with a combined report for
-Kano, Kaduna and Lagos. Updated November 10, 2026.
+DHS contraceptive-calendar analyses for Ethiopia (2024–25), Nigeria (2024), and DRC (2023–24), with separate Nigeria state analyses and a three-country discontinuation/switching extensions module.
 
-| Analysis | Folder | HTML report | Presentation |
-| --- | --- | --- | --- |
-| Ethiopia DHS 2024–25 | `Ethiopia_analysis/` | `Ethiopia_discontinuation_analysis.html` | `ethiopia_presentation.pptx` — 107 slides |
-| Nigeria DHS 2024 | `Nigeria_analysis/` | `Nigeria_discontinuation_analysis.html` | `Nigeria_discontinuation.pptx` — 98 slides |
-| DRC DHS 2023–24 | `DRC_analysis/` | `DRC_discontinuation_analysis.html` | `DRC_discontinuation.pptx` — 79 slides |
-| Kano, Kaduna, Lagos | `Nigeria_analysis/Kano_Kaduna_Lagos/` | `Kano_Kaduna_Lagos_discontinuation_analysis.html` | `Kano_Kaduna_Lagos_discontinuation.pptx` |
+## Files
 
-Country folders contain an R entry point, a README and aggregate rebuild inputs.
-The three-state folder contains one R entry point per state. Presentations have
-no presenter notes. Restricted DHS microdata and individual-level fitted objects
-are not included.
+- `build_reports.R`: national build entry point.
+- `<Country>_analysis/<Country>_final_html_analysis.R`: each country's analytical code, reporting code and layouts, consolidated as plain source.
+- `report_tools.py`: shared rendering and read-only comparison code.
+- `geography.json`: pinned public map geometry and attribution; no survey records.
+- `Nigeria_analysis/Kano_Kaduna_Lagos/`: three parameterized state R entry points.
+- `discontinuation_extensions/run_analysis.R`: independent extensions and maps entry point.
+- `renv.lock`, `requirements.txt`: dependency versions.
+- [Data access](docs/data-access.md): IR input parameters and R download instructions.
 
-## Discontinuation and switching extensions
+The entry points expand their readable source resources into private runtime directories. This keeps the repository small without dropping analytical stages. Saved fitted models, aggregate rebuild caches, generated validation inventories and working files are not required in the repository.
 
-The independent [`discontinuation_extensions/`](discontinuation_extensions/)
-module rebuilds the separate three-country extensions report and interactive
-maps from caller-supplied DHS IR files. It includes national reason-specific
-risk and timing, actionable-ending alluvials, subsequent use by reason,
-interruption duration summaries, first modern destinations, and the separate
-partner/spousal-disapproval analysis.
+## Run a national report
 
-Its R entry point, bundled renderers, public boundary assets, input instructions
-and validation results are documented in the
-[module README](discontinuation_extensions/README.md). The two reports are
-[`Discontinuation_and_switching_extensions.html`](discontinuation_extensions/output/Discontinuation_and_switching_extensions.html)
-and [`Modern_method_discontinuation_maps.html`](discontinuation_extensions/output/Modern_method_discontinuation_maps.html).
-This module is separate from the national report rebuild described below and
-leaves existing country HTMLs and presentations unchanged.
-
-## Rebuild and validate
-
-Install R packages `jsonlite`, `digest` and `abind`, and Python 3 with `lxml`:
+Obtain an authorized IR file through DHS and keep it outside the repository. Restore the R packages in `renv.lock` and install Python dependencies from `requirements.txt`. DRC's display-only slide-preview gallery also requires LibreOffice (`soffice`).
 
 ```sh
+Rscript -e 'renv::restore(lockfile="renv.lock", prompt=FALSE)'
 python3 -m pip install -r requirements.txt
-Rscript build_reports.R --output-dir=work/build
-python3 validate_repository.py --build-dir=work/build
+Rscript build_reports.R --check --python=python3
+Rscript build_reports.R --country=Nigeria --ir-file="$DHS_IR_FILE" \
+  --output-dir="$DHS_BUILD_DIR/nigeria" --python=python3 --cores=4
 ```
 
-Run these commands from the repository root. The build runs all three national
-entry points and writes to `work/build/<Country>_analysis/output/`. It leaves the
-saved reports untouched. Select a country with `--country=Nigeria` (or Ethiopia,
-DRC), and select Python with `--python=python3`. The validator checks release checksums, repository contents, saved document
-structure, aggregate planning inputs and rebuilt HTML tables/figures. Use
-`--skip-hashes` while intentionally editing a release. After rebuilding and
-checking changes, `python3 validate_repository.py --build-dir=work/build --refresh-manifest` refreshes release checksums and the root validation summary. Use `--help` for options. `validation_summary.json` records the
-latest release checks and their scope.
+Use `Ethiopia` or `DRC` for the other countries. The output directory must be new and outside the repository. The build reads the IR, reconstructs calendars/episodes, fits models, computes 500 joint planning survey replicates and renders the HTML. It does not read an existing HTML or cached fitted results to calculate estimates. Full bootstrap runs can be lengthy.
 
-**Rebuild boundary:** national R scripts recompute the 48 principal and sensitivity
-planning tables from included aggregate estimates and 500 joint survey-bootstrap
-draws. They retain other analytical chapters and figures from the supplied HTML
-layout. This is not a verified single-command rebuild of the entire report from
-raw IR. The saved PPTX files are not generated by the R entry points. The latest
-incremental builds reproduce all 162 Ethiopia, 141 Nigeria and 199 DRC HTML tables.
+Approved HTML and PPTX files remain in their existing repository locations as read-only comparison references. A code-only upload omits those files. `--reference-dir` can supply a different directory containing the same country-folder layout. Comparisons run after estimation and fail on differences; approved reports are never replaced. DRC uses the supplied deck only for the displayed slide-preview gallery. Successful new reports are written under the private output directory.
 
-## Authorized input data
+For source inspection, `--extract-source="$SOURCE_INSPECTION_DIR"` expands the source into an empty directory outside the repository without fitting models. `--check` checks source syntax; it does not establish numerical/model validity. Native slide tables and all HTML tables, text/navigation and embedded figures are checked during a complete build. Fonts and rendering-library differences can require review.
 
-Raw-IR preparation is separate. Supply an authorized country IR through a
-command-line parameter or environment variable:
+## Extensions, maps and states
 
 ```sh
-Rscript Nigeria_analysis/Nigeria_final_html_analysis.R --run=prepare --project-root=work/nigeria --ir-file="$DHS_IR_FILE"
+Rscript discontinuation_extensions/run_analysis.R \
+  --ethiopia-ir="$ETHIOPIA_IR_FILE" --nigeria-ir="$NIGERIA_IR_FILE" \
+  --drc-ir="$DRC_IR_FILE" --output-dir="$DHS_BUILD_DIR/extensions" --python=python3
 ```
 
-Use the corresponding entry point for Ethiopia or DRC. `--list`, `--packages`
-and each country README document preparation and numerical stages. Calendar
-preparation aligns monthly method/reason records, constructs episodes and retains
-weights, strata, PSUs, woman links, delayed entry and censoring. Running preparation
-alone does not fit every downstream model. Paths are parameters or project-relative;
-credentials, private input locations and microdata stay outside the repository.
-[DHS data access](https://dhsprogram.com/data/Access-Instructions.cfm) governs use
-of the underlying IR files.
+All three IRs and a new private output directory are required. `--target=extensions` or `--target=maps` selects one report; the default produces both. The module reconstructs its own records and uses 1,999 full-frame survey-bootstrap replicates. Authentication/download and public catalogue access are distinct; see the data-access guide.
 
-## Definitions and planning assumptions
+The three state entry points preserve their existing numerical/figure exports. They do not author the combined state PowerPoint or rebuild its entire combined HTML. The national command covers the three national reports.
 
-- Modern-method discontinuation excludes EC; all-women mCPR and sensitivity
-  endpoint modern use include EC. Method-specific denominators use that method's
-  eligible episodes. Initiation-mix and published-DHS comparison tables may also
-  show EC and non-modern methods, as labelled.
-- Potentially actionable causes are method failure, wanting a more effective
-  method, bleeding changes, other side effects/health, and access/cost/convenience.
-  Partner/spousal disapproval is separate and excluded. Other endings remain
-  competing events.
-- Main planning counts every actionable original-method ending as a lost user.
-  First-year planning is exploratory and ignores elapsed use. Historical and AFT
-  approaches condition next-12-month endings on method and elapsed use.
-- Three national sensitivities deduct endpoint modern use: observed historical
-  histories; AFT endings with observed histories; and AFT endings with a separate
-  immediate-state model and AFT-based later transitions. A restart only reduces
-  a loss if modern use persists to the common 12-month endpoint.
-- Ethiopia uses a 2025 baseline and 2026 outcome. Nigeria and DRC use 2024 and
-  2025. Additional mCPR pp = retained users / projected outcome-year women aged
-  15–49 × 100, using the [UN WPP 2024](https://population.un.org/wpp/) population
-  extract. The observed reference cohort is fixed across growth scenarios.
-- National secular-growth scenarios use recent DHS, longer-term DHS and an
-  FPET-informed increment. The increment is applied to a DHS baseline; it is not
-  an official FPET forecast. State scenarios use the two verified DHS trends.
+## Definitions and verification
 
-Joint survey resampling uses the full PSU/stratum frame. Intervals condition on
-fixed population, growth and selected curve families; their endpoints are not
-additive. Sparse cells, proxy curves, historical transportability and model
-calibration limit interpretation. DRC's new post-ending model overpredicts
-month-12 modern use by 5.4 pp in held-out PSUs and remains a sensitivity estimate.
-Country READMEs document additional restrictions and the validation boundary.
+Original continuing-modern-method episodes exclude EC. Potentially actionable causes are failure, wanting a more effective method, bleeding changes, other side effects/health, and access/cost/convenience. Partner/spousal disapproval is separate. EC remains part of all-women current mCPR and subsequent modern use. Point estimates use woman weights; survey inference keeps each woman's episodes together within the resampled PSU/stratum frame.
 
-## Kano, Kaduna and Lagos
+Main planning counts every actionable ending as a lost modern user. Switching/restarting sensitivities count modern use at the common next-12-month endpoint. Historical/AFT probabilities condition on method and elapsed use. Outcome years are 2026 for Ethiopia and 2025 for Nigeria/DRC. Fixed [UN WPP population inputs](https://population.un.org/wpp/), growth assumptions and selected AFT families are not uncertain in those intervals. Sparse-cell, recall and historical-transportability limitations remain; mCPR contributions are conditional scenarios, not established intervention effects.
 
-The state scripts reproduce numerical tables and statistical figures from a
-caller-supplied full Nigeria 2024 IR. The previous reconstruction matched all 60
-state display tables. They export state results, not the combined HTML or PPTX.
-Follow the three-state README for shared-cache and reconciliation commands.
+The consolidated code preserves the numerical modules and is checked against the independently rebuilt local report versions. The existing GitHub national HTMLs are pre-reconciliation versions. This source-only update preserves them; strict comparison can flag that known version difference. No finished report or presentation is included or changed by this upload.
+
+## Consolidation checks and remaining limits
+
+All 224 existing analytical module bodies are unchanged. Fresh IR preparation again produced the same calendar/cohort counts:
+
+| Country | Calendar runs | Published-table eligible episodes | Regional model cohort |
+|---|---:|---:|---:|
+| Ethiopia | 89,220 | 9,068 | 8,611 |
+| Nigeria | 163,203 | 11,210 | 8,341 |
+| DRC | 132,217 | 8,934 | 4,146 |
+
+Rendering from the independently recomputed numerical outputs reproduced all 510 national HTML tables, 171 embedded figures and 164 native PowerPoint table counterparts. The prior raw-IR planning verification covered the point fits and all 500 joint replicates. Consolidation reran preparation and rendering; it did not change model expressions or refit those 500 draws again. Existing report/PPTX hashes remain unchanged.
+
+Published DHS checks match all 66 Ethiopian and 110 Nigerian tested rate cells. DRC matches 104 of 110 tested rate cells, with six 0.1-pp differences retained in the audit. DRC's sparse IUD original-ending/transition estimates use Other-modern curves. Its modeled-transition sensitivity overpredicted held-out month-12 modern use by 5.37 pp, so it remains a sensitivity, not a primary estimate. Country-specific exploratory diagnostics retain their reviewed specifications; they are not all identical estimators. Detailed validation files are generated privately during rebuilding rather than stored as many repository files.
+
+## Cleanup after uploading this update
+
+Upload all 15 source/configuration files first. Keep all existing finished HTML reports and PPTXs. The old helper directories below have been consolidated into the country scripts, `report_tools.py` and `geography.json`.
+
+If using a local Git checkout, run from its root after the new files are in place:
+
+```sh
+git rm -r --ignore-unmatch -- \
+  tools recompute_planning.R validate_repository.py validation_summary.json \
+  Ethiopia_analysis/src Ethiopia_analysis/reference_data Ethiopia_analysis/revision_inputs \
+  Ethiopia_analysis/README.md Ethiopia_analysis/validation_summary.json \
+  Nigeria_analysis/src Nigeria_analysis/revision_inputs \
+  Nigeria_analysis/README.md Nigeria_analysis/validation_summary.json \
+  Nigeria_analysis/Kano_Kaduna_Lagos/README.md \
+  DRC_analysis/src DRC_analysis/revision_inputs \
+  DRC_analysis/README.md DRC_analysis/validation_summary.json \
+  discontinuation_extensions/src discontinuation_extensions/assets \
+  discontinuation_extensions/validation discontinuation_extensions/README.md \
+  discontinuation_extensions/.gitignore \
+  discontinuation_extensions/output/browser_validation.json \
+  discontinuation_extensions/output/software_versions.csv \
+  discontinuation_extensions/output/validation.json
+```
+
+On GitHub web, remove the same named directories/files individually. Some will be absent if the larger update was never uploaded. **Keep** `discontinuation_extensions/output/Discontinuation_and_switching_extensions.html` and `Modern_method_discontinuation_maps.html`, all national report HTMLs/PPTXs, and the combined state HTML/PPTX. Never delete a whole country folder or the extensions `output` folder. The three state R entry points also stay.
+
+With the current GitHub contents, this cleanup removes 56 obsolete support files and leaves 15 source/configuration files plus the 10 existing finished reports. Source syntax can then be checked with `Rscript build_reports.R --check`; a full independent rebuild additionally requires authorized IR inputs and the approved reference reports.
