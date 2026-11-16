@@ -174,7 +174,8 @@ reference_files<-function(){
    'Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation_analysis.html',
    'Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation.pptx',
    'discontinuation_extensions/output/Discontinuation_and_switching_extensions.html',
-   'discontinuation_extensions/output/Modern_method_discontinuation_maps.html')
+   'discontinuation_extensions/output/Modern_method_discontinuation_maps.html',
+   'discontinuation_extensions/output/Return_and_continuation_same_cohort_preview.html')
 }
 materialize_sources<-function(repo,destination,python,reference){
  dir.create(destination,recursive=TRUE,showWarnings=FALSE)
