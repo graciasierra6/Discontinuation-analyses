@@ -490,6 +490,7 @@ main <- function() {
   if (identical(selected,'reference')) selected <- '200_reference_analysis_extensions.R'
   if (identical(selected,'planning')) selected <- PLANNING_MODULES
   if (identical(selected,'survey-planning')) selected <- c('205_ethiopia_planning_survey_ci.R','206_summarize_planning.R','207_duration_support_ci.R','208_pooled_risk_ci.R')
+  if (identical(selected,'survey-descriptives')) selected <- 'dhs_survey_descriptives.R'
   if (any(!selected %in% names(MODULES))) stop('Unknown module; use --list for filenames.')
   if (!nzchar(ir) && any(selected %in% CORE_MODULES))
     stop('Supply --ir-file or DHS_IR_FILE before running the core analysis.')
@@ -531,9 +532,17 @@ Ethiopia,2025,34057556.066801,UN population data via World Bank WDI,"Frozen unro
 # LANGUAGE: R
 MODULES[["200_reference_analysis_extensions.R"]] <- list(
  language="R",
- packaged_sha256="b42549fa5545c5225a7cc1c299954ae15ed5c680f59729fd1a93c6ca17ea015e",
+ packaged_sha256="e11bc42b7bfd8939432ce29e4357d1bbf49fe0fd660cc78675e06b1bb0fae76e",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Reference-aligned numerical analyses for Ethiopia, Nigeria, and DRC.
 # This module supplements the archived country modules; it never edits HTML/PPTX.
 # Native calendar reason codes are used throughout, not the recoded nine groups.
@@ -742,7 +751,7 @@ person_months <- function(x,scope) {
 }
 fit_model <- function(formula,p,w=p$wt) {
  p$fit_weight<-w
- fit<-nnet::multinom(formula,data=p,weights=fit_weight,trace=FALSE,maxit=500,MaxNWts=30000,Hess=FALSE)
+ fit<-dhs_multinom_fit(formula,data=p,weights=fit_weight,trace=FALSE,maxit=500,MaxNWts=30000,Hess=FALSE)
  if(fit$convergence!=0L)stop('Model did not converge')
  fit
 }
@@ -1045,9 +1054,17 @@ if __name__=='__main__':main()
 # LANGUAGE: R
 MODULES[["202_ethiopia_planning_from_ir.R"]] <- list(
  language="R",
- packaged_sha256="0612d29b9882df4cd3ce273e203226191a472f0b69d5cebdf0b34ce7dee713f9",
+ packaged_sha256="43ad2758b50b8aff2fa53f21bc8b312253ead564b3549d7be8741835ab48dbf5",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Rebuild the saved report's FIRST-YEAR planning inputs without slide CSVs.
 # The report used rounded current method shares (four decimal places) and
 # the 8,611 complete-case, age-at-start 15-49 episode cohort. Preserve those
@@ -1112,9 +1129,17 @@ cat('Rebuilt current-user and cause planning inputs directly from IR and episode
 # LANGUAGE: R
 MODULES[["00_import_ir_dta.R"]] <- list(
  language="R",
- packaged_sha256="38e7b5c3930e92ec087428553dcaf7ee639838fe6438af95f141bafd814259bc",
+ packaged_sha256="49a13eb195b2df2cce581fc0ec953f76491e8bde314323495bb90cd096d557d0",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # =============================================================================
 # 00. Import the original Ethiopia 2024–25 DHS individual recode (IR) file
 # =============================================================================
@@ -1178,9 +1203,17 @@ if (file.exists(rds_file)) {
 # LANGUAGE: R
 MODULES[["ethiopia_modern_method_discontinuation.R"]] <- list(
  language="R",
- packaged_sha256="ad52424a3b7fd4cc0aace7a3526937c77e6a9a1e633bd686d74e43ebe9dfbfcc",
+ packaged_sha256="0caca1e04fe9e24e5a07ccfe8bc6f49c16e5e27615ede8c4d338cd5d3983837d",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # =============================================================================
 # Ethiopia DHS 2024-25: modern-method contraceptive discontinuation
 # =============================================================================
@@ -1247,6 +1280,7 @@ dir.create(modern_out, recursive = TRUE, showWarnings = FALSE)
 # differs, because a shifted calendar character changes every episode date.
 if (!file.exists(raw_file)) stop("IR data not found: ", raw_file)
 x <- readRDS(raw_file)
+dhs_set_context(ir=x)
 stopifnot(
   nrow(x) == 21395L,
   !anyDuplicated(x$caseid),
@@ -1305,6 +1339,7 @@ for (i in seq_len(nrow(x))) {
     next2_code=c(code,NA_integer_,NA_integer_)[seq_along(code)+2L])
 }
 events <- do.call(rbind,events)
+events <- dhs_calendar_records(events,x)
 saveRDS(events,file.path(project,'Data','Derived','ethiopia_2024_calendar_events.rds'))
 
 # Restrict continuous runs to method episodes that overlap the DHS Table 7.11
@@ -2098,9 +2133,17 @@ source(file.path(project, "Code", "07_standardized_current_user_pathway.R"))
 # LANGUAGE: R
 MODULES[["02_method_initiation_analysis.R"]] <- list(
  language="R",
- packaged_sha256="9ecf2815ddd22d2dd0f45f5a0fc6aeeca770d8701108546cbf67149bc3a3bfe2",
+ packaged_sha256="0f8b3cb49096fd452311d6ac26d1e6ee6933f9a63251975facc0bf2cb0bfeba8",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -2347,9 +2390,17 @@ print(year_totals, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["03_reasons_for_discontinuation_table_7_12.R"]] <- list(
  language="R",
- packaged_sha256="f9dbcb84916f51d284a3a28aef805aba6ac386474f47409f33ae76811ccc40eb",
+ packaged_sha256="e9a23dc514251d93e3f852636298a610657ec18871f820873177b9cd4e63746c",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -2694,9 +2745,17 @@ print(data.frame(method=modern_methods, unweighted=modern_unweighted, weighted=m
 # LANGUAGE: R
 MODULES[["04_post_discontinuation_transitions.R"]] <- list(
  language="R",
- packaged_sha256="af331f736a75c32f53b7d1139acaaef655a82b457d9b4e06147b22d618480015",
+ packaged_sha256="e4f8d8255f03563351acda6362894f672ced2db9d919bfd3382ac95272d8c2e3",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Ethiopia DHS 2024-25: what happens after a modern-method episode ends?
 #
 # This analysis uses the same five-year discontinuation-event cohort as the
@@ -3232,9 +3291,17 @@ print(summary_counts, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["05_current_user_modern_exit.R"]] <- list(
  language="R",
- packaged_sha256="f35b5da4571dda64f66fde87ecd6ce0f6748c471d9e10152fdcfd392b3be7cc8",
+ packaged_sha256="c0c9cee513004f436c3629a84d79039a8ebc6cb97681c1d2ebe784cce7161686",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -3470,9 +3537,17 @@ print(summary_table, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["06_actionable_pathways.R"]] <- list(
  language="R",
- packaged_sha256="5c8be0dcdb97c29d705c65ae5eaa991899b31dc5da87f4f6e0d1f21b5277a79d",
+ packaged_sha256="d736d1b4302fef97036656d865868d8a97a4c0bdedb3aff39b81767e8d955621",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # =============================================================================
 # Ethiopia DHS 2024-25: actionable episode pathways and current-user pathways
 # =============================================================================
@@ -3976,9 +4051,17 @@ print(checkpoint_summary,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["07_standardized_current_user_pathway.R"]] <- list(
  language="R",
- packaged_sha256="50fcee76758b1a2b0a14ce0b4e0cb831d90efb3acc746b23e42c740db25364ef",
+ packaged_sha256="5ca05ead2ee53bc0783ad37e6711421f441a89278bf278e3fe59f7e6a141a315",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # =============================================================================
 # Ethiopia DHS 2024-25: standardized current-user stock-to-outcome pathway
 # =============================================================================
@@ -4237,9 +4320,17 @@ print(standardized_summary,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["08_compare_wanted_pregnancy_and_switching.R"]] <- list(
  language="R",
- packaged_sha256="ebb3a8105c3ae451409177126f68361d0b4e5a95e04f56dff2f43757da6a40e7",
+ packaged_sha256="538e565d511ec928624799f2c94316ecd4d63a2d91a36c33a42790c4b736c669",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Ethiopia DHS 2024–25 IR calendar: mutually exclusive 12-month reason
 # probabilities, plus the overlapping DHS switching indicator.
 # Reuses the episode eligibility, weight, reason, and switching classification
@@ -4314,9 +4405,17 @@ print(round(results,3));cat('Saved:',out,'\n')
 # LANGUAGE: R
 MODULES[["10_retained_reason_distribution.R"]] <- list(
  language="R",
- packaged_sha256="d492a2a2485416a8a3df2ba9dc1986d966fcca42c913da03a71cca7ecc01abb8",
+ packaged_sha256="bfd95ec5dcdef1246cb253201e75cbe1a5e569d934d7407b4272eb5193a34495",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Among the all-modern, EC-excluded 12-month discontinuation cumulative incidence,
 # distribute the probability across reasons other than wanted pregnancy and
 # husband/partner disapproval. Uses the same DHS Table 7.11 risk sets.
@@ -4435,9 +4534,17 @@ cat('Retained cumulative probability:', round(100*total,4), '%\nSaved:',out,'\n'
 # LANGUAGE: R
 MODULES[["12_reason_mix_by_method_restricted.R"]] <- list(
  language="R",
- packaged_sha256="3e835fcdbac32bb8685487bf1286e6bd7fbd8fb5850ccf295de662715ff5c778",
+ packaged_sha256="33fda167e270f3dd052c922be9564930d0b9a5fd909a32f1ff0c50e73641e2b7",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Table 7.12-style weighted reason distributions among observed modern-method
 # discontinuations. This is conditional on an episode ending, not a life table.
 library(ggplot2)
@@ -4587,9 +4694,17 @@ cat(sprintf("All modern: %d raw / %.1f weighted discontinued episodes; restricte
 # LANGUAGE: R
 MODULES[["14_restricted_discontinuation_curve.R"]] <- list(
  language="R",
- packaged_sha256="cfe809faf4db219559816f6ba41d3babff04119e91d53198720e38a9131cbf63",
+ packaged_sha256="22b579260e75dbcfd3506eeba88ddd700cdb2973fa5b1cb7c6540788572cdf05",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Monthly competing-risks cumulative incidence after excluding only desire to
 # become pregnant and husband/partner disapproval. Uses the DHS-validated
 # episode construction and matches column 2 of the comparison table.
@@ -4697,9 +4812,17 @@ cat('Saved:',svg,'\n')
 # LANGUAGE: R
 MODULES[["16_mix_vs_restricted_discontinuation.R"]] <- list(
  language="R",
- packaged_sha256="2f229ae2e21eba0c71a2779b7b39bd3516e8e497e3383fa58ee82f5e76e21a82",
+ packaged_sha256="5da1b646604c0d2bd4ebb333d71b6fde261918d59e8b1d9704dac6d27a912eb6",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Pair the original share of observed method starts with the corrected
 # competing-risks 12-month probability that excludes only wanted pregnancy
 # and husband/partner disapproval.
@@ -4796,9 +4919,17 @@ print(mix[,c('method','start_share_pct','restricted_12_month_pct')],row.names=FA
 # LANGUAGE: R
 MODULES[["18_initiation_mix_excluding_ec.R"]] <- list(
  language="R",
- packaged_sha256="6d692b1999eb74e23c3b70779580e70d9b45ea68da30e70a5e05df5e56bc2a5f",
+ packaged_sha256="38b2c4511d285e61a727ef5f079dbd37d0cff5004c1dcc59394768a5786c9b07",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # EC-excluded presentation view of observed contraceptive method starts.
 # The original EC-inclusive CSVs and DHS validation products are preserved.
 
@@ -4919,9 +5050,17 @@ cat('Modern starts excluding EC: ',
 # LANGUAGE: R
 MODULES[["19_mix_vs_allcause_excluding_ec.R"]] <- list(
  language="R",
- packaged_sha256="d9e3c102c8476ebe4eedc722c0a02b526294364657ef6e630309c79f6f3a3aea",
+ packaged_sha256="f028d98db5ad335eb469e80641e6ba8b52f39a8b024f2e5a94a7acce8fb7c57a",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Companion all-reason bars with method-start shares excluding EC.
 source(file.path(Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE)), 'Code/16_mix_vs_restricted_discontinuation.R'))
 
@@ -4951,9 +5090,17 @@ ggsave(paste0(base,'.png'),figure,width=15.5,height=8.7,dpi=170,bg='white')
 # LANGUAGE: R
 MODULES[["21_other_reason_breakdown.R"]] <- list(
  language="R",
- packaged_sha256="5eeed0b7f1dd09142227a439bd11f7cdd45e316f007ce438d6ff47319c595d32",
+ packaged_sha256="b900c8d60f5787b32705940cb9f1979c08d7979477274d692e32cbf687af3ee1",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Weighted distributions within the two distinct "Other" reason categories.
 # Counts are recorded discontinuation events, not weighted life-table risks.
 
@@ -5016,9 +5163,17 @@ write.csv(five_year,
 # LANGUAGE: R
 MODULES[["23_infrequent_sex_followup_states.R"]] <- list(
  language="R",
- packaged_sha256="72587107d2ebf708be1fd836ecd6c9abf8b35a4464fa618337522930dde617bc",
+ packaged_sha256="f7007c4eac085185432b792f44170b7214673503530c76da41b94979856c13e2",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -5134,9 +5289,17 @@ print(result[c("month_after_stop", "comparison", "unweighted_episodes",
 # LANGUAGE: R
 MODULES[["25_other_recorded_reason_followup.R"]] <- list(
  language="R",
- packaged_sha256="ee698a938297bfa7a57a35022f8c5c0d634ba256bfb542328c5d5710a04097ff",
+ packaged_sha256="d57d5fae0a02e94cdd0ac22653adeee8edde4f978ae3d2344911c80487705ed2",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Fixed-cohort calendar states after first-year modern-method endings coded
 # within the broad "Other recorded reasons" life-table category.
 options(stringsAsFactors = FALSE)
@@ -5237,9 +5400,17 @@ print(result[, c("reason_subgroup", "month_after_stop", "unweighted_episodes",
 # LANGUAGE: R
 MODULES[["31_method_experience_12_month_detail.R"]] <- list(
  language="R",
- packaged_sha256="c90d841b7053a0ebfe5dd06593456a01db7cb4431b6b325b42fc1e2e8def87d0",
+ packaged_sha256="3055e7d61e7e99674b7f51a3fbc72102c4b44b26140c055c6c5970fb59deab57",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Four cause-specific 12-month cumulative incidences underlying the
 # method-experience/access segment of the presentation life table.
 project <- Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
@@ -5298,9 +5469,17 @@ print(out[, c("method", "method_failure_pp", "wanted_more_effective_pp",
 # LANGUAGE: R
 MODULES[["34_selected_reason_regression.R"]] <- list(
  language="R",
- packaged_sha256="c9a8ac56b5c58de0ca29560cd57a9ed1de9c962542ca2f54b5f365523d584adc",
+ packaged_sha256="bb480e4117900a31d78b74403648ee358cbc74bd7b8a7267d302965ed8029e31",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -5409,9 +5588,10 @@ observed_months <- pmax(0L, pmin(12L, d$exposure) - d$entry)
 episode_index <- rep(seq_len(nrow(d)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
                     d$entry, observed_months), use.names = FALSE)
-person <- d[episode_index, c("wt", "method_group", "age_group", "parity_group",
+person <- d[episode_index, c("woman_row","wt", "method_group", "age_group", "parity_group",
                              "education", "wealth_group", "residence", "region",
                              "start_year", "cluster")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- d$discontinued[episode_index] & month == d$exposure[episode_index]
 # Code the monthly response as continue until the final observed month;
@@ -5427,7 +5607,7 @@ stopifnot(nrow(d) == 8611L, nrow(person) == 70691L,
 
 formula <- outcome ~ month + method_group + age_group + parity_group +
   education + wealth_group + residence + region + start_year
-fit <- nnet::multinom(formula, data = person, weights = person$wt,
+fit <- dhs_multinom_fit(formula, data = person, weights = person$wt,
                      maxit = 250, trace = FALSE, MaxNWts = 10000)
 # This is an adjusted association model for monthly event probabilities. The
 # method indicator, duration month, demographics, region, and start year enter
@@ -5510,7 +5690,7 @@ if (bootstrap_reps > 0L) {
     bootstrap_weights <- person$wt * multiplier[person$cluster]
     standard_weights <- standard$wt * multiplier[standard$cluster]
     person$boot_wt <- bootstrap_weights
-    model <- tryCatch(nnet::multinom(formula, data = person,
+    model <- tryCatch(dhs_multinom_fit(formula, data = person,
       weights = boot_wt, maxit = 250, trace = FALSE,
       MaxNWts = 10000), error = function(error) {
         message(sprintf("Bootstrap %d: %s", rep_no, conditionMessage(error)))
@@ -5568,9 +5748,17 @@ print(margins, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["36_selected_reason_contrasts.R"]] <- list(
  language="R",
- packaged_sha256="9be67af72781e5dec7677de3aebfb6b5f6fbc29442b78c3c78feb6bbce04aacb",
+ packaged_sha256="9b905e903f87f443c15fe1905a21c97a4b7ea234e819fd2e1328642a5d99f309",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Directly compare model-standardized 12-month cumulative probabilities.
 project <- Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
 out <- file.path(project, "output")
@@ -5630,9 +5818,17 @@ print(do.call(rbind, omnibus), row.names = FALSE)
 # LANGUAGE: R
 MODULES[["37_selected_reason_regional_analysis.R"]] <- list(
  language="R",
- packaged_sha256="20cfae09065c145a8c45663f26cd98fbf4ba2d9364d7283d8c23c342befd6269",
+ packaged_sha256="9f83826d916058d55ff1a45fdc986f4e5d24d0b08a81dd1a46c96e2e16ea058b",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -5706,7 +5902,7 @@ if (B > 0L) {
     p <- person
     p$boot_wt <- p$wt * multiplier[p$cluster]
     standard_weights <- standard$wt * multiplier[standard$cluster]
-    model <- tryCatch(nnet::multinom(formula, data = p, weights = boot_wt,
+    model <- tryCatch(dhs_multinom_fit(formula, data = p, weights = boot_wt,
       maxit = 250, trace = FALSE, MaxNWts = 10000),
       error = function(error) NULL)
     if (is.null(model) || model$convergence != 0L)
@@ -5805,9 +6001,17 @@ print(region_rates[, c("region", "unweighted_eligible_episodes",
 # LANGUAGE: R
 MODULES[["39_selected_reason_other_breakdown.R"]] <- list(
  language="R",
- packaged_sha256="b24261ad6564e635df3545a4e6be189e70a35b7426723d111d573a34380a0b32",
+ packaged_sha256="a03452b4cc2be57b7952acc0c17b974fa13630496e2f2b90dad224bbf22c8c7e",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Source the common complete-case cohort, then audit the first-year residual
 # and fertility-related reasons grouped as "Other" in the regional tables.
 project <- Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
@@ -5841,9 +6045,17 @@ print(result, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["40_unadjusted_selected_regional_ci.R"]] <- list(
  language="R",
- packaged_sha256="2727eb71c10e4fa92250ccae54cba26b344f704f237764e776101af8a906bdc2",
+ packaged_sha256="27577297db050b1a15b8a7fd36b5b02756132937e0f3a67ce9d82b8e85e161de",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -5951,9 +6163,17 @@ cat(sprintf("Unadjusted national: %.1f%% (95%% CI %.1f–%.1f); %d PSUs, %d draw
 # LANGUAGE: R
 MODULES[["42_regional_method_mix_diagnostic.R"]] <- list(
  language="R",
- packaged_sha256="253ce868a60d5ec27fc83f6a80b6d380704ae5353866258b4c96f5ac545a1544",
+ packaged_sha256="8434e21d8981d14fba246d5d191d0c6c36487bb40cc1bc56ac8bdbc9642a01ab",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -6107,9 +6327,17 @@ print(rows, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["43_injectable_regional_reason_ci.R"]] <- list(
  language="R",
- packaged_sha256="e3ede2d71726f2de96a7cf52b4f7e8a921cdecef091b4e5de7ad14606b2d970c",
+ packaged_sha256="0cd6372208fee1aafd0b713275c619be331e92d0ee2e59629bb95af7cbb1263a",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -6228,9 +6456,17 @@ print(differences,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["44_selected_region_method_ci.R"]] <- list(
  language="R",
- packaged_sha256="e78e093da6a27c04b48a7b8e79c20d8fbe64b6701b927385932e48945f87c8b0",
+ packaged_sha256="ab7d6c6ef8c795b6abd00a5ca02acc0408e348f79507bf0c9f644a8ee0dc7ff8",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -6333,9 +6569,17 @@ print(result,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["45_injectable_region_checkpoints.R"]] <- list(
  language="R",
- packaged_sha256="d1e3bb0b7bd35863e28a052ad3c057d1b17a7a1ad3d057c4469f5c979b7deccc",
+ packaged_sha256="64d184db8a68ac18df9e0ece2ef2fa520a6e474da7a970f501d78806a4310f84",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -6474,9 +6718,17 @@ print(audit,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["46_regional_modern_start_mix.R"]] <- list(
  language="R",
- packaged_sha256="5b23039da7f5fedb719f85621495fbb6096d22a977bb11c51bbaa3aad36891bf",
+ packaged_sha256="fb340accc32f43ac0c82d924ae3095523570be972614a0480936c9cba33df3ae",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Observed modern-method starts by region, aligned with the EC-excluded
 # initiation-mix figures. These are starts, not all episodes at risk.
 # The input RDS was made by 02_method_initiation_analysis.R after the raw .dta
@@ -6528,9 +6780,17 @@ write.csv(result, file.path(project, "output/regional_modern_start_mix_excluding
 # LANGUAGE: R
 MODULES[["47_regional_mix_vs_allcause_method_panels.R"]] <- list(
  language="R",
- packaged_sha256="1c8be9dc4753c5445ec636f8fc77897c7d1111d91f15ced149460c2081848c6d",
+ packaged_sha256="7731955fe8eca008ba82a69896f173ea50c416d857b8ff51d1990f5df45c5767",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Five regional companions to the presentation's paired-bar method figure.
 # Amber: share of all observed contraceptive starts, excluding EC, in a region.
 # Navy: all-cause 12-month discontinuation of the named original method.
@@ -6745,9 +7005,17 @@ print(rows[,c("region","method","unweighted_method_starts","eligible_episodes",
 # LANGUAGE: R
 MODULES[["49_rebuild_presentation_figures_tables.R"]] <- list(
  language="R",
- packaged_sha256="7bf05569eac28136761bc468417da5dfca85bd20e77aade725860c9d89e53c17",
+ packaged_sha256="d7172242f3edd3470914aa3892a8fd2466435e2912c33a57397e8c0d21f18e10",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Rebuild the 14 presentation figures that previously had no saved generator,
 # plus the two numerical appendix tables. Run after the calendar/life-table
 # scripts. Outputs go to output/reproduced_figures/ so the working HTML and
@@ -7283,9 +7551,17 @@ cat("Rebuilt 14 figure assets and appendix calculations in",dest,"\n")
 # LANGUAGE: R
 MODULES[["51_duration_adjusted_reason_projection.R"]] <- list(
  language="R",
- packaged_sha256="c945cd4be5e54b072a5b6c6d057a48d5a222030a90c482855c8885bf3752bd5d",
+ packaged_sha256="af8392b5e67a8f852dbe301051172b306a76ddec67b93d537157d23577657d6f",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Ethiopia DHS 2024-25: exploratory next-12-month original-method endings by
 # reason among women currently using a modern method (emergency contraception
 # excluded). This is a landmark standardization, not a first-year life table.
@@ -7478,9 +7754,17 @@ cat("Combined selected-reason probability:",100*all_endings/all_current,"percent
 # LANGUAGE: R
 MODULES[["53_descriptive_selected_reason_subgroups.R"]] <- list(
  language="R",
- packaged_sha256="7303a78804bfd3a98b26bb547eac6d808dee0fd3daad633bf398637367e4775d",
+ packaged_sha256="c5e9a1478bd69cd1ac76772aab7eb908d635739762a277265e3910f4604505f1",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -7655,9 +7939,17 @@ print(one,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["54_extended_selected_reason_regression.R"]] <- list(
  language="R",
- packaged_sha256="30d7f80d7013cda73fba6314ba32cfe9034390e1c4a7822061d204b3cb97505d",
+ packaged_sha256="f3ee1dc19a09e65ca31397c8c91d3aaebdfecc8f50d6fe9c0d5a2de39f95d024",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Exploratory extension of Code/34's survey-weighted three-outcome episode-month
 # model. Adds interview-date marital status and separates parity into 0, 1-2,
 # 3, and 4+ live births at method start. The selected outcome remains original
@@ -7690,9 +7982,10 @@ observed_months <- pmax(0L,pmin(12L,e$exposure)-e$entry)
 index <- rep(seq_len(nrow(e)),observed_months)
 month <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
                     e$entry,observed_months),use.names=FALSE)
-person <- e[index,c("wt","method_group","age_group","parity_group",
+person <- e[index,c("woman_row","wt","method_group","age_group","parity_group",
                     "marital_group","education","wealth_group","residence",
                     "region","start_year")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month,levels=1:12)
 ended <- e$discontinued[index] & month==e$exposure[index]
 person$outcome <- factor(ifelse(!ended,"continue",
@@ -7704,7 +7997,7 @@ stopifnot(nrow(e)==8611L,nrow(person)==70691L,
 
 formula <- outcome ~ month + method_group + age_group + parity_group +
   marital_group + education + wealth_group + residence + region + start_year
-fit <- nnet::multinom(formula,data=person,weights=person$wt,
+fit <- dhs_multinom_fit(formula,data=person,weights=person$wt,
                      maxit=300,trace=FALSE,MaxNWts=10000)
 if(fit$convergence!=0L)stop("Extended multinomial model did not converge")
 standard <- e[e$entry==0L,]
@@ -7751,9 +8044,17 @@ print(adjusted[,c("characteristic","level","unadjusted_12_month_probability_pct"
 # LANGUAGE: R
 MODULES[["56_crossvalidated_selected_reason_risk_strata.R"]] <- list(
  language="R",
- packaged_sha256="38809759a4ebaa1e409858ad73694884852b9cbf22f0135874af26aad923752d",
+ packaged_sha256="3a993dc1f8262c98c2652da8f4436438e11479acdfe62828fa084f0273c628df",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -7830,7 +8131,8 @@ nmonths <- pmax(0L,pmin(12L,e$exposure)-e$entry)
 index <- rep(seq_len(nrow(e)),nmonths)
 month <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
                     e$entry,nmonths),use.names=FALSE)
-person <- e[index,c("wt","method_group","age_group","parity_group","fold")]
+person <- e[index,c("woman_row","wt","method_group","age_group","parity_group","fold")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month,levels=1:12)
 ended <- e$discontinued[index] & month==e$exposure[index]
 person$outcome <- factor(ifelse(!ended,"continue",
@@ -7851,7 +8153,7 @@ predict_cif <- function(fit,x){
 }
 e$oof_selected_risk_pct <- NA_real_
 for(f in 1:5){
-  fit<-nnet::multinom(formula,data=person[person$fold!=f,],
+  fit<-dhs_multinom_fit(formula,data=person[person$fold!=f,],
     weights=person$wt[person$fold!=f],maxit=250,trace=FALSE,MaxNWts=10000)
   if(fit$convergence!=0L)stop("Fold ",f," failed to converge")
   held<-which(e$fold==f)
@@ -7954,9 +8256,17 @@ print(differences,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["58_selected_reason_by_method_duration_class.R"]] <- list(
  language="R",
- packaged_sha256="d2f1d8830193a11eecadafeb66294b33423739cd17f25d933e5ec062f776b1ac",
+ packaged_sha256="91cf092728833af1ff7893f14075bd42eac10d4e24739f6d1a797c1555b6cdee",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -8031,9 +8341,17 @@ print(result,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["60_short_acting_selected_reason_distribution.R"]] <- list(
  language="R",
- packaged_sha256="adaf214568debe01ef557c520734996107dc392887e95417e115126a2ff85a65",
+ packaged_sha256="9ebbb22d90909143dea054b65d1c2e4033514d27e7c7d70e9358ab14641190c5",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -8106,9 +8424,17 @@ print(result,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["63_regional_episode_mix_vs_selected_risk.R"]] <- list(
  language="R",
- packaged_sha256="50a23dec7bde0cc69dc366166c4b6a78c7a7736304adafa870775f481db723d9",
+ packaged_sha256="d473827aafd1cc35e8f8829c3526351ac81001a2b2c4f07a376c94208653d167",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Matched-cohort regional comparison. Left share: weighted eligible original-
 # method episodes of that method / all weighted eligible modern episodes in
 # the region. Right risk: 12-month competing-risk cumulative incidence of
@@ -8177,9 +8503,17 @@ cat("Regional matched-cohort estimates written. Displayable rate cells:",
 # LANGUAGE: R
 MODULES[["68_binary_marital_four_parity_selected_regression.R"]] <- list(
  language="R",
- packaged_sha256="a2ad4a7345765e78019bc0582063eba3d72c0b60276dd6ef1894cf73ec7e95a8",
+ packaged_sha256="ecf424296547bdb6e29fc4b9e0fe286fa58d3ae6e832cc3b6deae07843a7047c",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Preview model requested 2026-10-06. This leaves the working HTML and earlier
 # regression files untouched. Original-method modern episodes (excluding EC)
 # enter a three-outcome discrete-time competing-event model: continue, selected
@@ -8218,9 +8552,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
                     e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -8231,7 +8566,7 @@ stopifnot(nrow(e) == 8611L, nrow(person) == 70691L,
   sum(person$outcome == "excluded") == 1039L)
 model_formula <- outcome ~ month + method_group + age_group + parity_group +
   marital_group + education + wealth_group + residence + region + start_year
-fit <- nnet::multinom(model_formula, data = person, weights = person$wt,
+fit <- dhs_multinom_fit(model_formula, data = person, weights = person$wt,
   maxit = 300, trace = FALSE, MaxNWts = 10000)
 if (fit$convergence != 0L) stop("Model did not converge")
 standard <- e[e$entry == 0L, ]
@@ -8303,9 +8638,17 @@ print(margins, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["70_four_marital_four_parity_selected_regression.R"]] <- list(
  language="R",
- packaged_sha256="dc79530abc2c134414b75d28a5418c5cc0bf62e2dafc0c0588d0ef46c446ccb7",
+ packaged_sha256="5f59a31dae08d2d0fa11d539350a05a49e84d864223cdd0ccae2c2772a59c2bc",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -8371,9 +8714,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
                     e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -8384,7 +8728,7 @@ stopifnot(nrow(e) == 8611L, nrow(person) == 70691L,
   sum(person$outcome == "excluded") == 1039L)
 model_formula <- outcome ~ month + method_group + age_group + parity_group +
   marital_group + education + wealth_group + residence + region + start_year
-fit <- nnet::multinom(model_formula, data = person, weights = person$wt,
+fit <- dhs_multinom_fit(model_formula, data = person, weights = person$wt,
   maxit = 300, trace = FALSE, MaxNWts = 10000)
 if (fit$convergence != 0L) stop("Model did not converge")
 standard <- e[e$entry == 0L, ]
@@ -8456,7 +8800,7 @@ if (reps > 0L) {
     standard_wt <- standard$wt * multiplier[standard$cluster]
     boot_data <- person
     boot_data$boot_wt <- boot_wt
-    m <- tryCatch(nnet::multinom(model_formula, data = boot_data, weights = boot_wt, summ=2,
+    m <- tryCatch(dhs_multinom_fit(model_formula, data = boot_data, weights = boot_wt, summ=2,
       maxit = 300, trace = FALSE, MaxNWts = 10000), error = function(err) {
         message(sprintf("Bootstrap %d error: %s", rep_no, conditionMessage(err)))
         NULL
@@ -8503,9 +8847,17 @@ if (reps > 0L) {
 # LANGUAGE: R
 MODULES[["72_five_wealth_four_marital_selected_regression.R"]] <- list(
  language="R",
- packaged_sha256="f348c95871ec41d85f3bd251c0af0976c6860b354fc0226836b6bb24a6d8ff74",
+ packaged_sha256="e6650e077eed0a4e6e81439c2792401fd18d8354879dbfb096f9ab9defa243ef",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -8573,9 +8925,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
                     e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -8586,7 +8939,7 @@ stopifnot(nrow(e) == 8611L, nrow(person) == 70691L,
   sum(person$outcome == "excluded") == 1039L)
 model_formula <- outcome ~ month + method_group + age_group + parity_group +
   marital_group + education + wealth_group + residence + region + start_year
-fit <- nnet::multinom(model_formula, data = person, weights = person$wt,
+fit <- dhs_multinom_fit(model_formula, data = person, weights = person$wt,
   maxit = 300, trace = FALSE, MaxNWts = 10000)
 if (fit$convergence != 0L) stop("Model did not converge")
 standard <- e[e$entry == 0L, ]
@@ -8658,7 +9011,7 @@ if (reps > 0L) {
     standard_wt <- standard$wt * multiplier[standard$cluster]
     boot_data <- person
     boot_data$boot_wt <- boot_wt
-    m <- tryCatch(nnet::multinom(model_formula, data = boot_data, weights = boot_wt, summ=2,
+    m <- tryCatch(dhs_multinom_fit(model_formula, data = boot_data, weights = boot_wt, summ=2,
       maxit = 300, trace = FALSE, MaxNWts = 10000), error = function(err) {
         message(sprintf("Bootstrap %d error: %s", rep_no, conditionMessage(err)))
         NULL
@@ -8705,9 +9058,17 @@ if (reps > 0L) {
 # LANGUAGE: R
 MODULES[["75_injectable_only_full_selected_regression.R"]] <- list(
  language="R",
- packaged_sha256="07a56ddc6500c9d037f97f7b55f2412a08f94f75823ccad5970285df32880eea",
+ packaged_sha256="784869af1495fdbf2f2d237b36f8decd13d8a94bc24a14460a16c0e8fc69a056",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -8775,9 +9136,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
                     e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -8788,7 +9150,7 @@ stopifnot(nrow(e) > 3000L, nrow(person) > 25000L,
   sum(person$outcome == "excluded") > 500L)
 model_formula <- outcome ~ month + age_group + parity_group +
   marital_group + education + wealth_group + residence + region + start_year
-fit <- nnet::multinom(model_formula, data = person, weights = person$wt,
+fit <- dhs_multinom_fit(model_formula, data = person, weights = person$wt,
   maxit = 300, trace = FALSE, MaxNWts = 10000)
 if (fit$convergence != 0L) stop("Model did not converge")
 standard <- e[e$entry == 0L, ]
@@ -8860,7 +9222,7 @@ if (reps > 0L) {
     standard_wt <- standard$wt * multiplier[standard$cluster]
     boot_data <- person
     boot_data$boot_wt <- boot_wt
-    m <- tryCatch(nnet::multinom(model_formula, data = boot_data, weights = boot_wt, summ=2,
+    m <- tryCatch(dhs_multinom_fit(model_formula, data = boot_data, weights = boot_wt, summ=2,
       maxit = 300, trace = FALSE, MaxNWts = 10000), error = function(err) {
         message(sprintf("Bootstrap %d error: %s", rep_no, conditionMessage(err)))
         NULL
@@ -8907,9 +9269,17 @@ if (reps > 0L) {
 # LANGUAGE: R
 MODULES[["77_pill_only_full_selected_regression.R"]] <- list(
  language="R",
- packaged_sha256="36641cb3ff61bb22fd6b742c2298e40b2e876ae5eaf1042e04a8fe4aa3acfca1",
+ packaged_sha256="034c467163fe18ad3158cc818e69732c2fb4adf8e46977fff94a62a01b85b0da",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -8977,9 +9347,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
                     e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -8989,7 +9360,7 @@ stopifnot(nrow(e) > 700L, nrow(person) > 4000L,
   sum(person$outcome == "selected") > 300L)
 model_formula <- outcome ~ month + age_group + parity_group +
   marital_group + education + wealth_group + residence + region + start_year
-fit <- nnet::multinom(model_formula, data = person, weights = person$wt,
+fit <- dhs_multinom_fit(model_formula, data = person, weights = person$wt,
   maxit = 300, trace = FALSE, MaxNWts = 10000)
 if (fit$convergence != 0L) stop("Model did not converge")
 standard <- e[e$entry == 0L, ]
@@ -9064,7 +9435,7 @@ if (reps > 0L) {
     standard_wt <- standard$wt * multiplier[standard$cluster]
     boot_data <- person
     boot_data$boot_wt <- boot_wt
-    m <- tryCatch(nnet::multinom(model_formula, data = boot_data, weights = boot_wt, summ=2,
+    m <- tryCatch(dhs_multinom_fit(model_formula, data = boot_data, weights = boot_wt, summ=2,
       maxit = 300, trace = FALSE, MaxNWts = 10000), error = function(err) {
         message(sprintf("Bootstrap %d error: %s", rep_no, conditionMessage(err)))
         NULL
@@ -9111,9 +9482,17 @@ if (reps > 0L) {
 # LANGUAGE: R
 MODULES[["79_age_15_19_selected_by_method.R"]] <- list(
  language="R",
- packaged_sha256="cd316e8cbd3eba0e39111a8bdac2e7c8af9677bf0dde04fbbff3d144314c279c",
+ packaged_sha256="ac8af59ca1575921625c66c912121f899ddb706591ed1c9b004e09260ca835a0",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -9211,9 +9590,17 @@ print(result, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["80_descriptive_characteristics_selected_reasons.R"]] <- list(
  language="R",
- packaged_sha256="821feedd076c9562f5c34bb407b90459db72b743e83e65e96da70be12944cab2",
+ packaged_sha256="c7e43729d508b9e6ca8d2282e34b2f5b703fdcc2162439e0ee76f16dab45373f",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -9408,9 +9795,17 @@ print(cells[, c("characteristic", "group", "eligible_episodes",
 # LANGUAGE: R
 MODULES[["82_descriptive_characteristics_method_experience_reasons.R"]] <- list(
  language="R",
- packaged_sha256="834c9fee506b2722967819d4029dd0c3a96e557f1533c45e34bce9098c8afe95",
+ packaged_sha256="18ed68c39bcecc7566970465e4e7eb29f2a7b5b0a959860b6d6d092773627c4e",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -9604,9 +9999,17 @@ print(cells[, c("characteristic", "group", "eligible_episodes",
 # LANGUAGE: R
 MODULES[["84_method_experience_age_timepoints.R"]] <- list(
  language="R",
- packaged_sha256="7fa899ccb4056b94d33039bc9262286756244905911ff91721f18241fd467e0a",
+ packaged_sha256="8779e5be729ff3af957c3c5e08b964c40c197e9082b9408b3054c359dd014a93",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # A compact, descriptive example for the subgroup-reason section. These are
 # survey-weighted competing-risk life-table point estimates by age at method
 # start. The selected outcome excludes wanted pregnancy, partner disapproval,
@@ -9654,9 +10057,17 @@ print(result, row.names = FALSE)
 # LANGUAGE: R
 MODULES[["86_top_three_reasons_by_subgroup_and_method.R"]] <- list(
  language="R",
- packaged_sha256="132854e97e27255cabbfa5cacf4ba2faba09595627dcb2f2a96ce3dcc71b6dc4",
+ packaged_sha256="74bfe414f221f547286346caa92c85319580632ae64f58ab68e22ca6d97b7ca9",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Descriptive rankings of the five retained 12-month reason-specific
 # cumulative incidences, by covariate group and original modern method.
 # Wanted pregnancy, partner disapproval, other fertility-related and other
@@ -9771,9 +10182,17 @@ print(with(subset(result, rank == 1),
 # LANGUAGE: R
 MODULES[["88_direct_next_month_modern_switch_life_table.R"]] <- list(
  language="R",
- packaged_sha256="249e49c2d1d873dc1d63eb7f2a77cac6179a724d672559d1d3c91bb9c62127c6",
+ packaged_sha256="e9bf4afdd211eeee915f74d67df64505e38c80fa518524727cc766468d7b5866",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Direct modern-to-modern switching within 12 months of a modern-method start.
 # Mirrors the weighted monthly multiple-decrement risk sets used to replicate
 # Ethiopia DHS 2024-25 Table 7.11, but counts a switch only when a different
@@ -9936,9 +10355,17 @@ cat(sprintf('All modern excluding EC, direct next-month modern switch: %.4f%%; P
 # LANGUAGE: R
 MODULES[["90_regional_method_experience_detailed.R"]] <- list(
  language="R",
- packaged_sha256="23e13476389012e7f9774b7557fa7d36cd6cb26a7a679f074f2c1edf5842acee",
+ packaged_sha256="ab53beece78f46be95eb465ff254d17fa4fe63fe6bcf61499f1beed60fb32fed",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -10171,9 +10598,17 @@ print(rates[, c("region", "eligible_episodes_n", "selected_endings_n",
 # LANGUAGE: R
 MODULES[["91_plot_regional_method_experience_detailed.R"]] <- list(
  language="R",
- packaged_sha256="b5ffd7a0d02026b75745967c8223520cb8773df290b07d4eeb322d344117b29e",
+ packaged_sha256="d928c266d32c735ddbbbd2d9abc0a06cc2b80a9db56f579920ac43ee09bd4cd6",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Presentation-style display of the updated regional competing-risk estimates.
 # Run Code/90_regional_method_experience_detailed.R first. The left panel is
 # the 12-month cumulative incidence of the seven retained calendar reasons.
@@ -10340,9 +10775,17 @@ draw(); dev.off()
 # LANGUAGE: R
 MODULES[["93_regional_starts_vs_selected_risk_preview.R"]] <- list(
  language="R",
- packaged_sha256="2836a336065172a489604f9f51ce1bae137fb06d6ce9d48c0dd230e84c59c9e8",
+ packaged_sha256="5936c12db27201fed160f62a9511bb1d4e15cf06df3bf78095f203c2be7d5027",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Preview only: regional share of all observed contraceptive method starts
 # alongside the cause-specific 12-month probability of ending each named
 # modern method for method experience or access. This does not edit the
@@ -10526,9 +10969,17 @@ for (method in names(methods)) {
 # LANGUAGE: R
 MODULES[["95_regional_actionable_timepoints.R"]] <- list(
  language="R",
- packaged_sha256="f8d8fe362e7b92e9877fcc4a6b89321d82289a1ec1b917a8557b4d6d590ccd65",
+ packaged_sha256="b0b68b07991b0552f5b96bf2af950b7c67ef6e1df784ef5e1d705581fc795e28",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -10673,9 +11124,17 @@ print(result[, c("region", "month", "cumulative_probability_pct",
 # LANGUAGE: R
 MODULES[["96_plot_regional_actionable_timepoints.R"]] <- list(
  language="R",
- packaged_sha256="435cbad4d8d22a538ed7c27b4fb8bfee07c87fd2c32945a6f2d00ae5671ac4b1",
+ packaged_sha256="10c041782113afa6ee12a29789047aea0336ee39ba8e85471e4972558b6ea744",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Static companion to the interactive regional time-point preview. Source CSV
 # is generated by Code/95_regional_actionable_timepoints.R. Use a single fixed
 # 0–30% color scale across all regions and months; columns are cumulative and
@@ -10763,9 +11222,17 @@ draw(); dev.off()
 # LANGUAGE: R
 MODULES[["98_preview_actionable_heatmap_locator.R"]] <- list(
  language="R",
- packaged_sha256="da0e52965d81b8b544686f7304a7fdb7659b772b5de72d7acafef294bef5f807",
+ packaged_sha256="ee7e319eae8d51a16ac91d1ec2f57b6d9aa6b68265627b282c8cd47f270adcc4",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Review-only 16:9 layout: four cumulative-risk time points, their early share,
 # and a labeled 2025 Ethiopia regional locator. Does not edit working HTML/PPTX.
 library(ggplot2); library(sf); library(grid); library(gridExtra)
@@ -10866,9 +11333,17 @@ grid.draw(layout);dev.off()
 # LANGUAGE: R
 MODULES[["99_leadership_regional_timing_locator.R"]] <- list(
  language="R",
- packaged_sha256="95106a98043ed44c3c68bab3004a5d13ea5addd75f0bc2b94ea2ece151598474",
+ packaged_sha256="c550b6389e744970e6072df0000576985359b3a506df3e596ae3086bf415fdf7",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Leadership view: all 14 survey regions plus national benchmark. Somali is
 # displayed last and excluded from rank ordering because only 5 events occurred.
 library(ggplot2); library(sf); library(grid); library(gridExtra)
@@ -10946,9 +11421,17 @@ grid.draw(layout);dev.off()
 # LANGUAGE: R
 MODULES[["100_regional_initiation_mix_stacked.R"]] <- list(
  language="R",
- packaged_sha256="952af5552b045a3e8906e199167a66e8a22f007c413fd06c8917207dca2e5677",
+ packaged_sha256="453b00f31f75fd829420389174594d89de510de6b4ae631241542e8e0c5a1f0b",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Reproduce the regional method-initiation mix shown in the working HTML.
 # Input is the previously parsed DHS monthly contraceptive calendar, one row
 # per continuous method-use run. A start is counted only when it begins within
@@ -11071,9 +11554,17 @@ cat("Saved regional seven-category initiation mix,",nrow(starts),"observed start
 # LANGUAGE: R
 MODULES[["103_preview_regional_method_discontinuation_heatmap.R"]] <- list(
  language="R",
- packaged_sha256="8a310b7b2a21e5c33889783db7b8bfbfb5f4919cc0a6613b630965871b175f88",
+ packaged_sha256="614f56b9ef6bd2f9130c6f70b177d2975e8c9f00c541ddcbbf1a7a7d47624905",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Companion to the regional seven-category initiation-mix chart.
 # Uses the previously calculated, survey-weighted all-cause 12-month
 # life-table probabilities by original method and region. The national
@@ -11137,9 +11628,17 @@ cat("Saved regional method-rate heatmap preview;",sum(!cells$display),"sparse ce
 # LANGUAGE: R
 MODULES[["105_regional_actionable_method_pair_preview.R"]] <- list(
  language="R",
- packaged_sha256="74f0a23fb874266f2054dbe6e3ab4c11c895514666a70e683961d0175faf4e07",
+ packaged_sha256="b970a883974cb9184e2a84097370a9f2e1d6989644e1097d18421233911909bf",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Regional counterpart to the national paired-bar slide, restricted to
 # program-actionable method experience or access endings.
 #
@@ -11265,9 +11764,17 @@ print(res[res$region=="National",c("method","share_all_starts_pct","actionable_1
 # LANGUAGE: R
 MODULES[["108_regional_actionable_reason_mix_by_method.R"]] <- list(
  language="R",
- packaged_sha256="50adace7f250f4d3abce2b6f1d847af59b390447e640cd931e04aac16931d605",
+ packaged_sha256="834237d902c2e3439a0344657104f318f26c587c0b1e0145758c4c018456588b",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Five method-specific regional heatmaps of first-year, program-actionable
 # original-method endings. This uses the same complete-case episode cohort,
 # reason codes, survey weights, delayed-entry risk sets, and multiple-decrement
@@ -11472,9 +11979,17 @@ print(unique(result[, c("method", "region", "eligible_episodes_n",
 # LANGUAGE: R
 MODULES[["112_regional_actionable_adjusted_models.R"]] <- list(
  language="R",
- packaged_sha256="d4090bb54ac64b905859892a3df755c6f9576d58755817037004bb419d2f6925",
+ packaged_sha256="04294e6ee0b07ec51be94dae705cf457a4d106e7112c89e366adedacd7a9dc55",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -11571,9 +12086,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
   e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster", "stratum")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -11591,7 +12107,7 @@ f_method <- outcome ~ month + method_group + region
 f_full <- outcome ~ month + method_group + region + age_group + parity_group +
   marital_group + education + wealth_group + residence + start_year
 fit_model <- function(formula) {
-  m <- nnet::multinom(formula, data = person, weights = person$wt,
+  m <- dhs_multinom_fit(formula, data = person, weights = person$wt,
     maxit = 300, trace = FALSE, MaxNWts = 10000)
   if (m$convergence != 0L) stop("Multinomial model did not converge")
   m
@@ -11660,7 +12176,7 @@ if (B > 0L) {
     p$boot_weight <- p$wt * multiplier[as.character(p$cluster)]
     std_weight <- standard$wt * multiplier[as.character(standard$cluster)]
     fit_once <- function(formula) {
-      m <- tryCatch(nnet::multinom(formula, data = p,
+      m <- tryCatch(dhs_multinom_fit(formula, data = p,
         weights = boot_weight, maxit = 300, trace = FALSE,
         MaxNWts = 10000), error = function(err) {
           if (b == 1L) message("Bootstrap fit error: ", conditionMessage(err))
@@ -11730,9 +12246,17 @@ if (B > 0L) {
 # LANGUAGE: R
 MODULES[["114_regional_actionable_sample_audit.R"]] <- list(
  language="R",
- packaged_sha256="6dee6dd7803730e89fbb8089ae6c4c92bbb860e2e1cfdb09852ec30750d2f15b",
+ packaged_sha256="f8599971c5632ce7fd9540c8c39248dac51065b45a17bce42f9feacfdbe7999e",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Pre-model sample audit for 12-month, program-actionable discontinuation.
 # This script only reads existing data and counts episodes/events. It does not
 # fit or refit a regression, calculate a p-value, or alter the working HTML.
@@ -11832,9 +12356,17 @@ cat("\nFlags are review prompts, not a formal power calculation.\n")
 # LANGUAGE: R
 MODULES[["115_dhs_late_entry_reconciliation.R"]] <- list(
  language="R",
- packaged_sha256="a354e80ef6e20427bef5408395514e0fdb01bde895d1c3d87fb3e5ca50e6515e",
+ packaged_sha256="7c5f38624f2b2f88f591de1d23cea6102aa409ef317d05b24cc10933c6a7f195",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Read-only numeric reconciliation of the published-DHS-style late-entry cohort
 # and the saved program-actionable regional results. Does not fit a model.
 project <- Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
@@ -11971,9 +12503,17 @@ cat("PASS:", nrow(checks), "saved actionable rates match the",
 # LANGUAGE: R
 MODULES[["117_export_regional_actionable_model_results.R"]] <- list(
  language="R",
- packaged_sha256="ab20180e0b9b2f0b7c4becff3299581b512309188acc96dc974e91edaf1d42ab",
+ packaged_sha256="11b9ce9609ab9826b9864e21ab9d73a76902a8fc0560b26d1e8ba375b12fe616",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Export the already-fitted regional actionable-ending models for review.
 # This script does not refit models or alter the working analysis/deck.
 
@@ -12120,9 +12660,17 @@ print(pred[, c("region", "method_adjusted_pct", "full_adjusted_pct")], row.names
 # LANGUAGE: R
 MODULES[["119_regional_actionable_design_pvalues.R"]] <- list(
  language="R",
- packaged_sha256="4294388b7f3b87cdaee794f5991a8a9ddfbe7978658d29f6d550e4b348d33a57",
+ packaged_sha256="512c7afe713a28e00244a346d3249986254c5a37af6a3cd2d5078ec8fa71f82b",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -12149,9 +12697,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out=n),
   e$entry, observed_months), use.names=FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster", "stratum")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels=1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 actionable <- c(1L, 4L, 5L, 6L, 7L, 8L, 10L, 15L)
@@ -12223,9 +12772,17 @@ print(result[result$model == "Full model" &
 # LANGUAGE: R
 MODULES[["120_relevel_regional_actionable_models.R"]] <- list(
  language="R",
- packaged_sha256="79f278b22fe2c67eccddd593080fbf0985729b2a0708feb4caef07894263ed93",
+ packaged_sha256="f5ccfeeb8de326695c732c6029a64a1ef0fded6ec37ea42b5cb826bb1ad2a9cf",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Refit the two existing multinomial episode-month models with presentation
 # reference categories. Releveling changes coefficients, not fitted risks.
 # The original model objects and working HTML/PPTX remain untouched.
@@ -12273,9 +12830,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out=n),
   e$entry, observed_months), use.names=FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels=1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 actionable <- c(1L, 4L, 5L, 6L, 7L, 8L, 10L, 15L)
@@ -12287,7 +12845,7 @@ stopifnot(nrow(person) == 70691L,
   !anyNA(person))
 
 fit <- function(formula) {
-  m <- nnet::multinom(formula, data=person, weights=person$wt,
+  m <- dhs_multinom_fit(formula, data=person, weights=person$wt,
     maxit=300, trace=FALSE, MaxNWts=10000)
   stopifnot(m$convergence == 0L)
   m
@@ -12322,9 +12880,17 @@ saveRDS(full, file.path(support,
 # LANGUAGE: R
 MODULES[["122_matched_cohort_regional_raw_for_visual.R"]] <- list(
  language="R",
- packaged_sha256="a66576e4c7cb21ca695fc47e765adf633625260c8caeceea4043213bc02f6cd3",
+ packaged_sha256="34fa4caedb380dbed9d50a36edcfad9fe596216513bd8b3288761ff4ce3962ea",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Preview comparison only: calculate unadjusted, weighted 12-month competing-risk
 # probabilities among the same episodes observed from method start that form the
 # standardization reference for the adjusted model. All ending reasons reduce
@@ -12379,9 +12945,17 @@ print(result, row.names=FALSE)
 # LANGUAGE: R
 MODULES[["126_regional_own_mix_model_predictions.R"]] <- list(
  language="R",
- packaged_sha256="58af09899e92c1051c8957674492a6f54dd5b78cacc332645387871c3f8b63b6",
+ packaged_sha256="341f13cef6f0b4d9f4bbbd80e4678b722a3b036f9575993162b279f01de7d9fa",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Model 2 predicted 12-month actionable-ending risk averaged over observed
 # method starts actually recorded in each region. This retains each region's
 # method and measured covariate mix. It is distinct from common-mix predictions.
@@ -12461,9 +13035,17 @@ print(result[, c("region", "observed_start_episodes_n", "matched_start_raw_pct",
 # LANGUAGE: R
 MODULES[["129_test_regional_actionable_differences.R"]] <- list(
  language="R",
- packaged_sha256="26bb80dfa55bdef753864b114f8795921c2dae01f23d9580ec254b29c9b9922d",
+ packaged_sha256="d0520fa9aae6c1b195ef6f9812e4a20232980afb307af031a21bd3aacfe8e810",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -12560,9 +13142,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
   e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster", "stratum")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -12604,7 +13187,7 @@ one_replicate <- function(b) {
   p <- person
   p$boot_weight <- p$wt * multiplier[as.character(p$cluster)]
   std_weight <- standard$wt * multiplier[as.character(standard$cluster)]
-  model <- tryCatch(nnet::multinom(full_formula, data = p,
+  model <- tryCatch(dhs_multinom_fit(full_formula, data = p,
     weights = boot_weight, maxit = 300, trace = FALSE,
     MaxNWts = 10000), error = function(err) NULL)
   if (is.null(model) || model$convergence != 0L)
@@ -12636,9 +13219,17 @@ cat(sprintf("Full-model regional comparison: %d/%d valid design-bootstrap refits
 # LANGUAGE: R
 MODULES[["130_regional_actionable_raw_pairwise_bootstrap.R"]] <- list(
  language="R",
- packaged_sha256="086f21da98d10bc09b85268ed86e7943ee4a06e571dec0afec92740cbf87866b",
+ packaged_sha256="79110f2f05b5c9a3b739d83b551110e491d73a740f5c0217d46f096ed5ed324f",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -12768,9 +13359,17 @@ cat(sprintf("Raw regional comparison: %d/%d valid 12-month draws\n",
 # LANGUAGE: R
 MODULES[["131_summarize_regional_actionable_pairwise_tests.R"]] <- list(
  language="R",
- packaged_sha256="c8d37024205dbe4118b407f9852c730c9bb0b064d601404b171b37101cae989b",
+ packaged_sha256="38416d72290a11c7e10da119c13eddbc17c959f067a4dfc6e731922265a5358e",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Test whether 12-month cumulative incidence of potentially actionable
 # original-modern-method discontinuation differs across Ethiopia regions.
 # The observed estimates use the DHS-style delayed-entry competing-risk life
@@ -12960,9 +13559,17 @@ print(full[full$significant_5pct,
 # LANGUAGE: R
 MODULES[["133_test_regional_actionable_method_mix_differences.R"]] <- list(
  language="R",
- packaged_sha256="e527f4f937ad93cfe98ef6f985006594bea8b5a2bffd9a6c8184cdb0ffea249b",
+ packaged_sha256="682f85d3930fb2cedd819939cf23d1869913f4251933863530444689022b91c8",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Algebraically identical monthly multinomial prediction, with the design
 # matrix constructed once instead of once per duration month.
 fast_survey_cif<-function(model,x,weights,event){
@@ -13059,9 +13666,10 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out = n),
   e$entry, observed_months), use.names = FALSE)
-person <- e[index, c("wt", "method_group", "age_group", "parity_group",
+person <- e[index, c("woman_row","wt", "method_group", "age_group", "parity_group",
   "marital_group", "education", "wealth_group", "residence", "region",
   "start_year", "cluster", "stratum")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels = 1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -13101,7 +13709,7 @@ one_replicate <- function(b) {
   p <- person
   p$boot_weight <- p$wt * multiplier[as.character(p$cluster)]
   std_weight <- standard$wt * multiplier[as.character(standard$cluster)]
-  model <- tryCatch(nnet::multinom(model_formula, data = p,
+  model <- tryCatch(dhs_multinom_fit(model_formula, data = p,
     weights = boot_weight, maxit = 300, trace = FALSE,
     MaxNWts = 10000), error = function(err) NULL)
   if (is.null(model) || model$convergence != 0L)
@@ -13133,9 +13741,17 @@ cat(sprintf("Method-and-duration regional comparison: %d/%d valid design-bootstr
 # LANGUAGE: R
 MODULES[["134_regional_actionable_all_region_method_mix.R"]] <- list(
  language="R",
- packaged_sha256="ebd32b18f082c7b3902d436923760ee706478c4eab584e76dc46feafc209ac60",
+ packaged_sha256="e97dd123ade33059bcb05976a29793c111d44762ca36c66e64af6934e0571360",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -13190,7 +13806,8 @@ observed_months <- pmax(0L, pmin(12L, e$exposure) - e$entry)
 index <- rep(seq_len(nrow(e)), observed_months)
 month <- unlist(Map(function(first, n) seq.int(first + 1L, length.out=n),
   e$entry, observed_months), use.names=FALSE)
-person <- e[index, c("wt", "region", "method_group", "cluster", "stratum")]
+person <- e[index, c("woman_row","wt", "region", "method_group", "cluster", "stratum")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month, levels=1:12)
 ended <- e$discontinued[index] & month == e$exposure[index]
 person$outcome <- factor(ifelse(!ended, "continue",
@@ -13274,7 +13891,7 @@ one_replicate <- function(b) {
   p <- person
   p$boot_weight <- p$wt * multiplier[as.character(p$cluster)]
   std_weight <- standard$wt * multiplier[as.character(standard$cluster)]
-  model <- tryCatch(nnet::multinom(
+  model <- tryCatch(dhs_multinom_fit(
     outcome ~ month + method_group + region, data=p,
     weights=boot_weight, maxit=300, trace=FALSE, MaxNWts=10000),
     error=function(err) NULL)
@@ -13367,9 +13984,17 @@ print(summary[,c("region","observed_start_n","model_own_mix_pct",
 # LANGUAGE: R
 MODULES[["138_regional_actionable_3_month_pairwise_tests.R"]] <- list(
  language="R",
- packaged_sha256="8aa18e1bd9b454499622350ab1063b2aeaab8605a65d0d2d3d6bf6fdf0dc822a",
+ packaged_sha256="2ed82526b59308dfba5efb901e0c74e1f578e6427b4491300b33f780f40ab110",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Pairwise tests of unadjusted 3-month cumulative incidence of discontinuation
 # due to potentially actionable reasons. Same 8,611 eligible modern-method
 # episodes, competing-event life table, survey weights, and stratified PSU
@@ -13426,9 +14051,17 @@ print(head(results[, c("higher_region", "lower_region", "difference_pp",
 # LANGUAGE: R
 MODULES[["139_plot_regional_actionable_three_comparisons.R"]] <- list(
  language="R",
- packaged_sha256="cd81cdada0025899e1a1868e39bca00ea9c75a185b72675e51df6ffbad4a640b",
+ packaged_sha256="7d660fc89b5422703d50e45ee1b9b94c5492632478a82d8dc8d2a57d1aa96548",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Presentation view of three distinct regional comparisons for 12-month
 # actionable discontinuation. The figure displays three policy-relevant pairs
 # that pass Holm correction in at least one analysis. It does not claim that
@@ -13535,9 +14168,17 @@ print(d[,c("pair","stage","gap","low","high","holm_p")],row.names=FALSE)
 # LANGUAGE: R
 MODULES[["141_regional_method_interaction_actionable.R"]] <- list(
  language="R",
- packaged_sha256="c3886aa805782eb73eeeae74f2e2a3cdeac337ee9a26e3b348a2f2e865ee64a8",
+ packaged_sha256="1864a238a098a07da89473e7503c48e45d744429c2a44c2623a478f3fe6669a9",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -13600,9 +14241,10 @@ exposure_months <- pmax(0L,pmin(12L,e$exposure)-e$entry)
 idx <- rep(seq_len(nrow(e)),exposure_months)
 mo <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
   e$entry,exposure_months),use.names=FALSE)
-person <- e[idx,c("wt","region_name","method_group","age_group",
+person <- e[idx,c("woman_row","wt","region_name","method_group","age_group",
   "parity_group","marital_group","education","wealth_group","residence",
   "start_year","cluster","stratum")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(mo,levels=1:12)
 ended <- e$discontinued[idx]&mo==e$exposure[idx]
 person$outcome <- factor(ifelse(!ended,"continue",
@@ -13639,7 +14281,7 @@ calculate <- function(model,weights) {
     paste(grid$region[j],grid$method[j],times,sep="::")))
   result
 }
-fit <- nnet::multinom(formula,data=person,weights=person$wt,
+fit <- dhs_multinom_fit(formula,data=person,weights=person$wt,
   maxit=400,trace=FALSE,MaxNWts=10000)
 stopifnot(fit$convergence==0L)
 point <- calculate(fit,reference$wt)
@@ -13672,7 +14314,7 @@ replicate_once <- function(b) {
   p <- person
   p$boot_weight <- p$wt*mult[as.character(p$cluster)]
   w <- reference$wt*mult[as.character(reference$cluster)]
-  model <- tryCatch(nnet::multinom(formula,data=p,weights=boot_weight,
+  model <- tryCatch(dhs_multinom_fit(formula,data=p,weights=boot_weight,
     maxit=400,trace=FALSE,MaxNWts=10000),error=function(err)NULL)
   if(is.null(model)||model$convergence!=0L)
     return(rep(NA_real_,length(point)))
@@ -13732,9 +14374,17 @@ print(tests,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["142_plot_regional_method_interaction_actionable.R"]] <- list(
  language="R",
- packaged_sha256="68a0334ac6d4d3f4d9dc8cd92048e35dc241d0d8fdeba5741b4e49d3a0bf0d61",
+ packaged_sha256="d97870e806872183554273a1ad117590cbac862a27952f8c082bc5c68ce4211b",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Show fully adjusted, survey-bootstrap 12-month actionable discontinuation
 # risks for the four prespecified regions and three main methods.
 project <- Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
@@ -13803,9 +14453,17 @@ cat("Saved plot\n")
 # LANGUAGE: R
 MODULES[["144_global_regional_method_interaction_test.R"]] <- list(
  language="R",
- packaged_sha256="92959541f76443752e241dd05f2c413ef0e46a09a7c07e50520dcc6c5b6902bd",
+ packaged_sha256="9a8750e2ff8df1c4425dc93a2b1503da4b86f307961c3ea069537913e4a9e21a",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Survey-bootstrap Wald test of six prespecified risk-scale contrasts:
 # for each selected region pair, its injectable 12-month gap minus the
 # corresponding implant or pill gap. This tests effect modification jointly.
@@ -13844,9 +14502,17 @@ print(result,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["145_test_actionable_regional_rates_injectables_implants.R"]] <- list(
  language="R",
- packaged_sha256="0d752e9df1961c62e627ec5800f5732fa1ebc8307141eb68b10a9b04c9e730d7",
+ packaged_sha256="36f556c387a83f66043dde7092014ac1fbe139d4b0da7c8fd21a956873d1b978",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -14046,9 +14712,17 @@ print(pairs[pairs$significant_5pct,],row.names=FALSE)
 # LANGUAGE: R
 MODULES[["146_plot_actionable_regional_injectables_implants.R"]] <- list(
  language="R",
- packaged_sha256="0ea20f2919825e56487b36ec1d04c18171937c07dbca7bb7a1e09ae3d1a0131e",
+ packaged_sha256="3bfc63b57a372705fb0c4b5c1315d0afbdda3b1aa2c160903174bff3f932f8d6",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Presentation-readable comparison of observed method-specific regional risks.
 project <- Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
 support <- file.path(project,"output","Supporting_data")
@@ -14138,9 +14812,17 @@ cat("Saved regional method-specific test figure\n")
 # LANGUAGE: R
 MODULES[["148_injectable_actionable_fully_adjusted_regional_tests.R"]] <- list(
  language="R",
- packaged_sha256="94726f09de4536f982e797318dc574cf045e78e3ae6e676a2df710bb018161ef",
+ packaged_sha256="57c77f51c8281f067dd26acf7fac76bb8d9fc046a9553eaf99793ef50eb4c001",
  args=character(),
- code=r"-----(
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+
 # Full DHS sampling frame, including PSUs with no eligible outcome records.
 full_survey_frame <- function(){
  r<-Sys.getenv('ETHIOPIA_PROJECT_ROOT'); stopifnot(nzchar(r))
@@ -14203,9 +14885,10 @@ exposure <- pmax(0L,pmin(12L,e$exposure)-e$entry)
 index <- rep(seq_len(nrow(e)),exposure)
 month <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
   e$entry,exposure),use.names=FALSE)
-person <- e[index,c("wt","region","age_group","parity_group",
+person <- e[index,c("woman_row","wt","region","age_group","parity_group",
   "marital_group","education","wealth_group","residence","start_year",
   "cluster","stratum")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month,levels=1:12)
 ended <- e$discontinued[index] & month==e$exposure[index]
 actionable <- c(1L,4L,5L,6L,7L,8L,10L,15L)
@@ -14216,7 +14899,7 @@ reference <- e[e$entry==0L,]
 stopifnot(nrow(reference)==4156L)
 formula <- outcome ~ month + region + age_group + parity_group +
   marital_group + education + wealth_group + residence + start_year
-fit <- nnet::multinom(formula,data=person,weights=person$wt,
+fit <- dhs_multinom_fit(formula,data=person,weights=person$wt,
   maxit=400,trace=FALSE,MaxNWts=10000)
 stopifnot(fit$convergence==0L)
 saveRDS(fit,file.path(support,
@@ -14290,7 +14973,7 @@ one <- function(b) {
   p <- person
   p$boot_weight <- p$wt*mult[p$id]
   w <- reference$wt*mult[reference$id]
-  model <- tryCatch(nnet::multinom(formula,data=p,weights=boot_weight,summ=2,
+  model <- tryCatch(dhs_multinom_fit(formula,data=p,weights=boot_weight,summ=2,
     maxit=400,trace=FALSE,MaxNWts=10000),error=function(err)NULL)
   if (is.null(model) || model$convergence!=0L)
     return(rep(NA_real_,length(point)))
@@ -14371,9 +15054,17 @@ print(pairs[pairs$significant_5pct,],row.names=FALSE)
 # LANGUAGE: R
 MODULES[["149_plot_injectable_three_stage_regional_tests.R"]] <- list(
  language="R",
- packaged_sha256="293ffa05430272fda8e5c0a6bd47acf91380b523d28970560286cc0984a0040b",
+ packaged_sha256="d4e91da65f6a35f8d7f2683cb996fcb0700a0af2f9b4741a4e78c77c12784f76",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Observed and fully adjusted injectable risks; the middle method-mix stage
 # equals observed within a single original method and is explained in HTML.
 project <- Sys.getenv("ETHIOPIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
@@ -14472,9 +15163,17 @@ cat("Saved injectable stage comparison figure\n")
 # LANGUAGE: R
 MODULES[["163_ethiopia_current_user_switch_duration.R"]] <- list(
  language="R",
- packaged_sha256="9b37c87c625660e0dc6d3f09ee57d188c5325667df5fb06da8cc38d47711eb4f",
+ packaged_sha256="e2e1cb8a5cdd7decdfff28def902879c8d913b3356b6cd8a2ae029de65d80e45",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Ethiopia DHS 2024–25: transparent bridges from original-method endings to
 # modern-use status among projected current users. This script does not
 # estimate a causal effect of preventing discontinuation.
@@ -14755,9 +15454,17 @@ print(scenario_bridge[,c('scenario','first_year_gross_endings','first_year_not_d
 # LANGUAGE: R
 MODULES[["165_duration_aware_cause_pp_tables.R"]] <- list(
  language="R",
- packaged_sha256="b7823767b2fb15ff204c155c43f1434dc90517ff53eb351781969c5b5c31faa7",
+ packaged_sha256="5a377e40c4008d3ca91f43466590ba0469e6b9f141dddf1d93cd046da78a7537",
  args=character(),
- code=r"-----(# Recreate the method-by-cause percentage-point matrix from the duration-aware
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+# Recreate the method-by-cause percentage-point matrix from the duration-aware
 # current-user analysis. The source CSV contains survey-derived projections of
 # women who end their current method for an actionable reason and are not using
 # any modern method 12 months after the current-use landmark. It has already
@@ -14804,9 +15511,17 @@ message("Saved ", output_file)
 # LANGUAGE: R
 MODULES[["166_model_based_duration_method_preview.R"]] <- list(
  language="R",
- packaged_sha256="02e24afb29ecf36e564c063b4fb405e0db9ff524ec1176f36613849dda648536",
+ packaged_sha256="433ca6438ec23cf18004dae02e0afc7a03d1b9782e5defa640032efcba1b7ea6",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Preview only. Estimate next-12-month potentially actionable original-method
 # ending risks for current Ethiopia modern-method users, conditional on the
 # elapsed duration already accrued. This does not replace existing tables.
@@ -14843,10 +15558,10 @@ stopifnot(nrow(e)>7000,all(e$action_event+e$other_event<=1L),
 suppressPackageStartupMessages(library(survival))
 fit_candidates <- function(event){
   choices <- c('weibull','loglogistic','lognormal','exponential')
-  fits <- lapply(choices,function(d)survreg(
+  fits <- lapply(choices,function(d)dhs_aft_fit(
     as.formula(paste0('Surv(exposure,',event,')~method')),
     data=e,weights=wt,dist=d,control=survreg.control(maxiter=100)))
-  aic <- vapply(fits,AIC,0.0)
+  aic <- vapply(fits,dhs_aft_aic,0.0)
   names(aic) <- choices
   best <- which.min(aic)
   list(fit=fits[[best]],distribution=choices[best],aic=aic)
@@ -14891,7 +15606,7 @@ next12 <- function(age,par){
 
 current <- ir[as.numeric(ir$v313)==3 & as.numeric(ir$v312) %in% modern_codes,]
 current$method <- method_group(as.integer(current$v312))
-current$elapsed <- as.integer(current$v337)
+current$elapsed <- dhs_current_duration(current,seq_len(nrow(current)))
 current$wt <- as.numeric(current$v005)/1e6
 stopifnot(!anyNA(current$elapsed),all(current$elapsed>=0),
   all(current$method %in% methods))
@@ -14959,9 +15674,17 @@ cat('Selected AFT distributions:',model_a$distribution,'for actionable,',
 # LANGUAGE: R
 MODULES[["168_survival_duration_method_cause.R"]] <- list(
  language="R",
- packaged_sha256="5ebca9bca53147dc9498f4451aacd3c94f4dbc0a7f90eabb945314ad7800b8b4",
+ packaged_sha256="6f54f1ac14d5ca4a51cd9e095f9b146bb782beb9ac17c63003aa6b3d8827b86e",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Sensitivity analysis: distribute the previously modeled next-year actionable
 # original-method endings over the five established program-actionable causes.
 # This is a calibrated cause-specific survival decomposition. It does not
@@ -14980,10 +15703,10 @@ names(cause_codes) <- causes
 fit_cause <- function(codes){
   e$cause_event <- as.integer(e$discontinued & e$reason_code %in% codes)
   choices <- c('weibull','loglogistic','lognormal','exponential')
-  fits <- lapply(choices,function(d)tryCatch(survreg(
+  fits <- lapply(choices,function(d)tryCatch(dhs_aft_fit(
     Surv(exposure,cause_event)~method,data=e,weights=wt,dist=d,
     control=survreg.control(maxiter=100)),error=function(x)NULL))
-  aic <- vapply(fits,function(f)if(is.null(f)) Inf else AIC(f),0.0)
+  aic <- vapply(fits,function(f)if(is.null(f)) Inf else dhs_aft_aic(f),0.0)
   ix <- which.min(aic)
   stopifnot(is.finite(aic[ix]))
   list(fit=fits[[ix]],dist=choices[ix],aic=aic[ix],events=sum(e$cause_event))
@@ -15057,9 +15780,17 @@ print(rows[,c('method','reason','conditional_next12_risk_pct',
 # LANGUAGE: R
 MODULES[["171_aft_switching_bridge.R"]] <- list(
  language="R",
- packaged_sha256="76bb261929bb667a7c27943728fe7fc8ff450d3637a0a073b0c7dbc9eb8e28c7",
+ packaged_sha256="89eeb5bcb2c96481b33bfa2c1b7bb8757aec526a13b2d8d485e92c2fc2f51c07",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Ethiopia sensitivity analysis: combine AFT next-12-month cause-specific
 # original-method ending risks with observed post-ending method pathways.
 # The AFT model alone does not predict switching or modern use at year end.
@@ -15177,9 +15908,17 @@ print(compare,row.names=FALSE)
 # LANGUAGE: R
 MODULES[["create_ppt_figures.R"]] <- list(
  language="R",
- packaged_sha256="6a22c8333830c474602a1a7707fa82aa2804ae545be94d4025295cda3dd6be72",
+ packaged_sha256="c6c74b21223a84fdc6a1c041188760d29c2596d9e82f49b1b7a42a199ec3eeb5",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Presentation-compatible raster versions of the episode-level charts.
 # These use the same CSV estimates shown in the project HTML.
 options(stringsAsFactors = FALSE)
@@ -15373,7 +16112,7 @@ print(f'{DEST}: {len(out)} comparisons; '
 MODULES[["136_regional_actionable_pairwise_shared_mix.py"]] <- list(
   language="Python",
   original_sha256="2b6b789096c72dde0948396a0e62b3da71e3643e3be242e26e0e55c0885aa577",
-  packaged_sha256="bf7fa866b43adaef574ca40c338a1641264dd673b8aa2d38469139b49e61d9b4",
+  packaged_sha256="b0dcb1a9d131a2484cf684764fe86cb2246c0422ba0d2cbd5f16cde00df7a0e9",
   args=character(),
   code=r"-----(#!/usr/bin/env python3
 """Pair-specific method standardization for every Ethiopian regional pair.
@@ -15889,19 +16628,27 @@ for approach in approaches:
 
 MODULES[["203_allcause_survey_inference.R"]] <- list(
  language="R",
- packaged_sha256="4c313957197ed1f1b1414ea8d6704278790f9cb4f65dab4b3b3d65b32cd1a0ca",
+ packaged_sha256="0525b2c3495efd402a8edbbf0f95278c360ba5791f2ca9b73def0b40b67a062d",
  args=character(),
- code=r"-----(# Reconstruct the early all-cause adjusted subgroup view and regional life
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+# Reconstruct the early all-cause adjusted subgroup view and regional life
 # tables with full-frame design inference. Inputs are project parameters.
 root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');stopifnot(nzchar(root))
-s<-readLines(file.path(root,'Code/34_selected_reason_regression.R'));ix<-grep('^fit <- nnet',s)[1];eval(parse(text=s[1:(ix-1)]))
+s<-readLines(file.path(root,'Code/34_selected_reason_regression.R'));ix<-grep('^fit <- (nnet::multinom|dhs_multinom_fit)',s)[1];eval(parse(text=s[1:(ix-1)]))
 person$ended<-as.integer(ended)
 form<-ended~month+method_group+age_group+parity_group+education+wealth_group+residence+region
-fit<-glm(form,data=person,weights=wt,family=quasibinomial())
+fit<-dhs_binary_fit(form,person,full_survey_frame())
 X<-model.matrix(fit);p<-fitted(fit);H<-crossprod(X,X*(person$wt*p*(1-p)));Hinv<-solve(H)
 frame<-full_survey_frame();score<-rowsum(X*(person$wt*(person$ended-p)),person$cluster,reorder=FALSE)
 U<-matrix(0,nrow(frame),ncol(X));U[match(rownames(score),frame$cluster),]<-score
-var_if<-function(v){ans<-0;for(g in split(seq_len(nrow(frame)),frame$stratum))ans<-ans+length(g)/(length(g)-1)*sum((v[g]-mean(v[g]))^2);ans}
+var_if<-function(v)as.numeric(dhs_psu_variance(matrix(v,ncol=1),frame))
 df<-nrow(frame)-length(unique(frame$stratum));critical<-qt(.975,df)
 standard<-d;den<-sum(standard$wt)
 margin<-function(variable,level){
@@ -15931,9 +16678,17 @@ cat('All-cause inference uses',nrow(frame),'PSUs;',df,'design degrees of freedom
 
 MODULES[["204_regional_reason_precision.R"]] <- list(
  language="R",
- packaged_sha256="1ec97820036ebaccd19d65b0045c406c4927695f30653ef24463ff683792c825",
+ packaged_sha256="4e8c47c607549d3e26edf171a4c3d5953973eef81254f32c4ed7c99b54e46953",
  args=character(),
- code=r"-----(root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'));e<-read.csv(file.path(root,'output/Supporting_data/selected_reason_exploratory_episode_covariates.csv'));frame<-unique(data.frame(cluster=paste(as.integer(ir$v022),as.integer(ir$v021),sep=':'),stratum=as.integer(ir$v022)));df<-nrow(frame)-length(unique(frame$stratum));crit<-qt(.975,df)
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'));e<-read.csv(file.path(root,'output/Supporting_data/selected_reason_exploratory_episode_covariates.csv'));frame<-unique(data.frame(cluster=paste(as.integer(ir$v022),as.integer(ir$v021),sep=':'),stratum=as.integer(ir$v022)));df<-nrow(frame)-length(unique(frame$stratum));crit<-qt(.975,df)
 regions<-c(`1`='Tigray',`2`='Afar',`3`='Amhara',`4`='Oromia',`5`='Somali',`6`='Benishangul-Gumuz',`7`='Central Ethiopia',`8`='Sidama',`9`='South West Ethiopia',`10`='South Ethiopia',`12`='Gambella',`13`='Harari',`14`='Addis Ababa',`15`='Dire Dawa');groups<-list('Wanted to become pregnant'=2L,'Method experience or access'=c(1L,4L,5L,6L,7L),'Husband/partner disapproved'=8L,'Other'=c(3L,9L));file<-file.path(root,'output/presentation_regional_reason_precision.csv');old<-read.csv(file)
 for(i in seq_len(nrow(old))){code<-names(regions)[match(old$region[i],regions)];q<-e[e$region==code&e$discontinued&e$entry<e$exposure&e$exposure<=12,];yes<-q$reason%in%groups[[old$reason[i]]];p<-sum(q$wt*yes)/sum(q$wt);stopifnot(abs(100*p-old$percent[i])<1e-7);ss<-rowsum(q$wt*(yes-p)/sum(q$wt),q$cluster,reorder=FALSE);v<-numeric(nrow(frame));v[match(rownames(ss),frame$cluster)]<-ss[,1];V<-0;for(g in split(seq_len(nrow(frame)),frame$stratum))V<-V+length(g)/(length(g)-1)*sum((v[g]-mean(v[g]))^2);se<-100*sqrt(V);old$se_pct[i]<-se;if(old$n_reason_events[i]>=10){old$ci_low_pct[i]<-max(0,100*p-crit*se);old$ci_high_pct[i]<-min(100,100*p+crit*se)}}
 write.csv(old,file,row.names=FALSE,na='');cat('Updated full-frame survey intervals for',nrow(old),'regional reason-share cells.\n')
@@ -15942,9 +16697,17 @@ write.csv(old,file,row.names=FALSE,na='');cat('Updated full-frame survey interva
 
 MODULES[["205_ethiopia_planning_survey_ci.R"]] <- list(
  language="R",
- packaged_sha256="1ddedff575bc5336d7f5862f49ac3eec99fe05e2aad8322c80bd7493f9343043",
+ packaged_sha256="33deac3c2b36c38f216e6a01cd5c8339bbe2d52d8a4328ae7cefc39b34ebafa6",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Survey-design inference for Ethiopia planning scenarios. All inputs are parameters.
 # Positive PSU multiplier bootstrap within strata: normalized Gamma shape
 # (n-2)/n has mean 1, variance 1 and covariance -1/(n-1), matching
@@ -15963,7 +16726,7 @@ e_all$method_group<-ifelse(e_all$method_code==3,'Injectables',ifelse(e_all$metho
 cal<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'))
 sup<-file.path(root,'output/Supporting_data')
 script_file<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
-signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'),file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'),file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'),file.path(sup,'ethiopia_planning_population.csv'),file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'),file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))))
+signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'dhs_survey_tools.R'),file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'),file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'),file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'),file.path(sup,'ethiopia_planning_population.csv'),file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'),file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))))
 cache_signature<-file.path(out,'cache_signature.rds')
 if(file.exists(cache_signature)){if(!identical(signature,readRDS(cache_signature)))stop('Inputs or code changed. Use a fresh output directory for bootstrap results.')}else{
  if(length(list.files(file.path(out,'replicates'))))stop('Unversioned bootstrap cache: use a fresh output directory.')
@@ -15986,7 +16749,7 @@ strata<-split(seq_len(nrow(frame)),frame$stratum);stopifnot(all(lengths(strata)>
 psu_index<-match(psu,frame$psu)
 u<-as.numeric(ir$v313)==3;umethod<-method_group(as.numeric(ir$v312));umethod[as.numeric(ir$v312)==16]<-'EC'
 uindex<-which(u & as.numeric(ir$v312) %in% c(modern,14L))
-current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=as.numeric(ir$v337[uindex]),wt=wt[uindex])
+current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=dhs_current_duration(ir,uindex),wt=wt[uindex])
 stopifnot(all(is.finite(current$elapsed)),all(current$elapsed>=0))
 bins<-c(-1,3,6,12,24,36,48,60,Inf);blabel<-c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
 current$bin<-as.integer(cut(current$elapsed,bins))
@@ -16034,6 +16797,7 @@ for(m in methods)for(b in 1:8)for(j in 1:5){
 }
 write.csv(do.call(rbind,support),file.path(out,'switching_support.csv'),row.names=FALSE)
 measure<-function(mult,replicate=0L){
+ old_dhs<-options(dhs.replication=replicate>0L);on.exit(options(old_dhs),add=TRUE)
  iw<-wt*mult[psu_index];ew<-e$wt*mult[psu_index[e$woman_row]];lw<-land$wt*mult[psu_index[land$woman]];cw<-current$wt*mult[psu_index[current$woman]]
  mcpr<-100*sum(iw[u])/sum(iw);mix<-round(100*vapply(c(methods,'EC'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0),4)/100
  stock<-w25*mcpr/100*mix
@@ -16056,7 +16820,7 @@ measure<-function(mult,replicate=0L){
     risk[7,m,j]<-risk[7,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j & land$direct[z]])/den}}
  }
  aw<-af$wt*mult[psu_index[af$woman_row]]
- fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(survreg(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
+ fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(dhs_aft_fit(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
  for(m in methods){nd<-data.frame(method=factor(m,levels=methods));hh<-sapply(seq_along(fits),function(j){f<-fits[[j]];if(!m %in% attr(f,'active_methods'))return(rep(0,length(time)-1));mu<-as.numeric(predict(f,newdata=nd,type='lp'));diff(cumhaz(time,mu,f$scale,dists[j]))})
   ix<-ci_index[[m]];den<-sum(cw[ix]);for(age in unique(current$elapsed[ix])){z<-ix[current$elapsed[ix]==age];share<-sum(cw[z])/den;if(share==0)next
    h<-hh[age+1:12,,drop=FALSE];total<-h[,1]+h[,2];s<-c(1,exp(-cumsum(total)))[1:12];monthly<-s*(-expm1(-total))*ifelse(total>0,h[,1]/total,0)
@@ -16088,9 +16852,17 @@ saveRDS(list(wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(
 
 MODULES[["206_summarize_planning.R"]] <- list(
  language="R",
- packaged_sha256="a2b9328ae101622860ff5c0a93abe29aad92291a8bb2caabb72ffafe99d9c26a",
+ packaged_sha256="de217b774290cb779e321785d6da7b038ca1ff5c73178b735bb34e21a4c77726",
  args=character(),
- code=r"-----(o<-file.path(Sys.getenv('ETHIOPIA_PROJECT_ROOT'),'output/survey_planning');p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+o<-file.path(Sys.getenv('ETHIOPIA_PROJECT_ROOT'),'output/survey_planning');p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
 metrics<-function(x){
  x$counts<-abind::abind(x$counts,x$counts[1,,,drop=FALSE]-x$counts[6,,,drop=FALSE],x$counts[2,,,drop=FALSE]-x$counts[4,,,drop=FALSE],x$counts[3,,,drop=FALSE]-x$counts[5,,,drop=FALSE],along=1)
  y<-c(stock_no_ec=sum(x$stock[meta$methods]),mcpr2024=x$mcpr,mcpr2025=x$mcpr,users2025=sum(x$stock),users2024=sum(x$users2024))
@@ -16119,9 +16891,17 @@ cat('95% intervals for',length(pt),'metrics from',ncol(ds),'valid replicates\n')
 
 MODULES[["207_duration_support_ci.R"]] <- list(
  language="R",
- packaged_sha256="f9640ae894ff8ea74cfa39ad89dae70c23a3d63f409348be5aa1001d53d1f6bf",
+ packaged_sha256="4d16d05fa06af27654d353c401b0834caad2a9719af70e2d86457a049f029138",
  args=character(),
- code=r"-----(root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');out<-file.path(root,'output/survey_planning');ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'));frame<-unique(data.frame(psu=as.numeric(ir$v021),stratum=as.numeric(ir$v022)));si<-match(as.numeric(ir$v021),frame$psu);groups<-split(seq_len(nrow(frame)),frame$stratum);w<-as.numeric(ir$v005)/1e6
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');out<-file.path(root,'output/survey_planning');ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'));frame<-unique(data.frame(psu=as.numeric(ir$v021),stratum=as.numeric(ir$v022)));si<-match(as.numeric(ir$v021),frame$psu);groups<-split(seq_len(nrow(frame)),frame$stratum);w<-as.numeric(ir$v005)/1e6
 m<-ifelse(ir$v312==3,'Injectables',ifelse(ir$v312==11,'Implants',ifelse(ir$v312==1,'Pill',ifelse(ir$v312==2,'IUD','Other modern'))));use<-ir$v313==3&ir$v312!=16;age<-as.numeric(ir$v337);methods<-c('Injectables','Implants','Pill','IUD','Other modern','Total')
 calc<-function(mult)vapply(methods,function(j){z<-use&(j=='Total'|m==j);100*sum(w[z]*mult[si[z]]*(age[z]>60))/sum(w[z]*mult[si[z]])},0.0)
 point<-calc(rep(1,nrow(frame)));d<-sapply(1:500,function(b){set.seed(20261105+b);mult<-numeric(nrow(frame));for(ids in groups){n<-length(ids);g<-rgamma(n,shape=(n-2)/n);mult[ids]<-n*g/sum(g)};calc(mult)})
@@ -16131,9 +16911,17 @@ r<-data.frame(key=paste0('duration61|',methods),estimate=point,lower=apply(d,1,q
 
 MODULES[["208_pooled_risk_ci.R"]] <- list(
  language="R",
- packaged_sha256="74f85ef6ffa2568b3832652e7b4585d2f7be06e178bbf14464ccd31ee973a67a",
+ packaged_sha256="22bd87df2f9830de949af3673fecfae840c050b0f67a906f869fde30a2305285",
  args=character(),
- code=r"-----(root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');out<-file.path(root,'output/survey_planning');ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'));e<-read.csv(file.path(root,'output/Supporting_data/selected_reason_exploratory_episode_covariates.csv'));frame<-unique(data.frame(psu=as.numeric(ir$v021),stratum=as.numeric(ir$v022)));ix<-match(as.numeric(ir$v021[e$woman_row]),frame$psu);groups<-split(seq_len(nrow(frame)),frame$stratum);codes<-list(1,7,15,c(4,5),c(6,8,10));causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');out<-file.path(root,'output/survey_planning');ir<-readRDS(file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'));e<-read.csv(file.path(root,'output/Supporting_data/selected_reason_exploratory_episode_covariates.csv'));frame<-unique(data.frame(psu=as.numeric(ir$v021),stratum=as.numeric(ir$v022)));ix<-match(as.numeric(ir$v021[e$woman_row]),frame$psu);groups<-split(seq_len(nrow(frame)),frame$stratum);codes<-list(1,7,15,c(4,5),c(6,8,10));causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
 calc<-function(mult){w<-e$wt*mult[ix];S<-1;F<-numeric(5);for(t in 1:12){at<-e$entry<t&e$exposure>=t;end<-at&e$discontinued&e$exposure==t;den<-sum(w[at]);F<-F+S*vapply(codes,function(cc)sum(w[end&e$reason_code%in%cc])/den,0.0);S<-S*(1-sum(w[end])/den)};100*F}
 p<-calc(rep(1,nrow(frame)));d<-sapply(1:500,function(b){set.seed(20261105+b);mult<-numeric(nrow(frame));for(ids in groups){n<-length(ids);g<-rgamma(n,shape=(n-2)/n);mult[ids]<-n*g/sum(g)};calc(mult)});dp<-rbind(d,colSums(d));pp<-c(p,sum(p));ds<-100*sweep(d,2,colSums(d),'/');point<-100*p/sum(p)
 r<-data.frame(key=c(paste0('pooled_firstyear|',c(causes,'Total')),paste0('pooled_share|',causes)),estimate=c(pp,point),lower=c(apply(dp,1,quantile,.025),apply(ds,1,quantile,.025)),upper=c(apply(dp,1,quantile,.975),apply(ds,1,quantile,.975)));old<-read.csv(file.path(out,'planning_intervals.csv'));old<-old[!grepl('^pooled_',old$key),];write.csv(rbind(old,r),file.path(out,'planning_intervals.csv'),row.names=FALSE)
@@ -16142,9 +16930,17 @@ r<-data.frame(key=c(paste0('pooled_firstyear|',c(causes,'Total')),paste0('pooled
 
 MODULES[["209_finalize_regional_inference.R"]] <- list(
  language="R",
- packaged_sha256="19dd59ad48bb70e4f043774ff58efaa11c65b6da67f3fe9e01de49ea961b2896",
+ packaged_sha256="c195b4bb2d64912e85e0001c56073389b10d5f434320994f10d8f33abc22a75c",
  args=character(),
- code=r"-----(# Synchronize completed full-frame bootstrap draws with the existing report
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+# Synchronize completed full-frame bootstrap draws with the existing report
 # summaries. It never changes cohort or model specifications.
 root<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');s<-file.path(root,'output/Supporting_data')
 a<-read.csv(file.path(s,'regional_actionable_adjusted_bootstrap.csv'),check.names=FALSE);stopifnot(nrow(a)>=500)
@@ -16289,7 +17085,15 @@ complete_preparation_audit <- function(root, v) {
 }
 
 
-MODULES[["210_prepare_analysis_inputs.R"]] <- list(language="R", packaged_sha256="ca9d607b0f797cd62a5402c77264a52ae6bb4f72d3f1cdae13654d67e53306ae", args=character(), code=r"-----(#!/usr/bin/env Rscript
+MODULES[["210_prepare_analysis_inputs.R"]] <- list(language="R", packaged_sha256="44f834a22784845081db9a8405f2276f2669bc0ead613d053a87dcf459a53246", args=character(), code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Data preparation only; no regression fitting or bootstrap is run.
 project<-Sys.getenv('ETHIOPIA_PROJECT_ROOT');stopifnot(nzchar(project))
 derived<-file.path(project,'Data','Derived');prefix<-'ethiopia'
@@ -16720,7 +17524,8 @@ e$start_year<-factor((e$start-1L)%/%12L+1900L)
 saveRDS(e,file.path(project,'Data/Derived/ethiopia_2024_full_model_episode_covariates.rds'))
 n<-pmin(12L,e$exposure)-e$entry;ix<-rep(seq_len(nrow(e)),n)
 month<-unlist(Map(function(entry,n)seq.int(entry+1L,length.out=n),e$entry,n),use.names=FALSE)
-person<-e[ix,c('wt','method_group','age_group','parity_group','marital_group','education','wealth_group','residence','region','start_year','cluster','stratum')]
+person<-e[ix,c("woman_row",'wt','method_group','age_group','parity_group','marital_group','education','wealth_group','residence','region','start_year','cluster','stratum')]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month<-factor(month,levels=1:12)
 ended<-e$discontinued[ix]&month==e$exposure[ix]
 person$outcome<-factor(ifelse(!ended,'continue',ifelse(e$reason_code[ix]%in%c(1L,4L,5L,6L,7L,8L,10L,15L),'actionable','competing')),levels=c('continue','actionable','competing'))
@@ -17041,7 +17846,15 @@ REVISED_TABLE_SCHEMA <- r"--------([
   }
 ])--------"
 REVISION_HELPERS <- list(
-  "300_revised_planning.R" = r"--------(#!/usr/bin/env Rscript
+  "300_revised_planning.R" = r"--------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Usage: Rscript compute_scenarios.R SAVED_STATISTICS_DIR DHS_ESTIMATES_CSV OUTPUT_DIR
 # Reuses existing aggregate point estimates and survey bootstrap draws. No models
 # are refit and no original analysis inputs, user counts or risks are modified.
@@ -17301,7 +18114,15 @@ for (n in names(REVISION_HELPERS)) MODULES[[n]] <- list(language=if(grepl("[.]R$
 
 # Reconciled planning update: fixed aggregate inputs and retained analytical layout.
 LEADERSHIP_HELPERS <- list(
-  "planning_audit.R" = r"---------(#!/usr/bin/env Rscript
+  "planning_audit.R" = r"---------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Survey-design inference for Ethiopia planning scenarios. All inputs are parameters.
 # Positive PSU multiplier bootstrap within strata: normalized Gamma shape
 # (n-2)/n has mean 1, variance 1 and covariance -1/(n-1), matching
@@ -17324,7 +18145,7 @@ e_all$method_group<-ifelse(e_all$method_code==3,'Injectables',ifelse(e_all$metho
 cal<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'))
 sup<-file.path(root,'output/Supporting_data')
 script_file<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
-signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'),file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'),file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'),file.path(sup,'ethiopia_planning_population.csv'),file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'),file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))))
+signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'dhs_survey_tools.R'),file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/ET2024DHS__ETIR8ADT__IR_raw.rds'),file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'),file.path(root,'Data/Derived/ethiopia_2024_calendar_events.rds'),file.path(sup,'ethiopia_planning_population.csv'),file.path(sup,'ethiopia_survival_model_duration_fit_PREVIEW.csv'),file.path(sup,'ethiopia_survival_model_cause_fit_PREVIEW.csv'))))
 cache_signature<-file.path(out,'cache_signature.rds')
 if(file.exists(cache_signature)){if(!identical(signature,readRDS(cache_signature)))stop('Inputs or code changed. Use a fresh output directory for bootstrap results.')}else{
  if(length(list.files(file.path(out,'replicates'))))stop('Unversioned bootstrap cache: use a fresh output directory.')
@@ -17347,7 +18168,7 @@ strata<-split(seq_len(nrow(frame)),frame$stratum);stopifnot(all(lengths(strata)>
 psu_index<-match(psu,frame$psu)
 u<-as.numeric(ir$v313)==3;umethod<-method_group(as.numeric(ir$v312));umethod[as.numeric(ir$v312)==16]<-'EC'
 uindex<-which(u & as.numeric(ir$v312) %in% c(modern,14L))
-current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=as.numeric(ir$v337[uindex]),wt=wt[uindex])
+current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=dhs_current_duration(ir,uindex),wt=wt[uindex])
 stopifnot(all(is.finite(current$elapsed)),all(current$elapsed>=0))
 bins<-c(-1,3,6,12,24,36,48,60,Inf);blabel<-c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
 current$bin<-as.integer(cut(current$elapsed,bins))
@@ -17403,6 +18224,7 @@ jsonlite::write_json(list(selected_families=selected_transition_families,episode
 pred_grid<-unique(data.frame(method=rep(methods,each=60*5),cause=rep(rep(causes,each=60),5),end_duration=rep(1:60,25)))
 pred_grid<-normalize_features(pred_grid);pred_grid$gid<-seq_len(nrow(pred_grid))
 measure<-function(mult,replicate=0L){
+ old_dhs<-options(dhs.replication=replicate>0L);on.exit(options(old_dhs),add=TRUE)
  iw<-wt*mult[psu_index];ew<-e$wt*mult[psu_index[e$woman_row]];lw<-land$wt*mult[psu_index[land$woman]];cw<-current$wt*mult[psu_index[current$woman]]
  mcpr<-100*sum(iw[u])/sum(iw);mix<-round(100*vapply(c(methods,'EC'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0),4)/100
  stock<-w25*mcpr/100*mix
@@ -17425,7 +18247,7 @@ measure<-function(mult,replicate=0L){
     risk[7,m,j]<-risk[7,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j & land$direct[z]])/den}}
  }
  aw<-af$wt*mult[psu_index[af$woman_row]]
- fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(survreg(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
+ fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(dhs_aft_fit(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
  new_initial<-data.table::copy(initial);new_follow<-data.table::copy(follow)
  new_initial$wt<-new_initial$wt*mult[match(new_initial$psu,frame$psu)];new_follow$wt<-new_follow$wt*mult[match(new_follow$psu,frame$psu)]
  tm<-if(replicate==0L)point_transitions else list(initial=fit_initial(new_initial),transitions=setNames(lapply(states,function(s)fit_transition(new_follow[new_follow$current_state==s,],s,selected_transition_families[s],.1,start=point_transitions$transitions[[s]]$par)),states))
@@ -17461,7 +18283,15 @@ if(B>0){draws<-parallel::mclapply(seq_len(B),one,mc.cores=cores,mc.preschedule=F
  cat('Valid',sum(valid),'of',B,'\n');stopifnot(mean(valid)>=.95);saveRDS(draws,file.path(out,'planning_replicates.rds'))}
 saveRDS(list(wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(strata),replicates=B,methods=methods,causes=causes,definitions=c('Gross: every actionable original-method ending treated as year-end loss','Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes','AFT uncertainty conditional on selected distribution families','Population and growth scenarios fixed')),file.path(out,'planning_metadata.rds'))
 )---------",
-  "transition_model.R" = r"---------(suppressPackageStartupMessages({library(data.table);library(nnet);library(splines)})
+  "transition_model.R" = r"---------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+suppressPackageStartupMessages({library(data.table);library(nnet);library(splines)})
 setDTthreads(1)
 states <- c('Modern','Nonmodern','Pregnancy-related')
 state <- function(z) ifelse(z %in% endpoint_modern,states[1],ifelse(z %in% 81:83,states[3],states[2]))
@@ -17500,7 +18330,7 @@ write.csv(histories[,.(episodes=.N,women=uniqueN(woman),weighted_modern=sum(wt*(
 # direct switches have no non-use waiting time.
 fit_initial <- function(d,decay=.1) {
  d$fw<-d$wt/mean(d$wt)
- f<-multinom(next_state~method+cause+ns(duration_log,df=2),data=d,weights=fw,
+ f<-dhs_multinom_fit(next_state~method+cause+ns(duration_log,df=2),data=d,weights=fw,
              decay=decay,maxit=1000,MaxNWts=5000,trace=FALSE,abstol=1e-8,reltol=1e-9)
  stopifnot(f$convergence==0);f
 }
@@ -17618,7 +18448,15 @@ endpoint_prob <- function(models,gr,max_horizon=13L) {
  rbindlist(outputs,use.names=TRUE)
 }
 )---------",
-  "summarize_planning.R" = r"---------(a<-commandArgs(TRUE);stopifnot(length(a)==1);o<-a[1];p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
+  "summarize_planning.R" = r"---------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+a<-commandArgs(TRUE);stopifnot(length(a)==1);o<-a[1];p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
 metrics<-function(x){
  x$counts<-abind::abind(x$counts[1:8,,,drop=FALSE],x$counts[1,,,drop=FALSE]-x$counts[6,,,drop=FALSE],x$counts[2,,,drop=FALSE]-x$counts[4,,,drop=FALSE],x$counts[3,,,drop=FALSE]-x$counts[5,,,drop=FALSE],x$counts[9,,,drop=FALSE],x$counts[3,,,drop=FALSE]-x$counts[9,,,drop=FALSE],along=1)
  y<-c(stock_no_ec=sum(x$stock[meta$methods]),mcpr2024=x$mcpr,mcpr2025=x$mcpr,users2025=sum(x$stock),users2024=sum(x$users2024))
@@ -17926,7 +18764,15 @@ run_revised_report <- function(opt) {
  invisible(NULL)
 }
 # Raw-IR intermediate table generators.
-MODULES[["211_presentation_inputs.R"]] <- list(language="R", packaged_sha256="8fea198851e2c78f386132f0d4c4d897df97db6c78f793aa44a6ffab447c0b65", args=character(), code=r"---------------(#!/usr/bin/env Rscript
+MODULES[["211_presentation_inputs.R"]] <- list(language="R", packaged_sha256="09f61a5f7d819bd34c28d7aa4e60c244c6b1145e100c9d195e2612bbd69e7186", args=character(), code=r"---------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Reconstruct presentation input tables from prepared IR calendar records.
 # Usage: Rscript presentation_inputs.R PROJECT_ROOT
 args <- commandArgs(TRUE)
@@ -18036,17 +18882,25 @@ front<-do.call(rbind,lapply(names(monthly_groups),function(m){
 }))
 emit(front,'presentation_discontinuation_front_loading.csv')
 cat('Reconstructed initiation and method-rate presentation inputs from IR-derived records.\n'))---------------")
-MODULES[["212_allcause_inputs.R"]] <- list(language="R", packaged_sha256="ebc94d74065606e0da1dd53843c2b49f2dd33e1ffeeea62b6d22f1e4cf614164", args=character(), code=r"---------------(#!/usr/bin/env Rscript
+MODULES[["212_allcause_inputs.R"]] <- list(language="R", packaged_sha256="2599893c7ea661e6cbad4cb254934940058a9a4fd91454791f3af74a4d9541cd", args=character(), code=r"---------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Refit the early all-cause model and regional tables without saved estimates.
 a<-commandArgs(TRUE);root<-if(length(a)==1L)a[1]else Sys.getenv('ETHIOPIA_PROJECT_ROOT')
 if(!nzchar(root))stop('Supply the analysis project root.')
 root<-normalizePath(root);Sys.setenv(ETHIOPIA_PROJECT_ROOT=root)
 s<-readLines(file.path(root,'Code/34_selected_reason_regression.R'))
-cut<-grep('^fit <- nnet',s)[1];stopifnot(is.finite(cut))
+cut<-grep('^fit <- (nnet::multinom|dhs_multinom_fit)',s)[1];stopifnot(is.finite(cut))
 eval(parse(text=s[seq_len(cut-1L)]))
 person$ended<-as.integer(ended)
-fit<-glm(ended~month+method_group+age_group+parity_group+education+wealth_group+residence+region,
- data=person,weights=wt,family=quasibinomial())
+fit<-dhs_binary_fit(ended~month+method_group+age_group+parity_group+education+wealth_group+residence+region,
+ person,full_survey_frame())
 X<-model.matrix(fit);p<-fitted(fit);H<-crossprod(X,X*(person$wt*p*(1-p)));Hinv<-solve(H)
 frame<-full_survey_frame();score<-rowsum(X*(person$wt*(person$ended-p)),person$cluster,reorder=FALSE)
 U<-matrix(0,nrow(frame),ncol(X));U[match(rownames(score),frame$cluster),]<-score
@@ -18221,7 +19075,15 @@ if __name__ == "__main__":
 
 # Plain source resources, expanded only into a private runtime directory.
 REPORT_FILES <- list()
-REPORT_FILES[["src/foundation_inputs.R"]] <- r"----------------------(#!/usr/bin/env Rscript
+REPORT_FILES[["src/foundation_inputs.R"]] <- r"----------------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Additional foundation tables reconstructed from the episode calendar.
 a<-commandArgs(TRUE);root<-if(length(a))a[1]else Sys.getenv('ETHIOPIA_PROJECT_ROOT');stopifnot(nzchar(root))
 e<-readRDS(file.path(root,'Data/Derived/ethiopia_2024_specified_modern_method_episodes.rds'))
@@ -18232,6 +19094,20 @@ write.csv(do.call(rbind,monthly),file.path(root,'output/Supporting_data/injectab
 d<-e[e$method_code!=16L,];codes<-c(9L,12L,13L,11L,96L,98L,99L);f<-numeric(length(codes));s<-1
 for(t in 1:12){r<-d$entry<t&d$exposure>=t;end<-r&d$discontinued&d$exposure==t;den<-sum(d$wt[r]);h<-vapply(codes,function(k)sum(d$wt[end&d$reason_code==k])/den,0.0);f<-f+s*h;s<-s*(1-sum(d$wt[end])/den)}
 write.csv(data.frame(reason_code=codes,risk_pct=100*f),file.path(root,'output/Supporting_data/detailed_other_cif_foundation.csv'),row.names=FALSE)
+
+# The comparison columns share the same freshly calculated life table.
+# The legacy "excluding pregnancy" field also excludes method failure; add
+# that cause back when forming the actionable-only third column.
+z<-read.csv(file.path(root,'output/Supporting_data/12_month_nonpregnancy_and_switching.csv'),check.names=FALSE)
+row_order<-match(c('Pill','Injectables','Other modern methods','IUD','Implants','All modern methods'),z$method)
+stopifnot(!anyNA(row_order));z<-z[row_order,]
+comparison<-data.frame(Method=z$method,
+ 'All reasons (%)'=z$all_cause_pct,
+ 'Excluding wanted pregnancy and partner disapproval (%)'=z$excluding_wanted_pregnancy_and_partner_pct,
+ 'Also excluding Other recorded reasons (%)'=z$excluding_pregnancy_fertility_partner_and_other_pct+z$method_failure_pct,
+ check.names=FALSE)
+stopifnot(all(comparison[[4]]>=0),all(comparison[[4]]<=comparison[[3]]),all(comparison[[3]]<=comparison[[2]]))
+write.csv(comparison,file.path(root,'output/Supporting_data/12_month_three_column_comparison.csv'),row.names=FALSE)
 )----------------------"
 REPORT_FILES[["src/report/101_add_regional_initiation_mix_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Insert the seven-category regional initiation chart in the final HTML section.
@@ -22360,6 +23236,7 @@ from lxml import html,etree
 ap=argparse.ArgumentParser();ap.add_argument('--project-root',type=Path,required=True);ap.add_argument('--html',type=Path,required=True);a=ap.parse_args();out=a.project_root/'output';sup=out/'Supporting_data';doc=html.parse(str(a.html));cfg=json.loads((Path(__file__).parent/'foundation_layout.json').read_text())
 def read(n,base=out):
  with (base/n).open(newline='')as f:return list(csv.DictReader(f))
+first_month_n={r['method']:int(r['first_month_episodes'])for r in read('revised_table_7_11.csv')}
 def num(x,n=1):return '—'if str(x)in['','NA','nan']else f'{float(x):,.{n}f}'
 def integer(x):return num(x,0)
 def interval(r,lo,hi,n=1):return num(r[lo],n)+'–'+num(r[hi],n)
@@ -22371,7 +23248,13 @@ def emit(k,rows,headers=None):
  body=etree.SubElement(t,'tbody')
  for row in rows:
   tr=etree.SubElement(body,'tr')
-  for j,v in enumerate(row):etree.SubElement(tr,'th'if j==0 else'td').text=str(v)
+  for j,v in enumerate(row):
+   value=str(v)
+   if k in {4,5,9,10,11,12,13,14,23} and j>0 and 'episode'not in (headers or cfg[str(k)]['headers'])[j].lower():
+    n=first_month_n.get(str(row[0]))
+    if n is not None and n<125:value='*'
+    elif n is not None and n<250:value='('+value+')'
+   etree.SubElement(tr,'th'if j==0 else'td').text=value
  found[0].getparent().replace(found[0],t)
 def projection(n,fields,digits=1,base=out):
  return [[r[c]if isinstance(c,str)and c in ['method','reason','group','region','level']else num(r[c],digits)for c in fields]for r in read(n,base)]
@@ -22453,7 +23336,7 @@ r=read('regional_method_mix_diagnostic_cells.csv');emit(66,['Region','Method','E
 r=read('regional_method_mix_diagnostic_summary.csv');emit(67,['Gap component','Contribution (percentage points)','95% CI (percentage points)'],[[{'mix':'Method mix','within':'Within-method rates'}[x['metric']],f(x['estimate']),f(x['ci_low'])+' to '+f(x['ci_high'])]for x in r if x['metric']in['mix','within']])
 r=read('injectable_region_3_6_9_12_selected_ci.csv');regions=list(dict.fromkeys(x['region']for x in r));rows=[]
 for region in regions:
- z=[x for x in r if x['region']==region];rows.append([region,f(z[0]['eligible_episodes'],0),*[f(x['rate_pct'])+' ('+f(x['ci_low'])+'–'+f(x['ci_high'])+')'for x in sorted(z,key=lambda x:int(x['month']))]])
+ z=[x for x in r if x['region']==region];rows.append([region,f(z[0]['eligible_episodes'],0),*['Withheld'if x['ci_low']in['','NA','nan']or x['ci_high']in['','NA','nan']else f(x['rate_pct'])+' ('+f(x['ci_low'])+'–'+f(x['ci_high'])+')'for x in sorted(z,key=lambda x:int(x['month']))]])
 emit(69,['Region','Injectable episodes','3 months: % (95% CI)','6 months: % (95% CI)','9 months: % (95% CI)','12 months: % (95% CI)'],rows)
 a.html.write_bytes(html.tostring(doc,encoding='utf-8',doctype='<!doctype html>'));print('Regional descriptive tables regenerated')
 )----------------------"
@@ -23722,7 +24605,15 @@ def replace_fragment(page,anchor,markup,parent='presentation-figures',end_anchor
   for e in parts:owner.append(e)
  page.write_bytes(html.tostring(doc,encoding='utf-8',doctype='<!doctype html>'))
 )----------------------"
-REPORT_FILES[["src/validate_aft_transitions.R"]] <- r"----------------------(#!/usr/bin/env Rscript
+REPORT_FILES[["src/validate_aft_transitions.R"]] <- r"----------------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Held-out PSU checks of modern use following actionable original-method endings.
 a<-commandArgs(TRUE);stopifnot(length(a)==3);root<-a[1];fitdir<-a[2];out<-a[3];dir.create(out,recursive=TRUE,showWarnings=FALSE)
 suppressPackageStartupMessages({library(data.table);library(jsonlite)})
@@ -23743,5 +24634,376 @@ checks$held_out<-lapply(seq_len(nrow(c)),function(i)as.list(c[i,]))
 checks$fit_diagnostics<-lapply(seq_len(nrow(diagnostics)),function(i)as.list(diagnostics[i,]))
 jsonlite::write_json(checks,file.path(fitdir,'transition_validation.json'),auto_unbox=TRUE,pretty=TRUE)
 )----------------------"
+
+
+MODULES[["dhs_survey_tools.R"]] <- list(language="R",args=character(),packaged_sha256="a6ee764ece430cf7c842c9dbdc01bd94a32820a0d4f0162e410f0e9104b7f003",code=r"----------------------(# DHS design utilities. Inputs are supplied by the calling analysis.
+# No finite population correction: use the with-replacement PSU approximation.
+dhs_require_survey <- function() {
+  if (!requireNamespace('survey', quietly=TRUE)) stop('Install the survey package before estimation.')
+}
+
+dhs_frame <- function(ir) {
+  required <- c('v005','v021','v022')
+  if (!all(required %in% names(ir))) stop('IR data require v005, v021 and v022.')
+  w <- as.numeric(ir$v005)/1e6
+  if (anyNA(w) || any(!is.finite(w)) || any(w<=0)) stop('Invalid DHS sampling weights.')
+  f <- unique(data.frame(cluster=as.character(ir$v021), stratum=as.character(ir$v022)))
+  if (anyNA(f) || any(f$cluster=='') || any(f$stratum=='')) stop('Missing survey identifiers.')
+  f[order(f$stratum,f$cluster),,drop=FALSE]
+}
+
+dhs_design <- function(data, frame, weight='wt', cluster='cluster', stratum='stratum') {
+  dhs_require_survey()
+  data <- as.data.frame(data)
+  if (!all(c(weight,cluster,stratum)%in%names(data))) stop('Analysis records lack survey design variables.')
+  f <- unique(data.frame(.dhs_psu=as.character(frame$cluster),.dhs_stratum=as.character(frame$stratum)))
+  if (anyNA(f) || anyDuplicated(paste(f$.dhs_stratum,f$.dhs_psu,sep=':'))) stop('Invalid full survey frame.')
+  data$.dhs_w <- as.numeric(data[[weight]])
+  data$.dhs_psu <- as.character(data[[cluster]])
+  data$.dhs_stratum <- as.character(data[[stratum]])
+  if (anyNA(data[,c('.dhs_w','.dhs_psu','.dhs_stratum')]) || any(!is.finite(data$.dhs_w)) || any(data$.dhs_w<0)) stop('Invalid analysis design values.')
+  key <- function(s,p) paste(s,p,sep=':')
+  fk <- key(f$.dhs_stratum,f$.dhs_psu); dk <- key(data$.dhs_stratum,data$.dhs_psu)
+  if (any(!dk%in%fk)) stop('Analysis PSU is absent from the supplied full frame.')
+  data$.dhs_record <- TRUE
+  absent <- which(!fk%in%dk)
+  if (length(absent)) {
+    if (!nrow(data)) stop('An empty domain cannot be estimated.')
+    pad <- data[rep(1L,length(absent)),,drop=FALSE]
+    pad$.dhs_w <- 0; pad$.dhs_record <- FALSE
+    pad$.dhs_psu <- f$.dhs_psu[absent]; pad$.dhs_stratum <- f$.dhs_stratum[absent]
+    data <- rbind(data,pad)
+  }
+  # Explicit policy: singleton strata are an error, never silently dropped or
+  # treated as certainty PSUs. Resolve any such survey-specific case explicitly.
+  if (any(table(f$.dhs_stratum)<2L)) stop('Singleton survey stratum: specify a documented survey-specific treatment.')
+  design <- survey::svydesign(ids=~.dhs_psu,strata=~.dhs_stratum,weights=~.dhs_w,
+                    data=data,nest=TRUE)
+  # degf() excludes zero-weight placeholder PSUs. Retain the documented
+  # full-frame degrees of freedom for domain intervals and model tests.
+  attr(design,'dhs_design_df') <- nrow(f)-length(unique(f$.dhs_stratum))
+  design
+}
+
+dhs_percentage <- function(design, indicator, domain=NULL) {
+  n <- sum(design$variables$.dhs_record)
+  if (length(indicator)!=n) stop('Indicator length does not match the analysis records.')
+  if (is.null(domain)) domain <- rep(TRUE,n)
+  if (length(domain)!=n || anyNA(domain)) stop('Invalid descriptive domain.')
+  domain <- as.logical(domain)
+  raw_w <- weights(design)[design$variables$.dhs_record]
+  valid <- domain & !is.na(indicator)
+  if (any(!as.numeric(indicator[valid])%in%c(0,1))) stop('Percentage indicators must be binary.')
+  if (!any(valid) || sum(raw_w[valid])<=0) return(c(percent=NA_real_,se_pct=NA_real_,ci_low_pct=NA_real_,ci_high_pct=NA_real_,unweighted_n=sum(valid),weighted_n=sum(raw_w[valid]),design_df=attr(design,'dhs_design_df')))
+  design$variables$.dhs_indicator <- 0
+  design$variables$.dhs_domain <- FALSE
+  at <- which(design$variables$.dhs_record)
+  design$variables$.dhs_indicator[at] <- as.numeric(indicator)
+  design$variables$.dhs_domain[at] <- valid
+  # svyratio keeps the full survey frame for domain inference. Its point
+  # estimate is the same weighted proportion as svymean on the domain.
+  design$variables$.dhs_num <- ifelse(design$variables$.dhs_domain,design$variables$.dhs_indicator,0)
+  fit <- survey::svyratio(~.dhs_num,~.dhs_domain,design,na.rm=TRUE)
+  p <- as.numeric(coef(fit)); se <- as.numeric(survey::SE(fit)); df <- attr(design,'dhs_design_df')
+  critical <- qt(.975,df)
+  interval <- p+c(-1,1)*critical*se
+  # With no observed variation, a zero-width Wald interval is misleading.
+  # Preserve the point/SE but leave uncertainty bounds unreported.
+  if (p<=0 || p>=1) interval <- c(NA_real_,NA_real_)
+  c(percent=100*p,se_pct=100*se,ci_low_pct=100*max(0,interval[1]),
+    ci_high_pct=100*min(1,interval[2]),unweighted_n=sum(valid),
+    weighted_n=sum(raw_w[valid]),design_df=df)
+}
+
+dhs_psu_variance <- function(influence, frame) {
+  # influence contains already-weighted sums, one row per original-frame PSU.
+  # survey::svyrecvar supplies the stratified design covariance, not a naive
+  # model Hessian or an independent-record variance.
+  f <- data.frame(wt=1,cluster=as.character(frame$cluster),stratum=as.character(frame$stratum))
+  if (nrow(as.matrix(influence))!=nrow(f)) stop('Influence rows do not match the full PSU frame.')
+  d <- dhs_design(f,f)
+  survey::svyrecvar(as.matrix(influence),d$cluster,d$strata,d$fpc,lonely.psu='fail')
+}
+
+dhs_binary_fit <- function(formula, data, frame, weight='wt') {
+  # Padding has zero weight but retains full-frame design degrees of freedom.
+  # Keep actual analysis rows for downstream prediction/score calculations.
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  frame <- dhs_context()$frame
+  design <- dhs_design(data,frame,weight=weight)
+  fit <- survey::svyglm(formula,design=design,subset=.dhs_record,
+                         family=quasibinomial(),rescale=FALSE,
+                         control=glm.control(maxit=100L,epsilon=1e-10))
+  fit$df.residual <- attr(design,'dhs_design_df')-fit$rank+1L
+  fit
+}
+
+dhs_current_duration <- function(ir, rows) {
+  elapsed <- as.numeric(ir$v337[rows])
+  special <- elapsed==95L
+  if (any(special,na.rm=TRUE)) {
+    if (!'v317'%in%names(ir)) stop('v317 is needed to resolve all-calendar current use.')
+    elapsed[special] <- as.numeric(ir$v008[rows[special]])-as.numeric(ir$v317[rows[special]])
+  }
+  if (anyNA(elapsed) || any(!is.finite(elapsed)) || any(elapsed<0) || any(as.numeric(ir$v337[rows])%in%c(96L,997L,998L,999L))) stop('Unresolved current-use duration: do not treat special DHS codes as exact months.')
+  elapsed
+}
+
+# One context per analysis subprocess; restricted records stay in memory.
+.dhs_context <- new.env(parent=emptyenv())
+dhs_set_context <- function(country=NULL, root=NULL, ir=NULL) {
+  if (!is.null(country)) .dhs_context$country <- country
+  if (!is.null(root)) .dhs_context$root <- root
+  if (!is.null(ir)) {
+    stopifnot(all(c('v005','v021','v022') %in% names(ir)))
+    .dhs_context$ir <- as.data.frame(ir[,intersect(c('caseid','v005','v021','v022','v008','v317','v337'),names(ir)),drop=FALSE])
+    .dhs_context$frame <- dhs_frame(ir)
+    .dhs_context$woman_design <- dhs_design(data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),stratum=as.character(ir$v022)),.dhs_context$frame)
+  }
+  invisible(NULL)
+}
+dhs_context <- function() {
+  if (!exists('ir',.dhs_context,inherits=FALSE)) {
+    if (!exists('root',.dhs_context,inherits=FALSE)) stop('Initialize the DHS analysis context.')
+    raw <- switch(.dhs_context$country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
+                  Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
+    staged <- file.path(.dhs_context$root,raw)
+    if(file.exists(staged)) {
+      ir <- readRDS(staged)
+    } else if(identical(.dhs_context$country,'DRC')) {
+      # DRC's preparation stage creates its lossless RDS after expanding the
+      # calendar. Its supplied/staged IR is already available at that point.
+      input <- Sys.getenv('DRC_IR_FILE',unset=file.path(.dhs_context$root,'Data/CDIR81FL.dta'))
+      if(!file.exists(input)||!requireNamespace('haven',quietly=TRUE))
+        stop('Supply the authorized DRC IR input before calendar preparation.')
+      ir <- as.data.frame(haven::read_dta(input))
+    } else stop('The prepared IR input is missing; run input preparation first.')
+    dhs_set_context(ir=ir)
+  }
+  .dhs_context
+}
+# Calendar records inherit their woman's original design identifiers.
+# A supplied estimation weight may be a resampling weight and is preserved.
+dhs_attach_design <- function(data, ir=NULL, check_weights=TRUE) {
+  data <- as.data.frame(data)
+  if (is.null(ir)) ir <- dhs_context()$ir
+  id <- if ('woman_row'%in%names(data)) data$woman_row else if ('woman'%in%names(data)) data$woman else NULL
+  if (is.null(id) && 'caseid'%in%names(data) && 'caseid'%in%names(ir)) id <- match(data$caseid,ir$caseid)
+  if (!is.null(id)) {
+    if(anyNA(id)||any(id<1L|id>nrow(ir))||any(id!=as.integer(id)))stop('Invalid woman-to-calendar linkage.')
+    data$cluster <- as.character(ir$v021[id]);data$stratum <- as.character(ir$v022[id])
+    base_weight <- as.numeric(ir$v005[id])/1e6
+    if (check_weights && 'wt'%in%names(data) && any(abs(as.numeric(data$wt)-base_weight)>1e-10))
+      stop('Calendar base weights differ from the linked woman weights.')
+    if(!'wt'%in%names(data))data$wt <- base_weight
+    data$dhs_base_weight <- base_weight
+    data$woman_id <- if('caseid'%in%names(ir))as.character(ir$caseid[id])else as.character(id)
+  } else {
+    if(!'cluster'%in%names(data))stop('Calendar records require woman linkage or PSU/stratum identifiers.')
+    # Older modules store the nested PSU key instead of the original numeric ID.
+    nested <- paste(as.character(ir$v022),as.character(ir$v021),sep=':')
+    if(any(grepl(':',as.character(data$cluster),fixed=TRUE))) {
+      at<-match(as.character(data$cluster),nested)
+      if(anyNA(at))stop('Unrecognized nested PSU key.')
+      data$cluster<-as.character(ir$v021[at])
+      if('stratum'%in%names(data)&&any(as.character(data$stratum)!=as.character(ir$v022[at])))
+        stop('Nested PSU key and stratum disagree.')
+      data$stratum<-as.character(ir$v022[at])
+    }
+    if(!'stratum'%in%names(data))stop('Unlinked calendar records require explicit strata or a verified nested PSU key.')
+  }
+  data
+}
+
+# Point AFT fits use survey linearization; bootstrap refits can use the weighted
+# likelihood because joint uncertainty is taken from the stratified PSU replicates.
+dhs_aft_fit <- function(formula, data, weights, dist, control, ...) {
+  supplied <- as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
+  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid AFT estimation weights.')
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  data$.aft_weight <- supplied
+  data <- data[supplied>0,,drop=FALSE]
+  if(isTRUE(getOption('dhs.replication',FALSE))) {
+    return(survival::survreg(formula,data=data,weights=.aft_weight,dist=dist,control=control,...))
+  }
+  design <- dhs_design(data,dhs_context()$frame,weight='.aft_weight')
+  fit <- do.call(survey::svysurvreg,list(formula=formula,design=design,
+       subset=quote(.dhs_record),dist=dist,control=control,...))
+  # svysurvreg deliberately removes its likelihood. Preserve the previous
+  # weighted pseudo-AIC only for the separate, conditional family comparison;
+  # do not restore it as a survey-model likelihood or use it for uncertainty.
+  likelihood_fit <- survival::survreg(formula,data=data,weights=.aft_weight,
+                                      dist=dist,control=control,...)
+  if(max(abs(coef(fit)-coef(likelihood_fit)))>1e-6 ||
+       abs(fit$scale-likelihood_fit$scale)>1e-6)
+    stop('Survey and weighted AFT point fits do not agree.')
+  fit$dhs_weighted_aic <- stats::AIC(likelihood_fit)
+  fit$call$design <- quote(design)
+  attr(fit,'dhs_design_df') <- attr(design,'dhs_design_df')
+  fit
+}
+dhs_aft_aic <- function(fit) {
+  if(inherits(fit,'svysurvreg')) {
+    if(is.null(fit$dhs_weighted_aic))stop('Weighted family-comparison score is absent.')
+    return(fit$dhs_weighted_aic)
+  }
+  stats::AIC(fit)
+}
+
+# Weighted multinomial coefficients with full-frame stratified PSU covariance.
+# Retains the likelihood Hessian as the derivative; never reports it as survey variance.
+dhs_multinom_summary <- function(fit, data, frame=NULL) {
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  if(is.null(frame))frame<-dhs_context()$frame
+  X<-model.matrix(delete.response(terms(fit)),data,contrasts.arg=fit$contrasts)
+  p<-predict(fit,newdata=data,type='probs')
+  if(is.null(dim(p)))stop('Use svyglm for binary models.')
+  lev<-fit$lev[-1L];y<-model.response(model.frame(terms(fit),data))
+  w<-if('fit_weight'%in%names(data))data$fit_weight else data$wt
+  score<-do.call(cbind,lapply(lev,function(k)X*(w*(as.numeric(y==k)-p[,k]))))
+  H<-fit$Hessian
+  if(is.null(H))H<-getFromNamespace('multinomHess','nnet')(fit,Z=X,probs=p)
+  expected<-unlist(lapply(lev,function(k)paste(k,colnames(X),sep=':')))
+  if(!is.null(colnames(H))&&!identical(colnames(H),expected))stop('Multinomial score ordering differs from the Hessian.')
+  key<-function(s,p)paste(s,p,sep=':')
+  keys<-key(frame$stratum,frame$cluster);at<-match(key(data$stratum,data$cluster),keys)
+  if(anyNA(at))stop('Model records do not match the original survey frame.')
+  U<-matrix(0,nrow(frame),ncol(score));z<-rowsum(score,at,reorder=FALSE);U[as.integer(rownames(z)),]<-z
+  bread<-MASS::ginv(H);V<-bread%*%dhs_psu_variance(U,frame)%*%bread
+  co<-coef(fit);se<-matrix(sqrt(pmax(diag(V),0)),nrow=nrow(co),byrow=TRUE,dimnames=dimnames(co))
+  list(coefficients=co,standard.errors=se,covariance=V,
+       design_df=nrow(frame)-length(unique(frame$stratum)),inference='Full-frame stratified PSU sandwich')
+}
+
+dhs_calendar_records <- function(data, ir) {
+  if(!'woman_row'%in%names(data))stop('Calendar records require woman_row.')
+  id<-data$woman_row
+  if(anyNA(id)||any(id<1L|id>nrow(ir)))stop('Invalid calendar woman indices.')
+  w<-as.numeric(ir$v005[id])/1e6
+  if('wt'%in%names(data)&&any(abs(as.numeric(data$wt)-w)>1e-10))stop('Calendar weight inheritance failed.')
+  data$wt<-w;data$v021<-as.numeric(ir$v021[id]);data$v022<-as.numeric(ir$v022[id])
+  data$woman_id<-as.character(ir$caseid[id])
+  attr(data,'dhs_ir_design')<-as.data.frame(ir[,intersect(c('caseid','v005','v021','v022'),names(ir)),drop=FALSE])
+  data
+}
+
+# Preserve survey covariance on fitted multinomial objects so subsequent
+# summary()/vcov() calls cannot silently fall back to independent-record errors.
+dhs_multinom_fit <- function(formula, data, weights, ...) {
+  supplied<-as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
+  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid multinomial estimation weights.')
+  data<-dhs_attach_design(data,check_weights=FALSE);data$.dhs_fit_weight<-supplied
+  fit<-nnet::multinom(formula,data=data,weights=.dhs_fit_weight,...)
+  if(!is.null(fit$Hessian)&&!isTRUE(getOption('dhs.replication',FALSE))) {
+    data$fit_weight<-supplied
+    z<-dhs_multinom_summary(fit,data)
+    fit$dhs_survey_vcov<-z$covariance;fit$dhs_design_df<-z$design_df
+  }
+  fit$dhs_inference<-if(is.null(fit$dhs_survey_vcov))'Stratified PSU refits required; ordinary Hessian inference disabled'else'Full-frame stratified PSU sandwich'
+  class(fit)<-c('dhs_multinom',class(fit));fit
+}
+vcov.dhs_multinom <- function(object, ...) {
+  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model has no point survey covariance. Use its stratified-PSU replicate inference.')
+  object$dhs_survey_vcov
+}
+summary.dhs_multinom <- function(object, ...) {
+  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model requires its stratified-PSU replicate inference.')
+  getS3method('summary','multinom',envir=asNamespace('nnet'))(object,...)
+}
+)----------------------")
+MODULES[["dhs_survey_descriptives.R"]] <- list(language="R",args=character(),packaged_sha256="7b0d0996c9f903005a9c20b5d4d48a280d22a14501ea47b2651fd5fafd7ccce9",code=r"----------------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('ETHIOPIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Ethiopia',root=.dhs_root)
+#!/usr/bin/env Rscript
+# National and subnational descriptive percentages. Supply the prepared project
+# root through the country entry point; no existing report is an input.
+country <- Sys.getenv('ANALYSIS_COUNTRY')
+if (!country%in%c('Ethiopia','Nigeria','DRC')) stop('Set ANALYSIS_COUNTRY through the country entry point.')
+root <- Sys.getenv(paste0(toupper(country),'_PROJECT_ROOT'))
+if (!nzchar(root)) stop('A prepared project root is required.')
+source(file.path(root,'Code','dhs_survey_tools.R'),local=TRUE)
+raw <- switch(country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
+ Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
+episodes <- switch(country,Ethiopia='ethiopia_2024_table_7_11_episodes.rds',
+ Nigeria='nigeria_2024_table_7_12_episodes.rds',DRC='drc_2023_24_table_7_13_episodes.rds')
+ir <- readRDS(file.path(root,raw)); e <- readRDS(file.path(root,'Data/Derived',episodes))
+frame <- dhs_frame(ir)
+modern_codes <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
+actionable <- c(1L,4L,5L,6L,7L,8L,10L,15L)
+reason_groups <- list('Method failure'=1L,'Wanted pregnancy'=2L,
+ 'Other fertility'=c(9L,12L,13L),'Bleeding changes'=15L,
+ 'Other side effects/health'=c(4L,5L),'Wanted more effective method'=7L,
+ 'Access/cost/convenience'=c(6L,8L,10L),'Partner/spousal disapproval'=3L,
+ 'Other/unspecified'=c(11L,14L,96L,98L,99L,0L))
+method_group <- function(code) {
+ x <- rep('Other modern',length(code));x[code==1L]<-'Pill';x[code==2L]<-'IUD'
+ x[code==3L]<-'Injectables';x[code==11L]<-'Implants';x[code==16L]<-'EC'
+ x[!code%in%c(modern_codes,16L)]<-'Non-modern/no method';x
+}
+women <- data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),
+ stratum=as.character(ir$v022),region=as.character(ir$v024),
+ modern=as.numeric(ir$v313)==3L,method=method_group(as.numeric(ir$v312)))
+e$cluster <- as.character(ir$v021[e$woman_row]);e$stratum <- as.character(ir$v022[e$woman_row])
+e$region <- as.character(ir$v024[e$woman_row]);e$group <- method_group(e$method_code)
+dw <- dhs_design(women,frame);de <- dhs_design(e,frame)
+scopes <- c('National',sort(unique(women$region)))
+results <- list();check <- 0
+add <- function(design,data,indicator,domain,analysis,scope,category,method='All') {
+ z <- dhs_percentage(design,indicator,domain)
+ valid <- domain & !is.na(indicator)
+ plain <- if(any(valid))100*sum(data$wt[valid]*as.numeric(indicator[valid]))/sum(data$wt[valid])else NA_real_
+ if(is.finite(plain)) {
+   if(abs(z['percent']-plain)>1e-9) stop('Survey and weighted descriptive point estimates disagree.')
+   check <<- check+1L
+ }
+ results[[length(results)+1L]] <<- data.frame(country=country,analysis=analysis,
+  scope=scope,method=method,category=category,as.list(z),row.names=NULL,
+  observed_events=sum(as.logical(indicator[valid])),
+  limited_sample=sum(valid)<25L || sum(as.logical(indicator[valid]))<10L,
+  uncertainty='survey Taylor linearization; full PSU frame; 95% t interval',
+  stringsAsFactors=FALSE)
+}
+for(scope in scopes) {
+ wdomain <- if(scope=='National')rep(TRUE,nrow(women))else women$region==scope
+ edomain <- if(scope=='National')rep(TRUE,nrow(e))else e$region==scope
+ add(dw,women,women$modern,wdomain,'All-women mCPR',scope,'Modern use including EC')
+ for(m in c('Injectables','Implants','Pill','IUD','Other modern','EC')) {
+  add(dw,women,women$method==m,wdomain & women$modern,'Current modern-method mix',scope,m)
+  add(dw,women,women$modern & women$method==m,wdomain,'Method-specific prevalence among all women',scope,m)
+ }
+ start_domain <- edomain & e$entry==0L
+ for(m in sort(unique(e$group))) add(de,e,e$group==m,start_domain,'Observed starts: all methods',scope,m)
+ for(m in c('Injectables','Implants','Pill','IUD','Other modern'))
+  add(de,e,e$group==m,start_domain & e$method_code%in%modern_codes,'Observed starts: modern excluding EC',scope,m)
+ for(m in c('All','Injectables','Implants','Pill','IUD','Other modern')) {
+  mdomain <- edomain & e$method_code%in%modern_codes & (m=='All' | e$group==m)
+  for(window in c('All eligible endings','First-12-month endings')) {
+   ended <- mdomain & e$discontinued
+   if(window=='First-12-month endings')ended<-ended & e$exposure<=12 & e$entry<e$exposure
+   # These are shares AMONG observed endings, not life-table discontinuation risks.
+   for(reason in names(reason_groups))add(de,e,e$reason_code%in%reason_groups[[reason]],ended,
+    paste('Recorded reason shares:',window),scope,reason,m)
+   for(reason in c('Method failure','Bleeding changes','Other side effects/health',
+                    'Wanted more effective method','Access/cost/convenience'))
+    add(de,e,e$reason_code%in%reason_groups[[reason]],ended & e$reason_code%in%actionable,
+     paste('Shares within potentially actionable endings:',window),scope,reason,m)
+  }
+ }
+}
+out <- file.path(root,'output/Supporting_data');dir.create(out,recursive=TRUE,showWarnings=FALSE)
+write.csv(do.call(rbind,results),file.path(out,'dhs_survey_descriptive_percentages.csv'),row.names=FALSE,na='')
+metadata <- data.frame(country=country,weight='v005 / 1000000',PSU='v021',stratum='v022',
+ PSUs=nrow(frame),strata=length(unique(frame$stratum)),
+ design_df=survey::degf(dw),point_comparisons=check,
+ all_point_comparisons_passed=TRUE,full_frame_including_zero_domain_PSUs=TRUE,
+ repeated_episodes_kept_within_PSU=TRUE,survey_version=as.character(packageVersion('survey')))
+write.csv(metadata,file.path(out,'dhs_survey_design_checks.csv'),row.names=FALSE)
+cat('Survey descriptives complete:',country,';',check,'weighted point comparisons passed.\n')
+)----------------------")
 
 if (sys.nframe() == 0L) main()

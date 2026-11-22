@@ -503,6 +503,7 @@ main <- function() {
   if (identical(selected,'reference')) selected <- '200_reference_analysis_extensions.R'
   if (identical(selected,'planning')) selected <- PLANNING_MODULES
   if (identical(selected,'survey-update')) selected <- c('02_nigeria_descriptive_analyses.R','12_nigeria_all_reason_bridge.R','03_nigeria_zone_models.R','04_nigeria_subgroups_and_tests.R','13_nigeria_all_reason_models.R','17_nigeria_selected_reason_models.R','26_nigeria_actionable_method_zone_models.R','29_zone_method_mix_decomposition.R','37_nigeria_selected_reason_extensions.R','42_nigeria_crossvalidated_selected_risk_strata.R','203_nigeria_planning_survey_ci.R','204_summarize_planning.R')
+  if (identical(selected,'survey-descriptives')) selected <- 'dhs_survey_descriptives.R'
   if (any(!selected %in% names(MODULES))) stop('Unknown module; use --list for filenames.')
   if (!nzchar(ir) && any(selected %in% CORE_MODULES))
     stop('Supply --ir-file or DHS_IR_FILE before running the core analysis.')
@@ -567,9 +568,17 @@ Missing,0.0,0.3,0.6,0.1,0.7,1.4,0.4,0.0,0.3,0.4
 MODULES[["200_reference_analysis_extensions.R"]] <- list(
   language="R",
   original_sha256="b42549fa5545c5225a7cc1c299954ae15ed5c680f59729fd1a93c6ca17ea015e",
-  packaged_sha256="b42549fa5545c5225a7cc1c299954ae15ed5c680f59729fd1a93c6ca17ea015e",
+  packaged_sha256="83b5793e868f9655acc5fdb1c05fc65cc39b4070b921c4ccf5287954e79c92a1",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Reference-aligned numerical analyses for Ethiopia, Nigeria, and DRC.
 # This module supplements the archived country modules; it never edits HTML/PPTX.
 # Native calendar reason codes are used throughout, not the recoded nine groups.
@@ -778,7 +787,7 @@ person_months <- function(x,scope) {
 }
 fit_model <- function(formula,p,w=p$wt) {
  p$fit_weight<-w
- fit<-nnet::multinom(formula,data=p,weights=fit_weight,trace=FALSE,maxit=500,MaxNWts=30000,Hess=FALSE)
+ fit<-dhs_multinom_fit(formula,data=p,weights=fit_weight,trace=FALSE,maxit=500,MaxNWts=30000,Hess=FALSE)
  if(fit$convergence!=0L)stop('Model did not converge')
  fit
 }
@@ -1082,9 +1091,17 @@ if __name__=='__main__':main()
 MODULES[["01_nigeria_calendar_life_table.R"]] <- list(
   language="R",
   original_sha256="ad1e23657d3b1475145818b8003cdd06d3879647a46c215ec70895983cd5538a",
-  packaged_sha256="ad1e23657d3b1475145818b8003cdd06d3879647a46c215ec70895983cd5538a",
+  packaged_sha256="98fb72c1c3302ce123ae4bb76280fb389456149c32ae13bc5194c93f22e1b401",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024: reconstruct contraceptive episodes and validate Table 7.12.
 # Input is the authorized IR recode already available in the Nigeria project.
 # One woman contributes zero or more calendar method-use episodes. The DHS
@@ -1102,6 +1119,7 @@ support <- file.path(root,'output/Supporting_data')
 dir.create(derived,recursive=TRUE,showWarnings=FALSE)
 dir.create(support,recursive=TRUE,showWarnings=FALSE)
 x <- readRDS(source_rds)
+dhs_set_context(ir=x)
 stopifnot(nrow(x)==39050L,!anyDuplicated(x$caseid),
           all(as.numeric(x$v008)-as.numeric(x$v017)+1==as.numeric(x$v019)),
           all(nchar(x$vcal_1)==80L),
@@ -1153,6 +1171,7 @@ for(i in seq_len(nrow(x))){
     next2_code=c(codes,NA_integer_,NA_integer_)[seq_along(codes)+2L])
 }
 events <- do.call(rbind,events)
+events <- dhs_calendar_records(events,x)
 saveRDS(events,file.path(derived,'nigeria_2024_calendar_events.rds'))
 
 # Each use episode may enter the 3–62-month observation window after it began.
@@ -1303,9 +1322,17 @@ if(!all(matching))stop('Nigeria Table 7.12 replication does not yet match every 
 # LANGUAGE: R
 MODULES[["02_nigeria_descriptive_analyses.R"]] <- list(
  language="R",
- packaged_sha256="627ef35a223ae45af96554b96669554e9eb671cfe59b9beccdd01dedfb1aa994",
+ packaged_sha256="113002d366e70dfcd3c748800a4ac99a67507e57c1b1b6fa5e20f665009aa55b",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024 descriptive analysis. Run after 01_nigeria_calendar_life_table.R.
 # No package download is needed. The source IR recode stays unchanged.
 # The outcome is cessation of the ORIGINAL modern method within 12 months for
@@ -1508,9 +1535,17 @@ print(times[times$month==12 & times$scope %in% c('National',zone_names),
 # LANGUAGE: R
 MODULES[["03_nigeria_zone_models.R"]] <- list(
  language="R",
- packaged_sha256="da1f279a5c3ae4973349b323e41e8ae1d080620fe6c45d30793f0adf71cb3c04",
+ packaged_sha256="69352785ee4ff3c352ed8edae3284190de391e7a3a79d9890bfd55dad853214d",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024: adjusted zone comparison for actionable discontinuation.
 # Run after scripts 01 and 02. Unit of fitting is the episode-month. Outcomes
 # are continuation, actionable discontinuation, and another competing ending.
@@ -1581,9 +1616,10 @@ observed_months <- pmax(0L,pmin(12L,e$exposure)-e$entry)
 idx <- rep(seq_len(nrow(e)),observed_months)
 month <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
   e$entry,observed_months),use.names=FALSE)
-person <- e[idx,c('wt','cluster','stratum','method_group','zone_name',
+person <- e[idx,c("woman_row",'wt','cluster','stratum','method_group','zone_name',
   'age_group','parity_group','marital_group','education','wealth',
   'residence','start_year')]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month,levels=1:12)
 end <- e$discontinued[idx] & month==e$exposure[idx]
 person$outcome <- factor(ifelse(!end,'continue',
@@ -1597,7 +1633,7 @@ f2 <- outcome~month+method_group+zone_name+age_group+parity_group+
   marital_group+education+wealth+residence+start_year
 fit <- function(formula,data,wts,with_hessian=TRUE){
   data$fit_weight <- wts
-  m <- nnet::multinom(formula,data=data,weights=fit_weight,trace=FALSE,
+  m <- dhs_multinom_fit(formula,data=data,weights=fit_weight,trace=FALSE,
     maxit=350,MaxNWts=10000,Hess=with_hessian)
   m$call$formula <- formula
   if(m$convergence!=0L)stop('Model did not converge')
@@ -1647,19 +1683,20 @@ write.csv(point,file.path(support,'nigeria_actionable_zone_adjusted_rates.csv'),
   row.names=FALSE)
 
 # Model coefficients are odds ratios for each non-continuation event versus
-# continuing that same episode-month. Wald p-values here use model Hessian;
+# continuing that same episode-month. Wald inference uses full-frame survey covariance;
 # survey-design bootstrap intervals are calculated for the zone probabilities
 # below. Coefficients should be read as associations, not causal effects.
 coefficient_table <- function(model,name){
-  s <- summary(model)
+  s <- dhs_multinom_summary(model,person)
+  critical <- qt(.975,s$design_df)
   z <- s$coefficients/s$standard.errors
-  p <- 2*pnorm(-abs(z))
+  p <- 2*pt(-abs(z),df=s$design_df)
   rows <- list()
   for(outcome in rownames(s$coefficients))for(v in colnames(s$coefficients)){
     beta <- s$coefficients[outcome,v]; se <- s$standard.errors[outcome,v]
     rows[[length(rows)+1L]] <- data.frame(model=name,outcome=outcome,
-      covariate=v,odds_ratio=exp(beta),ci_low=exp(beta-1.96*se),
-      ci_high=exp(beta+1.96*se),p_value=p[outcome,v])
+      covariate=v,odds_ratio=exp(beta),ci_low=exp(beta-critical*se),
+      ci_high=exp(beta+critical*se),p_value=p[outcome,v])
   }
   do.call(rbind,rows)
 }
@@ -1720,9 +1757,17 @@ source(file.path(root,"Code","202_nigeria_survey_coefficients.R"),local=TRUE)
 # LANGUAGE: R
 MODULES[["04_nigeria_subgroups_and_tests.R"]] <- list(
  language="R",
- packaged_sha256="8e7bcf518ece45fef6359d0e80875e9a75ac7cf7985dca7dd549fbffee77cb34",
+ packaged_sha256="34608a29ae95c21eb30b5add644c2d12b487471b12201b0e631050b9e19339db",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024 subgroup and zone-pairwise analysis. Run after 01–03.
 # Each subgroup rate is a weighted cumulative incidence among its eligible
 # modern method episodes, with all non-actionable endings as competing events.
@@ -1845,9 +1890,17 @@ print(aggregate(significant_5pct~stage,tests,sum),row.names=FALSE)
 MODULES[["08_nigeria_population_and_planning.R"]] <- list(
   language="R",
   original_sha256="806433f8204aefbda17806f6e4b34ebda4dc81720d17e7acdd9fc8ad7d7b9767",
-  packaged_sha256="806433f8204aefbda17806f6e4b34ebda4dc81720d17e7acdd9fc8ad7d7b9767",
+  packaged_sha256="85b0186068f9732d690d76e3301478fa1e651f9790e73d26be15afac4623b1e1",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024 current-use method mix and an illustrative 2024–26
 # planning bridge. WRA comes from UN WPP 2024 medium variant (female single
 # ages 15–49, mid-year). Pair the 2024 survey mCPR/mix with 2024 WRA first;
@@ -1960,9 +2013,17 @@ cat('WRA 2024',w24,'users 2024',current_users_2024,'WRA 2025',w25,
 MODULES[["09_nigeria_post_discontinuation_pathways.R"]] <- list(
   language="R",
   original_sha256="0432d66d7c32bcadf3c0dd63e80b5eb84a0a7b79ed6bf0f3d251fca49679d058",
-  packaged_sha256="0432d66d7c32bcadf3c0dd63e80b5eb84a0a7b79ed6bf0f3d251fca49679d058",
+  packaged_sha256="b828aadc62b3c12a40417bef550d84a4ecf9924ba9c1c61d23e9d44145640be4",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Descriptive status one and twelve months after an observed actionable
 # original-method ending. This is a follow-up cohort, not a competing-risk
 # life-table estimate. Only events with the respective follow-up month
@@ -2052,9 +2113,17 @@ print(selected)
 # LANGUAGE: R
 MODULES[["12_nigeria_all_reason_bridge.R"]] <- list(
  language="R",
- packaged_sha256="9c504dcb9e6d8bd21ec7e7c1374726f15fd71588b84587d2960dd64541f4d945",
+ packaged_sha256="0d124e49f2692f4643895ba069e4a288e8c74d7c46a86db83f2a966a5971b158",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Reproduce the Ethiopia presentation's sequence for the Nigeria modern-method
 # cohort: all-cause first-year risk, a selected-reason intermediate estimate
 # (wanted pregnancy and partner disapproval remain competing events), and then
@@ -2170,9 +2239,17 @@ cat('National all-cause / selected / actionable:',
 # LANGUAGE: R
 MODULES[["13_nigeria_all_reason_models.R"]] <- list(
  language="R",
- packaged_sha256="aff12d8e00e73d846029b09cd2047ff339b2a23ff93a7150a3027c9881690906",
+ packaged_sha256="4bae9983e8cec001d5b78360dbffc01b26e9a8b57869bb5b87f1150b38539ffa",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # All-reason counterpart of the Nigeria actionable episode-month models.
 # Every observed modern-method month contributes until its original-method
 # ending or censoring. The binary event is ANY ending, including desired
@@ -2195,8 +2272,7 @@ f2 <- ended~month+method_group+zone_name+age_group+parity_group+
   marital_group+education+wealth+residence+start_year
 fit <- function(formula,wts){
   person$fit_weight <- wts
-  suppressWarnings(glm(formula,data=person,family=binomial(),weights=fit_weight,
-    control=glm.control(maxit=75)))
+  dhs_binary_fit(formula,person,full_frame,weight='fit_weight')
 }
 m1 <- fit(f1,person$wt)
 m2 <- fit(f2,person$wt)
@@ -2303,9 +2379,17 @@ cat('All-reason adjusted zone/subgroup output saved:',nrow(zone_rows),nrow(subgr
 MODULES[["15_nigeria_initiation_mix.R"]] <- list(
   language="R",
   original_sha256="98fc88f596b7ad0010eca101cf8da3b4795327341b055a102cc505a40db2d33e",
-  packaged_sha256="98fc88f596b7ad0010eca101cf8da3b4795327341b055a102cc505a40db2d33e",
+  packaged_sha256="639a944b13cde5a2f9d53d2b9d48d2671e18ba999f60c417a937192511ebe393",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria counterpart of the Ethiopia initiation-mix diagnostic. These are
 # weighted, observed calendar starts, not current use (v312) and not a life-
 # table denominator. The 2024 calendar year is incomplete under the DHS
@@ -2376,9 +2460,17 @@ print(z[z$scope=='Overall',c('method','start_share_pct')],row.names=FALSE)
 # LANGUAGE: R
 MODULES[["17_nigeria_selected_reason_models.R"]] <- list(
  language="R",
- packaged_sha256="d62de81080f6ad5412bf11142d6f54c395530cedc6abada99ea0eae860fbb06c",
+ packaged_sha256="7ca32dbf8fa0dc782fdc20b9a812a7877adfd785ecb408fde936199e3d964526",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Ethiopia-style selected-reason counterpart for Nigeria. The event is ending
 # for any recorded reason except wanted pregnancy (calendar code 2) or partner
 # disapproval (code 3). Those two endings remain competing events: they are in
@@ -2408,7 +2500,7 @@ f2 <- selected_outcome~month+method_group+zone_name+age_group+parity_group+
   marital_group+education+wealth+residence+start_year
 fit <- function(formula,weights){
   person$fit_weight <- weights
-  m <- nnet::multinom(formula,data=person,weights=fit_weight,trace=FALSE,
+  m <- dhs_multinom_fit(formula,data=person,weights=fit_weight,trace=FALSE,
     maxit=350,MaxNWts=10000)
   if(m$convergence!=0L)stop('Selected-reason model failed to converge')
   m
@@ -2518,9 +2610,17 @@ cat('Selected-reason adjusted zone/subgroup output saved:',nrow(zone_rows),nrow(
 MODULES[["22_nigeria_landmark_support.R"]] <- list(
   language="R",
   original_sha256="e3bceabf4adf1d6171f3f54bfac7b5287b8e5046fc4dd62911fb303160b7ec87",
-  packaged_sha256="e3bceabf4adf1d6171f3f54bfac7b5287b8e5046fc4dd62911fb303160b7ec87",
+  packaged_sha256="8e11a0a40bcac914dc2e5b163c03a18a9bb3f0e978812250d36a6efdfd976d25",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Audit historical landmarks available for a prospective 12-month trajectory.
 # A landmark is a month of current modern use at an observed duration since
 # starting the original method, with 12 further calendar months observed.
@@ -2558,9 +2658,17 @@ print(with(land,table(method,bin)),quote=FALSE)
 MODULES[["23_nigeria_current_user_switch_and_duration.R"]] <- list(
   language="R",
   original_sha256="f20383478e7b82fb7c7020c5d4243efec5179f553dd9bedb784cd59b4b311c6b",
-  packaged_sha256="f20383478e7b82fb7c7020c5d4243efec5179f553dd9bedb784cd59b4b311c6b",
+  packaged_sha256="ff6b8088a177b0bd0b3c6f6c3d7772e05b9431879e5411469231f546823f677a",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024: transparent bridges from original-method endings to
 # modern-use status among projected current users. This script does not
 # estimate a causal effect of preventing discontinuation.
@@ -2831,9 +2939,17 @@ print(scenario_bridge[,c('scenario','first_year_gross_endings','first_year_not_d
 MODULES[["25_duration_aware_cause_pp_tables.R"]] <- list(
   language="R",
   original_sha256="f86676c094610444737b95e1fb33d544963c976dda20f4567209f48808eb79c1",
-  packaged_sha256="f86676c094610444737b95e1fb33d544963c976dda20f4567209f48808eb79c1",
+  packaged_sha256="50222b6deb2919cc7f5809a5f5dff0764476c476fe4e17701f2e57437140e293",
   args=character(),
-  code=r"-----(# Recreate the method-by-cause percentage-point matrix from the duration-aware
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+# Recreate the method-by-cause percentage-point matrix from the duration-aware
 # current-user analysis. The source CSV contains survey-derived projections of
 # women who end their current method for an actionable reason and are not using
 # any modern method 12 months after the current-use landmark. It has already
@@ -2880,9 +2996,17 @@ message("Saved ", output_file)
 # LANGUAGE: R
 MODULES[["26_nigeria_actionable_method_zone_models.R"]] <- list(
  language="R",
- packaged_sha256="87d3118103e0f2a3b857ea5b6c1af46ffb4dda68b9369dc6eca9f960acbe094b",
+ packaged_sha256="b44ad9f0d85e39bfd28c28d160638294ef3acbbc49ed49ecc11ea311a6b5849b",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024: within-method zone differences in first-year discontinuation
 # for potentially actionable reasons. This is the Nigeria counterpart of the
 # Ethiopia injectable/implant regional tests. Run scripts 01 and 03 first.
@@ -3003,7 +3127,7 @@ get_method <- function(method) {
 
   fit <- function(w) {
     p$boot_weight <- w
-    out <- tryCatch(nnet::multinom(formula,data=p,weights=boot_weight,
+    out <- tryCatch(dhs_multinom_fit(formula,data=p,weights=boot_weight,
       maxit=400,MaxNWts=10000,trace=FALSE,Hess=FALSE),
       error=function(err)NULL)
     if(is.null(out) || out$convergence!=0L)return(NULL)
@@ -3145,9 +3269,17 @@ print(pairs[pairs$significant_5pct,],row.names=FALSE)
 # LANGUAGE: R
 MODULES[["29_zone_method_mix_decomposition.R"]] <- list(
  language="R",
- packaged_sha256="7b15e1d652f97fe428bc1485734de0475bb692351e9ec34e3abb766bbdbea8d5",
+ packaged_sha256="96585a924209225ec7ca466cd2b58aebdfee0a10258ec5454cdef25f23375e04",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024: descriptive, symmetric decomposition of each pair of six
 # zones. The denominator is eligible modern-method episodes excluding EC.
 # Potentially actionable method endings are the event; all other endings are
@@ -3262,9 +3394,17 @@ cat('Wrote',nrow(summary),'decomposition rows and',nrow(detail),'cells\n')
 MODULES[["34_nigeria_historical_current_user_pathways.R"]] <- list(
   language="R",
   original_sha256="893c5c21009af098f15c556ea5b7853550dd3627f727889dc0c31df74cf3a015",
-  packaged_sha256="893c5c21009af098f15c556ea5b7853550dd3627f727889dc0c31df74cf3a015",
+  packaged_sha256="0e50acc325767666373af4eaa81d5523eba57e78150a3b6fb223a0362472d8a1",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024 historical current-user pathway and direct standardization.
 # One woman using a modern method 15 months before interview contributes one
 # landmark. The following 12 observed calendar months end 3 months before
@@ -3379,9 +3519,17 @@ print(summary)
 MODULES[["35_nigeria_alluvial_figures.R"]] <- list(
   language="R",
   original_sha256="22fdb192d06b81108fb4a07f313fdfda386c25531ce429e93154a4bf6a3c82ec",
-  packaged_sha256="22fdb192d06b81108fb4a07f313fdfda386c25531ce429e93154a4bf6a3c82ec",
+  packaged_sha256="5ebc5945aa4ba9ccb6b77972e514caf6e89752ad892da18c0e3b0289829b8f03",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024 alluvial figures parallel to Ethiopia's episode and
 # historical-current-user pathway displays. Every figure has a stated cohort:
 # first-year injectable actionable endings with month 1 observed; a fixed
@@ -3573,9 +3721,17 @@ cat('Created seven alluvial PNGs and source flow tables\n')
 # LANGUAGE: R
 MODULES[["37_nigeria_selected_reason_extensions.R"]] <- list(
  language="R",
- packaged_sha256="9c53719bf39bcb9c801d76c2482c1225970177ad21dff443781a741cd2bb030d",
+ packaged_sha256="511c64f7d5584953c4188e757282ef276376af269b63586f9483224debadcee2",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024 selected-reason exploratory analyses mirroring Ethiopia's
 # descriptive subgroups, method-duration classes, reason rankings and regional
 # method-mix panels. Eligible denominator: all modern-method episodes except
@@ -3714,9 +3870,17 @@ cat('Wrote',nrow(point),'selected-reason rows; bootstrapped',length(ci_keys),
 MODULES[["38_nigeria_other_reason_followup.R"]] <- list(
   language="R",
   original_sha256="7563925b7cd91bb3f8b195294616cd79623b25fbd74acfb92a19b13f52ac1164",
-  packaged_sha256="7563925b7cd91bb3f8b195294616cd79623b25fbd74acfb92a19b13f52ac1164",
+  packaged_sha256="7ac715b05a57cbb9a029ca144f941ac4d87c18a9777443c0379f19fbe46bfe58",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Decompose residual 12-month modern-method endings and their observed status
 # one and twelve months later. This is a conditional ending cohort, distinct
 # from cause-specific cumulative incidence in the episode risk set.
@@ -3775,9 +3939,17 @@ cat('Other first-year endings',nrow(z),'follow-up rows',nrow(result),'\n')
 MODULES[["40_nigeria_selected_current_user_planning.R"]] <- list(
   language="R",
   original_sha256="03d384508bfc9040a08f7535ec49a516dea510769c9400a3adf8bef06723758b",
-  packaged_sha256="03d384508bfc9040a08f7535ec49a516dea510769c9400a3adf8bef06723758b",
+  packaged_sha256="ca938cbfec994f85c3119648ef1cc0bb2be56a90b652df39ec8ea8e556df0388",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Parallel first-year and duration-aware 2025-current-user illustrations for
 # seven selected discontinuation reasons (all except wanted pregnancy and
 # partner disapproval). These are original-method endings, not necessarily
@@ -3835,9 +4007,17 @@ cat('First-year illustrative selected endings',round(total[1]),
 # LANGUAGE: R
 MODULES[["42_nigeria_crossvalidated_selected_risk_strata.R"]] <- list(
  language="R",
- packaged_sha256="da6678ab2cae3e3d6ae7aae4807665d418c9ac0291c19357ca7f7ff1b15050ea",
+ packaged_sha256="fbe3ed675cf7bf474d9d0539fd91032e11c24b34e86a836a60a8f10a52cb54d6",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Out-of-fold risk stratification for 12-month discontinuation of the original
 # modern method for any reason except wanted pregnancy or partner disapproval.
 # The two excluded endings are competing events. This is an EPISODE-level
@@ -3901,7 +4081,8 @@ nmonths <- pmax(0L,pmin(12L,e$exposure)-e$entry)
 index <- rep(seq_len(nrow(e)),nmonths)
 month <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
                     e$entry,nmonths),use.names=FALSE)
-person <- e[index,c("wt","method_group","age_group","parity_group","fold")]
+person <- e[index,c("woman_row","wt","method_group","age_group","parity_group","fold")]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month,levels=1:12)
 ended <- e$discontinued[index] & month==e$exposure[index]
 person$outcome <- factor(ifelse(!ended,"continue",
@@ -3922,7 +4103,7 @@ predict_cif <- function(fit,x){
 }
 e$oof_selected_risk_pct <- NA_real_
 for(f in 1:5){
-  fit<-nnet::multinom(formula,data=person[person$fold!=f,],
+  fit<-dhs_multinom_fit(formula,data=person[person$fold!=f,],
     weights=person$wt[person$fold!=f],maxit=250,trace=FALSE,MaxNWts=10000)
   if(fit$convergence!=0L)stop("Fold ",f," failed to converge")
   held<-which(e$fold==f)
@@ -4027,9 +4208,17 @@ print(differences,row.names=FALSE)
 MODULES[["44_nigeria_replication_figures.R"]] <- list(
   language="R",
   original_sha256="f2394cf4bee2b3bd23bb7da6dc713abdb8830ecb77352f3060faf6a64a598743",
-  packaged_sha256="f2394cf4bee2b3bd23bb7da6dc713abdb8830ecb77352f3060faf6a64a598743",
+  packaged_sha256="4f350373f9749bec8a74f3f92440434c163b1c6b08acb6a6778d6363366c0678",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Reproduce the principal figure families in the Ethiopia working HTML using
 # Nigeria DHS 2024 estimates already saved by the documented analysis scripts.
 # No figures or estimates are copied from Ethiopia.
@@ -4166,9 +4355,17 @@ cat('Created Nigeria figures in',assets,'\n')
 MODULES[["70_modern_five_year_reasons.R"]] <- list(
   language="R",
   original_sha256="3dcf3ea84c4d8dd75c9c25d05507e97931fcbf5e531deeb528d6715a516edbef",
-  packaged_sha256="3dcf3ea84c4d8dd75c9c25d05507e97931fcbf5e531deeb528d6715a516edbef",
+  packaged_sha256="1ef5a1bbdc09ae8439fd508a3da06e510286799168dc563de43083603e7b2db7",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Match Ethiopia's five-year reason-distribution denominator: observed endings
 # of modern-method episodes, excluding emergency contraception. Reconstruct
 # the published all-method column first as a validation control.
@@ -4253,9 +4450,17 @@ cat(dest,'\n')
 MODULES[["89_nigeria_aft_duration_by_method.R"]] <- list(
   language="R",
   original_sha256="158523d270b12c8419c73c92dbcc8c634065b910bb868f2add188e1eb786fd52",
-  packaged_sha256="158523d270b12c8419c73c92dbcc8c634065b910bb868f2add188e1eb786fd52",
+  packaged_sha256="956cc87556dac58bb5cfe3c7e1ff57946a35cc5ad98c2f4b592425be8ba58064",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024: next-12-month actionable original-method ending risk
 # conditional on a current user's elapsed method duration. Other endings
 # compete. This is a descriptive AFT sensitivity analysis, not a forecast.
@@ -4286,10 +4491,10 @@ stopifnot(nrow(e)==7520L,all(e$action_event+e$other_event<=1L),
 suppressPackageStartupMessages(library(survival))
 fit_candidates <- function(event){
   choices <- c('weibull','loglogistic','lognormal','exponential')
-  fits <- lapply(choices,function(d)survreg(
+  fits <- lapply(choices,function(d)dhs_aft_fit(
     as.formula(paste0('Surv(exposure,',event,')~method')),
     data=e,weights=wt,dist=d,control=survreg.control(maxiter=100)))
-  aic <- vapply(fits,AIC,0.0); names(aic) <- choices
+  aic <- vapply(fits,dhs_aft_aic,0.0); names(aic) <- choices
   best <- which.min(aic)
   list(fit=fits[[best]],distribution=choices[best],aic=aic)
 }
@@ -4329,7 +4534,7 @@ next12 <- function(age,par){
 
 current <- ir[as.numeric(ir$v313)==3 & as.numeric(ir$v312) %in% modern_codes,]
 current$method <- method_group(as.integer(current$v312))
-current$elapsed <- as.integer(current$v337)
+current$elapsed <- dhs_current_duration(current,seq_len(nrow(current)))
 current$wt <- as.numeric(current$v005)/1e6
 stopifnot(!anyNA(current$elapsed),all(current$elapsed>=0),
   all(current$method %in% methods))
@@ -4390,9 +4595,17 @@ cat('Selected AFT distributions:',model_a$distribution,'for actionable,',model_o
 MODULES[["90_nigeria_aft_duration_by_method_cause.R"]] <- list(
   language="R",
   original_sha256="40195f4a4cec99c244a718eccfeafa1539829ee3c58aa4bf0d454f3e2f8e83f2",
-  packaged_sha256="40195f4a4cec99c244a718eccfeafa1539829ee3c58aa4bf0d454f3e2f8e83f2",
+  packaged_sha256="349b543b9bfbcbbdd74c0ff9ff1d9bf227020c922f97fb98fac97ba6e19e5bda",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria DHS 2024 sensitivity analysis: distribute the previously modeled next-year actionable
 # original-method endings over the five established program-actionable causes.
 # This is a calibrated cause-specific survival decomposition. It does not
@@ -4411,10 +4624,10 @@ names(cause_codes) <- causes
 fit_cause <- function(codes){
   e$cause_event <- as.integer(e$discontinued & e$reason_code %in% codes)
   choices <- c('weibull','loglogistic','lognormal','exponential')
-  fits <- lapply(choices,function(d)tryCatch(survreg(
+  fits <- lapply(choices,function(d)tryCatch(dhs_aft_fit(
     Surv(exposure,cause_event)~method,data=e,weights=wt,dist=d,
     control=survreg.control(maxiter=100)),error=function(x)NULL))
-  aic <- vapply(fits,function(f)if(is.null(f)) Inf else AIC(f),0.0)
+  aic <- vapply(fits,function(f)if(is.null(f)) Inf else dhs_aft_aic(f),0.0)
   ix <- which.min(aic)
   stopifnot(is.finite(aic[ix]))
   list(fit=fits[[ix]],dist=choices[ix],aic=aic[ix],events=sum(e$cause_event))
@@ -4489,9 +4702,17 @@ print(rows[,c('method','reason','conditional_next12_risk_pct',
 MODULES[["91_nigeria_aft_switching_bridge.R"]] <- list(
   language="R",
   original_sha256="4d2acbd3332a50766a00a534d0188940006b41698762d06be5c83e789e8bda5d",
-  packaged_sha256="4d2acbd3332a50766a00a534d0188940006b41698762d06be5c83e789e8bda5d",
+  packaged_sha256="eda72f3d153c1d45372dcd70884d90f7ed4adf7325ef7c32aaee3e13f0d47a7f",
   args=character(),
-  code=r"-----(#!/usr/bin/env Rscript
+  code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Nigeria sensitivity analysis: combine AFT next-12-month cause-specific
 # original-method ending risks with observed post-ending method pathways.
 # The AFT model alone does not predict switching or modern use at year end.
@@ -4937,9 +5158,17 @@ out.write_text(json.dumps(final_labels(json.loads(out.read_text())),indent=2))
 
 MODULES[["202_nigeria_survey_coefficients.R"]] <- list(
  language="R",
- packaged_sha256="e7da5a9c883391c8ae52256769c1e5d08c72e11dd41755b566825734caf1d4b1",
+ packaged_sha256="3d746ca23c66ba8d6147117ca5072fe9f654c63a83a9cbf1783bf322c09a7181",
  args=character(),
- code=r"-----(suppressPackageStartupMessages(library(nnet))
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+suppressPackageStartupMessages(library(nnet))
 root<-Sys.getenv("NIGERIA_PROJECT_ROOT");out<-file.path(root,"output/Supporting_data")
 p<-readRDS(file.path(root,'Data/Derived/nigeria_2024_person_month.rds'))
 ir<-readRDS(file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'))
@@ -4954,7 +5183,7 @@ for(k in 1:2){
  expected<-unlist(lapply(lev,function(y)paste(y,colnames(X),sep=':')))
  stopifnot(identical(colnames(m$Hessian),expected))
  s<-matrix(0,nrow(f),ncol(score));a<-rowsum(score,p$cluster);s[match(rownames(a),f$cluster),]<-a
- meat<-matrix(0,ncol(s),ncol(s));for(ids in g){z<-s[ids,,drop=FALSE];z<-sweep(z,2,colMeans(z));meat<-meat+length(ids)/(length(ids)-1)*crossprod(z)}
+ meat<-dhs_psu_variance(s,f)
  bread<-MASS::ginv(m$Hessian);v<-bread%*%meat%*%bread;se<-sqrt(pmax(diag(v),0));be<-as.vector(t(coef(m)));crit<-qt(.975,df)
  rows[[k]]<-data.frame(model=if(k==1)'Method + duration'else'Full',outcome=rep(lev,each=ncol(X)),covariate=rep(colnames(X),length(lev)),odds_ratio=exp(be),ci_low=exp(be-crit*se),ci_high=exp(be+crit*se),p_value=2*pt(-abs(be/se),df),survey_se=se,design_df=df)
  saveRDS(v,file.path(out,paste0('model_',k,'_survey_vcov.rds')))
@@ -4966,9 +5195,17 @@ cat('Full-frame cluster/strata sandwich:',nrow(f),'PSUs;',length(g),'strata;',df
 
 MODULES[["203_nigeria_planning_survey_ci.R"]] <- list(
  language="R",
- packaged_sha256="ac0d61fa27e3a7c8cf1ebb7d2dba85ab8c301bd15c844bebfd70a1f04bc68d26",
+ packaged_sha256="ce9e561b24b6dfc8bdf962ccdcb85c15f1d0211fa4da3c39eb4c48d341c10a5f",
  args=character(),
- code=r"-----(#!/usr/bin/env Rscript
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Survey-design inference for Nigeria planning scenarios. All inputs are parameters.
 # Fixed population and growth assumptions; uncertainty includes IR sampling,
 # current-use composition, empirical risks, fitted AFT parameters and pathways.
@@ -5004,7 +5241,7 @@ strata<-split(seq_len(nrow(frame)),frame$stratum);stopifnot(all(lengths(strata)>
 psu_index<-match(psu,frame$psu)
 u<-as.numeric(ir$v313)==3;umethod<-method_group(as.numeric(ir$v312));umethod[as.numeric(ir$v312)==16]<-'EC'
 uindex<-which(u & as.numeric(ir$v312) %in% modern)
-current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=as.numeric(ir$v337[uindex]),wt=wt[uindex])
+current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=dhs_current_duration(ir,uindex),wt=wt[uindex])
 stopifnot(all(is.finite(current$elapsed)),all(current$elapsed>=0))
 bins<-c(-1,3,6,12,24,36,48,60,Inf);blabel<-c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
 current$bin<-as.integer(cut(current$elapsed,bins))
@@ -5051,6 +5288,7 @@ for(m in methods)for(b in 1:8)for(j in 1:5){
 }
 write.csv(do.call(rbind,support),file.path(out,'switching_support.csv'),row.names=FALSE)
 measure<-function(mult,replicate=0L){
+ old_dhs<-options(dhs.replication=replicate>0L);on.exit(options(old_dhs),add=TRUE)
  iw<-wt*mult[psu_index];ew<-e$wt*mult[psu_index[e$woman_row]];lw<-land$wt*mult[psu_index[land$woman]];cw<-current$wt*mult[psu_index[current$woman]]
  mcpr<-100*sum(iw[u])/sum(iw);mix<-vapply(c(methods,'EC'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0)
  stock<-w25*(mcpr+.4)/100*mix
@@ -5073,7 +5311,7 @@ measure<-function(mult,replicate=0L){
     risk[7,m,j]<-risk[7,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j & land$direct[z]])/den}}
  }
  aw<-af$wt*mult[psu_index[af$woman_row]]
- fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(survreg(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
+ fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(dhs_aft_fit(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
  for(m in methods){nd<-data.frame(method=factor(m,levels=methods));hh<-sapply(seq_along(fits),function(j){f<-fits[[j]];if(!m %in% attr(f,'active_methods'))return(rep(0,length(time)-1));mu<-as.numeric(predict(f,newdata=nd,type='lp'));diff(cumhaz(time,mu,f$scale,dists[j]))})
   ix<-ci_index[[m]];den<-sum(cw[ix]);for(age in unique(current$elapsed[ix])){z<-ix[current$elapsed[ix]==age];share<-sum(cw[z])/den;if(share==0)next
    h<-hh[age+1:12,,drop=FALSE];total<-h[,1]+h[,2];s<-c(1,exp(-cumsum(total)))[1:12];monthly<-s*(-expm1(-total))*ifelse(total>0,h[,1]/total,0)
@@ -5103,9 +5341,17 @@ saveRDS(list(wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(
 
 MODULES[["204_summarize_planning.R"]] <- list(
  language="R",
- packaged_sha256="0b74caa7a9797f39c1c0e9f2291dfc4e7cab73de20c633bd2a92da5948515ef0",
+ packaged_sha256="b53f55926f82947d9342685dc7191b4115cd570ff1da1e510aebb250d7ca79e6",
  args=character(),
- code=r"-----(o<-file.path(Sys.getenv("NIGERIA_PROJECT_ROOT"),"output/survey_planning");p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
+ code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+o<-file.path(Sys.getenv("NIGERIA_PROJECT_ROOT"),"output/survey_planning");p<-readRDS(file.path(o,'planning_point.rds'));d<-readRDS(file.path(o,'planning_replicates.rds'));meta<-readRDS(file.path(o,'planning_metadata.rds'))
 metrics<-function(x){
  x$counts<-abind::abind(x$counts,x$counts[1,,,drop=FALSE]-x$counts[6,,,drop=FALSE],x$counts[2,,,drop=FALSE]-x$counts[4,,,drop=FALSE],x$counts[3,,,drop=FALSE]-x$counts[5,,,drop=FALSE],along=1)
  y<-c(stock_no_ec=sum(x$stock[meta$methods]),mcpr2024=x$mcpr,mcpr2025=x$mcpr+.4,users2025=sum(x$stock),users2024=sum(x$users2024))
@@ -5250,7 +5496,15 @@ complete_preparation_audit <- function(root, v) {
 }
 
 
-MODULES[["210_prepare_analysis_inputs.R"]] <- list(language="R", packaged_sha256="7c971daf985e31ccbb3fdefa9857fb8ae4a3ccbe0353b772fda53be2d8ddc23f", args=character(), code=r"-----(#!/usr/bin/env Rscript
+MODULES[["210_prepare_analysis_inputs.R"]] <- list(language="R", packaged_sha256="f2c4bd04955dea25c3444eea139defcb8423db9423e03d2b7e31c63b049215f5", args=character(), code=r"-----(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Reuse existing country data definitions; stop before fitting any model.
 root<-Sys.getenv('NIGERIA_PROJECT_ROOT');stopifnot(nzchar(root))
 derived<-file.path(root,'Data','Derived');prefix<-'nigeria'
@@ -5361,9 +5615,10 @@ observed_months <- pmax(0L,pmin(12L,e$exposure)-e$entry)
 idx <- rep(seq_len(nrow(e)),observed_months)
 month <- unlist(Map(function(first,n)seq.int(first+1L,length.out=n),
   e$entry,observed_months),use.names=FALSE)
-person <- e[idx,c('wt','cluster','stratum','method_group','zone_name',
+person <- e[idx,c("woman_row",'wt','cluster','stratum','method_group','zone_name',
   'age_group','parity_group','marital_group','education','wealth',
   'residence','start_year')]
+person <- dhs_calendar_records(person,dhs_context()$ir)
 person$month <- factor(month,levels=1:12)
 end <- e$discontinued[idx] & month==e$exposure[idx]
 person$outcome <- factor(ifelse(!end,'continue',
@@ -5684,7 +5939,15 @@ REVISED_TABLE_SCHEMA <- r"--------([
   }
 ])--------"
 REVISION_HELPERS <- list(
-  "300_revised_planning.R" = r"--------(#!/usr/bin/env Rscript
+  "300_revised_planning.R" = r"--------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Usage: compute_2025.R SAVED_STATS_DIR VERIFIED_GROWTH_JSON OUTPUT_DIR
 # Reuses saved point estimates and 500 survey bootstrap draws. Models are not refitted.
 a<-commandArgs(TRUE);stopifnot(length(a)==3)
@@ -6318,7 +6581,15 @@ def revise(old,deck=True):
  s['note']=note;return s
 )------------"
 
-MODULES[["310_nigeria_planning_audit.R"]] <- list(language="R",args=character(),code=r"------------(#!/usr/bin/env Rscript
+MODULES[["310_nigeria_planning_audit.R"]] <- list(language="R",args=character(),code=r"------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Survey-design inference for Nigeria planning scenarios. All inputs are parameters.
 # Fixed population and growth assumptions; uncertainty includes IR sampling,
 # current-use composition, empirical risks, fitted AFT parameters and pathways.
@@ -6334,7 +6605,7 @@ e<-readRDS(file.path(root,'Data/Derived/nigeria_2024_modern_episodes.rds'))
 cal<-readRDS(file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'))
 sup<-file.path(root,'output/Supporting_data')
 script_file<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
-signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'),file.path(root,'Data/Derived/nigeria_2024_modern_episodes.rds'),file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'),file.path(sup,'nigeria_wpp2024_wra_2024_2026.csv'),file.path(sup,'nigeria_survival_model_duration_fit.csv'),file.path(sup,'nigeria_survival_model_cause_fit.csv'))))
+signature<-unname(tools::md5sum(c(script_file,file.path(dirname(script_file),'dhs_survey_tools.R'),file.path(dirname(script_file),'transition_model.R'),file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'),file.path(root,'Data/Derived/nigeria_2024_modern_episodes.rds'),file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'),file.path(sup,'nigeria_wpp2024_wra_2024_2026.csv'),file.path(sup,'nigeria_survival_model_duration_fit.csv'),file.path(sup,'nigeria_survival_model_cause_fit.csv'))))
 cache_signature<-file.path(out,'cache_signature.rds')
 if(file.exists(cache_signature)){if(!identical(signature,readRDS(cache_signature)))stop('Inputs or code changed. Use a fresh output directory for bootstrap results.')}else{
  if(length(list.files(file.path(out,'replicates'))))stop('Unversioned bootstrap cache: use a fresh output directory.')
@@ -6357,7 +6628,7 @@ strata<-split(seq_len(nrow(frame)),frame$stratum);stopifnot(all(lengths(strata)>
 psu_index<-match(psu,frame$psu)
 u<-as.numeric(ir$v313)==3;umethod<-method_group(as.numeric(ir$v312));umethod[as.numeric(ir$v312)==16]<-'EC'
 uindex<-which(u & as.numeric(ir$v312) %in% modern)
-current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=as.numeric(ir$v337[uindex]),wt=wt[uindex])
+current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=dhs_current_duration(ir,uindex),wt=wt[uindex])
 stopifnot(all(is.finite(current$elapsed)),all(current$elapsed>=0))
 bins<-c(-1,3,6,12,24,36,48,60,Inf);blabel<-c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
 current$bin<-as.integer(cut(current$elapsed,bins))
@@ -6410,6 +6681,7 @@ jsonlite::write_json(list(selected_families=selected_transition_families,episode
 pred_grid<-unique(data.frame(method=rep(methods,each=60*5),cause=rep(rep(causes,each=60),5),end_duration=rep(1:60,25)))
 pred_grid<-normalize_features(pred_grid);pred_grid$gid<-seq_len(nrow(pred_grid))
 measure<-function(mult,replicate=0L){
+ old_dhs<-options(dhs.replication=replicate>0L);on.exit(options(old_dhs),add=TRUE)
  iw<-wt*mult[psu_index];ew<-e$wt*mult[psu_index[e$woman_row]];lw<-land$wt*mult[psu_index[land$woman]];cw<-current$wt*mult[psu_index[current$woman]]
  mcpr<-100*sum(iw[u])/sum(iw);mix<-vapply(c(methods,'EC'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0)
  stock<-w24*mcpr/100*mix
@@ -6432,7 +6704,7 @@ measure<-function(mult,replicate=0L){
     risk[7,m,j]<-risk[7,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j & land$direct[z]])/den}}
  }
  aw<-af$wt*mult[psu_index[af$woman_row]]
- fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(survreg(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
+ fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(dhs_aft_fit(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
  new_initial<-data.table::copy(initial);new_follow<-data.table::copy(follow)
  new_initial$wt<-new_initial$wt*mult[match(new_initial$psu,frame$psu)];new_follow$wt<-new_follow$wt*mult[match(new_follow$psu,frame$psu)]
  tm<-if(replicate==0L)point_transitions else list(initial=fit_initial(new_initial),transitions=setNames(lapply(states,function(s)fit_transition(new_follow[new_follow$current_state==s,],s,selected_transition_families[s],.1,start=point_transitions$transitions[[s]]$par)),states))
@@ -6468,7 +6740,15 @@ if(B>0){draws<-parallel::mclapply(seq_len(B),one,mc.cores=cores,mc.preschedule=F
 saveRDS(list(reference_year=2024,outcome_year=2025,wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(strata),replicates=B,methods=methods,causes=causes,definitions=c('Gross: every actionable original-method ending treated as year-end loss','Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes','AFT uncertainty conditional on selected distribution families','Population and growth scenarios fixed')),file.path(out,'planning_metadata.rds'))
 )------------")
 
-MODULES[["transition_model.R"]] <- list(language="R",args=character(),code=r"------------(suppressPackageStartupMessages({library(data.table);library(nnet);library(splines)})
+MODULES[["transition_model.R"]] <- list(language="R",args=character(),code=r"------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+suppressPackageStartupMessages({library(data.table);library(nnet);library(splines)})
 setDTthreads(1)
 states <- c('Modern','Nonmodern','Pregnancy-related')
 state <- function(z) ifelse(z %in% endpoint_modern,states[1],ifelse(z %in% 81:83,states[3],states[2]))
@@ -6507,7 +6787,7 @@ write.csv(histories[,.(episodes=.N,women=uniqueN(woman),weighted_modern=sum(wt*(
 # direct switches have no non-use waiting time.
 fit_initial <- function(d,decay=.1) {
  d$fw<-d$wt/mean(d$wt)
- f<-multinom(next_state~method+cause+ns(duration_log,df=2),data=d,weights=fw,
+ f<-dhs_multinom_fit(next_state~method+cause+ns(duration_log,df=2),data=d,weights=fw,
              decay=decay,maxit=1000,MaxNWts=5000,trace=FALSE,abstol=1e-8,reltol=1e-9)
  stopifnot(f$convergence==0);f
 }
@@ -7231,7 +7511,7 @@ end=document[matches[-1].end():]
 document=begin+''.join(blocks[k] for k in story_order if k!='overview')+end
 OUT.write_text(document,encoding='utf-8')
 print(OUT.name))------------------")
-MODULES[["19_add_cause_mcpr_ceiling_html.py"]] <- list(language="Python", packaged_sha256="734248e4378781d46e95fec8e8ad87b79b66bc9185e855b015352442ed6a7c65",args=character(),code=r"------------------("""Append the cause-specific gross mCPR ceiling table to a country HTML report.
+MODULES[["19_add_cause_mcpr_ceiling_html.py"]] <- list(language="Python", packaged_sha256="01d0f078b42ff958cdf791ff23e6f2efcf62169c23867fe668779a07c865d8b1",args=character(),code=r"------------------("""Append the cause-specific gross mCPR ceiling table to a country HTML report.
 
 The user counts come from the existing method-by-cause projection. The same
 projected 2026 women 15–49 denominator is used in every reason column.
@@ -8355,7 +8635,7 @@ published='<h3>Published DHS Table 7.13: all-method validation comparison</h3><p
 s=s[:start]+intro+seven_table+method_table+published+'</section>'+s[end:]
 path.write_text(s)
 print(path))------------------")
-MODULES[["99_sync_duration_planning_html.py"]] <- list(language="Python", packaged_sha256="506bac7238084005710fb5f93d2aa3b0ad619b36c7a95b47245cb5033b42e5b6",args=character(),code=r"------------------(#!/usr/bin/env python3
+MODULES[["99_sync_duration_planning_html.py"]] <- list(language="Python", packaged_sha256="0e8329eabb09699476c39592be81886f1567d72b5acd3284f23219f8ef0eac11",args=character(),code=r"------------------(#!/usr/bin/env python3
 """Mirror Nigeria's 16 historical/AFT planning slides in the working HTML."""
 from html import escape
 from pathlib import Path
@@ -10119,7 +10399,15 @@ s=s[:start]+intro+seven_table+method_table+published+'</section>'+s[end:]
 path.write_text(s)
 print(path)
 )----------------------"
-REPORT_FILES[["src/validate_aft_transitions.R"]] <- r"----------------------(#!/usr/bin/env Rscript
+REPORT_FILES[["src/validate_aft_transitions.R"]] <- r"----------------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
 # Held-out PSU checks of modern use following actionable original-method endings.
 a<-commandArgs(TRUE);stopifnot(length(a)==3);root<-a[1];fitdir<-a[2];out<-a[3];dir.create(out,recursive=TRUE,showWarnings=FALSE)
 suppressPackageStartupMessages({library(data.table);library(jsonlite)})
@@ -10140,5 +10428,376 @@ checks$held_out<-lapply(seq_len(nrow(c)),function(i)as.list(c[i,]))
 checks$fit_diagnostics<-lapply(seq_len(nrow(diagnostics)),function(i)as.list(diagnostics[i,]))
 jsonlite::write_json(checks,file.path(fitdir,'transition_validation.json'),auto_unbox=TRUE,pretty=TRUE)
 )----------------------"
+
+
+MODULES[["dhs_survey_tools.R"]] <- list(language="R",args=character(),packaged_sha256="a6ee764ece430cf7c842c9dbdc01bd94a32820a0d4f0162e410f0e9104b7f003",code=r"----------------------(# DHS design utilities. Inputs are supplied by the calling analysis.
+# No finite population correction: use the with-replacement PSU approximation.
+dhs_require_survey <- function() {
+  if (!requireNamespace('survey', quietly=TRUE)) stop('Install the survey package before estimation.')
+}
+
+dhs_frame <- function(ir) {
+  required <- c('v005','v021','v022')
+  if (!all(required %in% names(ir))) stop('IR data require v005, v021 and v022.')
+  w <- as.numeric(ir$v005)/1e6
+  if (anyNA(w) || any(!is.finite(w)) || any(w<=0)) stop('Invalid DHS sampling weights.')
+  f <- unique(data.frame(cluster=as.character(ir$v021), stratum=as.character(ir$v022)))
+  if (anyNA(f) || any(f$cluster=='') || any(f$stratum=='')) stop('Missing survey identifiers.')
+  f[order(f$stratum,f$cluster),,drop=FALSE]
+}
+
+dhs_design <- function(data, frame, weight='wt', cluster='cluster', stratum='stratum') {
+  dhs_require_survey()
+  data <- as.data.frame(data)
+  if (!all(c(weight,cluster,stratum)%in%names(data))) stop('Analysis records lack survey design variables.')
+  f <- unique(data.frame(.dhs_psu=as.character(frame$cluster),.dhs_stratum=as.character(frame$stratum)))
+  if (anyNA(f) || anyDuplicated(paste(f$.dhs_stratum,f$.dhs_psu,sep=':'))) stop('Invalid full survey frame.')
+  data$.dhs_w <- as.numeric(data[[weight]])
+  data$.dhs_psu <- as.character(data[[cluster]])
+  data$.dhs_stratum <- as.character(data[[stratum]])
+  if (anyNA(data[,c('.dhs_w','.dhs_psu','.dhs_stratum')]) || any(!is.finite(data$.dhs_w)) || any(data$.dhs_w<0)) stop('Invalid analysis design values.')
+  key <- function(s,p) paste(s,p,sep=':')
+  fk <- key(f$.dhs_stratum,f$.dhs_psu); dk <- key(data$.dhs_stratum,data$.dhs_psu)
+  if (any(!dk%in%fk)) stop('Analysis PSU is absent from the supplied full frame.')
+  data$.dhs_record <- TRUE
+  absent <- which(!fk%in%dk)
+  if (length(absent)) {
+    if (!nrow(data)) stop('An empty domain cannot be estimated.')
+    pad <- data[rep(1L,length(absent)),,drop=FALSE]
+    pad$.dhs_w <- 0; pad$.dhs_record <- FALSE
+    pad$.dhs_psu <- f$.dhs_psu[absent]; pad$.dhs_stratum <- f$.dhs_stratum[absent]
+    data <- rbind(data,pad)
+  }
+  # Explicit policy: singleton strata are an error, never silently dropped or
+  # treated as certainty PSUs. Resolve any such survey-specific case explicitly.
+  if (any(table(f$.dhs_stratum)<2L)) stop('Singleton survey stratum: specify a documented survey-specific treatment.')
+  design <- survey::svydesign(ids=~.dhs_psu,strata=~.dhs_stratum,weights=~.dhs_w,
+                    data=data,nest=TRUE)
+  # degf() excludes zero-weight placeholder PSUs. Retain the documented
+  # full-frame degrees of freedom for domain intervals and model tests.
+  attr(design,'dhs_design_df') <- nrow(f)-length(unique(f$.dhs_stratum))
+  design
+}
+
+dhs_percentage <- function(design, indicator, domain=NULL) {
+  n <- sum(design$variables$.dhs_record)
+  if (length(indicator)!=n) stop('Indicator length does not match the analysis records.')
+  if (is.null(domain)) domain <- rep(TRUE,n)
+  if (length(domain)!=n || anyNA(domain)) stop('Invalid descriptive domain.')
+  domain <- as.logical(domain)
+  raw_w <- weights(design)[design$variables$.dhs_record]
+  valid <- domain & !is.na(indicator)
+  if (any(!as.numeric(indicator[valid])%in%c(0,1))) stop('Percentage indicators must be binary.')
+  if (!any(valid) || sum(raw_w[valid])<=0) return(c(percent=NA_real_,se_pct=NA_real_,ci_low_pct=NA_real_,ci_high_pct=NA_real_,unweighted_n=sum(valid),weighted_n=sum(raw_w[valid]),design_df=attr(design,'dhs_design_df')))
+  design$variables$.dhs_indicator <- 0
+  design$variables$.dhs_domain <- FALSE
+  at <- which(design$variables$.dhs_record)
+  design$variables$.dhs_indicator[at] <- as.numeric(indicator)
+  design$variables$.dhs_domain[at] <- valid
+  # svyratio keeps the full survey frame for domain inference. Its point
+  # estimate is the same weighted proportion as svymean on the domain.
+  design$variables$.dhs_num <- ifelse(design$variables$.dhs_domain,design$variables$.dhs_indicator,0)
+  fit <- survey::svyratio(~.dhs_num,~.dhs_domain,design,na.rm=TRUE)
+  p <- as.numeric(coef(fit)); se <- as.numeric(survey::SE(fit)); df <- attr(design,'dhs_design_df')
+  critical <- qt(.975,df)
+  interval <- p+c(-1,1)*critical*se
+  # With no observed variation, a zero-width Wald interval is misleading.
+  # Preserve the point/SE but leave uncertainty bounds unreported.
+  if (p<=0 || p>=1) interval <- c(NA_real_,NA_real_)
+  c(percent=100*p,se_pct=100*se,ci_low_pct=100*max(0,interval[1]),
+    ci_high_pct=100*min(1,interval[2]),unweighted_n=sum(valid),
+    weighted_n=sum(raw_w[valid]),design_df=df)
+}
+
+dhs_psu_variance <- function(influence, frame) {
+  # influence contains already-weighted sums, one row per original-frame PSU.
+  # survey::svyrecvar supplies the stratified design covariance, not a naive
+  # model Hessian or an independent-record variance.
+  f <- data.frame(wt=1,cluster=as.character(frame$cluster),stratum=as.character(frame$stratum))
+  if (nrow(as.matrix(influence))!=nrow(f)) stop('Influence rows do not match the full PSU frame.')
+  d <- dhs_design(f,f)
+  survey::svyrecvar(as.matrix(influence),d$cluster,d$strata,d$fpc,lonely.psu='fail')
+}
+
+dhs_binary_fit <- function(formula, data, frame, weight='wt') {
+  # Padding has zero weight but retains full-frame design degrees of freedom.
+  # Keep actual analysis rows for downstream prediction/score calculations.
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  frame <- dhs_context()$frame
+  design <- dhs_design(data,frame,weight=weight)
+  fit <- survey::svyglm(formula,design=design,subset=.dhs_record,
+                         family=quasibinomial(),rescale=FALSE,
+                         control=glm.control(maxit=100L,epsilon=1e-10))
+  fit$df.residual <- attr(design,'dhs_design_df')-fit$rank+1L
+  fit
+}
+
+dhs_current_duration <- function(ir, rows) {
+  elapsed <- as.numeric(ir$v337[rows])
+  special <- elapsed==95L
+  if (any(special,na.rm=TRUE)) {
+    if (!'v317'%in%names(ir)) stop('v317 is needed to resolve all-calendar current use.')
+    elapsed[special] <- as.numeric(ir$v008[rows[special]])-as.numeric(ir$v317[rows[special]])
+  }
+  if (anyNA(elapsed) || any(!is.finite(elapsed)) || any(elapsed<0) || any(as.numeric(ir$v337[rows])%in%c(96L,997L,998L,999L))) stop('Unresolved current-use duration: do not treat special DHS codes as exact months.')
+  elapsed
+}
+
+# One context per analysis subprocess; restricted records stay in memory.
+.dhs_context <- new.env(parent=emptyenv())
+dhs_set_context <- function(country=NULL, root=NULL, ir=NULL) {
+  if (!is.null(country)) .dhs_context$country <- country
+  if (!is.null(root)) .dhs_context$root <- root
+  if (!is.null(ir)) {
+    stopifnot(all(c('v005','v021','v022') %in% names(ir)))
+    .dhs_context$ir <- as.data.frame(ir[,intersect(c('caseid','v005','v021','v022','v008','v317','v337'),names(ir)),drop=FALSE])
+    .dhs_context$frame <- dhs_frame(ir)
+    .dhs_context$woman_design <- dhs_design(data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),stratum=as.character(ir$v022)),.dhs_context$frame)
+  }
+  invisible(NULL)
+}
+dhs_context <- function() {
+  if (!exists('ir',.dhs_context,inherits=FALSE)) {
+    if (!exists('root',.dhs_context,inherits=FALSE)) stop('Initialize the DHS analysis context.')
+    raw <- switch(.dhs_context$country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
+                  Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
+    staged <- file.path(.dhs_context$root,raw)
+    if(file.exists(staged)) {
+      ir <- readRDS(staged)
+    } else if(identical(.dhs_context$country,'DRC')) {
+      # DRC's preparation stage creates its lossless RDS after expanding the
+      # calendar. Its supplied/staged IR is already available at that point.
+      input <- Sys.getenv('DRC_IR_FILE',unset=file.path(.dhs_context$root,'Data/CDIR81FL.dta'))
+      if(!file.exists(input)||!requireNamespace('haven',quietly=TRUE))
+        stop('Supply the authorized DRC IR input before calendar preparation.')
+      ir <- as.data.frame(haven::read_dta(input))
+    } else stop('The prepared IR input is missing; run input preparation first.')
+    dhs_set_context(ir=ir)
+  }
+  .dhs_context
+}
+# Calendar records inherit their woman's original design identifiers.
+# A supplied estimation weight may be a resampling weight and is preserved.
+dhs_attach_design <- function(data, ir=NULL, check_weights=TRUE) {
+  data <- as.data.frame(data)
+  if (is.null(ir)) ir <- dhs_context()$ir
+  id <- if ('woman_row'%in%names(data)) data$woman_row else if ('woman'%in%names(data)) data$woman else NULL
+  if (is.null(id) && 'caseid'%in%names(data) && 'caseid'%in%names(ir)) id <- match(data$caseid,ir$caseid)
+  if (!is.null(id)) {
+    if(anyNA(id)||any(id<1L|id>nrow(ir))||any(id!=as.integer(id)))stop('Invalid woman-to-calendar linkage.')
+    data$cluster <- as.character(ir$v021[id]);data$stratum <- as.character(ir$v022[id])
+    base_weight <- as.numeric(ir$v005[id])/1e6
+    if (check_weights && 'wt'%in%names(data) && any(abs(as.numeric(data$wt)-base_weight)>1e-10))
+      stop('Calendar base weights differ from the linked woman weights.')
+    if(!'wt'%in%names(data))data$wt <- base_weight
+    data$dhs_base_weight <- base_weight
+    data$woman_id <- if('caseid'%in%names(ir))as.character(ir$caseid[id])else as.character(id)
+  } else {
+    if(!'cluster'%in%names(data))stop('Calendar records require woman linkage or PSU/stratum identifiers.')
+    # Older modules store the nested PSU key instead of the original numeric ID.
+    nested <- paste(as.character(ir$v022),as.character(ir$v021),sep=':')
+    if(any(grepl(':',as.character(data$cluster),fixed=TRUE))) {
+      at<-match(as.character(data$cluster),nested)
+      if(anyNA(at))stop('Unrecognized nested PSU key.')
+      data$cluster<-as.character(ir$v021[at])
+      if('stratum'%in%names(data)&&any(as.character(data$stratum)!=as.character(ir$v022[at])))
+        stop('Nested PSU key and stratum disagree.')
+      data$stratum<-as.character(ir$v022[at])
+    }
+    if(!'stratum'%in%names(data))stop('Unlinked calendar records require explicit strata or a verified nested PSU key.')
+  }
+  data
+}
+
+# Point AFT fits use survey linearization; bootstrap refits can use the weighted
+# likelihood because joint uncertainty is taken from the stratified PSU replicates.
+dhs_aft_fit <- function(formula, data, weights, dist, control, ...) {
+  supplied <- as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
+  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid AFT estimation weights.')
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  data$.aft_weight <- supplied
+  data <- data[supplied>0,,drop=FALSE]
+  if(isTRUE(getOption('dhs.replication',FALSE))) {
+    return(survival::survreg(formula,data=data,weights=.aft_weight,dist=dist,control=control,...))
+  }
+  design <- dhs_design(data,dhs_context()$frame,weight='.aft_weight')
+  fit <- do.call(survey::svysurvreg,list(formula=formula,design=design,
+       subset=quote(.dhs_record),dist=dist,control=control,...))
+  # svysurvreg deliberately removes its likelihood. Preserve the previous
+  # weighted pseudo-AIC only for the separate, conditional family comparison;
+  # do not restore it as a survey-model likelihood or use it for uncertainty.
+  likelihood_fit <- survival::survreg(formula,data=data,weights=.aft_weight,
+                                      dist=dist,control=control,...)
+  if(max(abs(coef(fit)-coef(likelihood_fit)))>1e-6 ||
+       abs(fit$scale-likelihood_fit$scale)>1e-6)
+    stop('Survey and weighted AFT point fits do not agree.')
+  fit$dhs_weighted_aic <- stats::AIC(likelihood_fit)
+  fit$call$design <- quote(design)
+  attr(fit,'dhs_design_df') <- attr(design,'dhs_design_df')
+  fit
+}
+dhs_aft_aic <- function(fit) {
+  if(inherits(fit,'svysurvreg')) {
+    if(is.null(fit$dhs_weighted_aic))stop('Weighted family-comparison score is absent.')
+    return(fit$dhs_weighted_aic)
+  }
+  stats::AIC(fit)
+}
+
+# Weighted multinomial coefficients with full-frame stratified PSU covariance.
+# Retains the likelihood Hessian as the derivative; never reports it as survey variance.
+dhs_multinom_summary <- function(fit, data, frame=NULL) {
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  if(is.null(frame))frame<-dhs_context()$frame
+  X<-model.matrix(delete.response(terms(fit)),data,contrasts.arg=fit$contrasts)
+  p<-predict(fit,newdata=data,type='probs')
+  if(is.null(dim(p)))stop('Use svyglm for binary models.')
+  lev<-fit$lev[-1L];y<-model.response(model.frame(terms(fit),data))
+  w<-if('fit_weight'%in%names(data))data$fit_weight else data$wt
+  score<-do.call(cbind,lapply(lev,function(k)X*(w*(as.numeric(y==k)-p[,k]))))
+  H<-fit$Hessian
+  if(is.null(H))H<-getFromNamespace('multinomHess','nnet')(fit,Z=X,probs=p)
+  expected<-unlist(lapply(lev,function(k)paste(k,colnames(X),sep=':')))
+  if(!is.null(colnames(H))&&!identical(colnames(H),expected))stop('Multinomial score ordering differs from the Hessian.')
+  key<-function(s,p)paste(s,p,sep=':')
+  keys<-key(frame$stratum,frame$cluster);at<-match(key(data$stratum,data$cluster),keys)
+  if(anyNA(at))stop('Model records do not match the original survey frame.')
+  U<-matrix(0,nrow(frame),ncol(score));z<-rowsum(score,at,reorder=FALSE);U[as.integer(rownames(z)),]<-z
+  bread<-MASS::ginv(H);V<-bread%*%dhs_psu_variance(U,frame)%*%bread
+  co<-coef(fit);se<-matrix(sqrt(pmax(diag(V),0)),nrow=nrow(co),byrow=TRUE,dimnames=dimnames(co))
+  list(coefficients=co,standard.errors=se,covariance=V,
+       design_df=nrow(frame)-length(unique(frame$stratum)),inference='Full-frame stratified PSU sandwich')
+}
+
+dhs_calendar_records <- function(data, ir) {
+  if(!'woman_row'%in%names(data))stop('Calendar records require woman_row.')
+  id<-data$woman_row
+  if(anyNA(id)||any(id<1L|id>nrow(ir)))stop('Invalid calendar woman indices.')
+  w<-as.numeric(ir$v005[id])/1e6
+  if('wt'%in%names(data)&&any(abs(as.numeric(data$wt)-w)>1e-10))stop('Calendar weight inheritance failed.')
+  data$wt<-w;data$v021<-as.numeric(ir$v021[id]);data$v022<-as.numeric(ir$v022[id])
+  data$woman_id<-as.character(ir$caseid[id])
+  attr(data,'dhs_ir_design')<-as.data.frame(ir[,intersect(c('caseid','v005','v021','v022'),names(ir)),drop=FALSE])
+  data
+}
+
+# Preserve survey covariance on fitted multinomial objects so subsequent
+# summary()/vcov() calls cannot silently fall back to independent-record errors.
+dhs_multinom_fit <- function(formula, data, weights, ...) {
+  supplied<-as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
+  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid multinomial estimation weights.')
+  data<-dhs_attach_design(data,check_weights=FALSE);data$.dhs_fit_weight<-supplied
+  fit<-nnet::multinom(formula,data=data,weights=.dhs_fit_weight,...)
+  if(!is.null(fit$Hessian)&&!isTRUE(getOption('dhs.replication',FALSE))) {
+    data$fit_weight<-supplied
+    z<-dhs_multinom_summary(fit,data)
+    fit$dhs_survey_vcov<-z$covariance;fit$dhs_design_df<-z$design_df
+  }
+  fit$dhs_inference<-if(is.null(fit$dhs_survey_vcov))'Stratified PSU refits required; ordinary Hessian inference disabled'else'Full-frame stratified PSU sandwich'
+  class(fit)<-c('dhs_multinom',class(fit));fit
+}
+vcov.dhs_multinom <- function(object, ...) {
+  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model has no point survey covariance. Use its stratified-PSU replicate inference.')
+  object$dhs_survey_vcov
+}
+summary.dhs_multinom <- function(object, ...) {
+  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model requires its stratified-PSU replicate inference.')
+  getS3method('summary','multinom',envir=asNamespace('nnet'))(object,...)
+}
+)----------------------")
+MODULES[["dhs_survey_descriptives.R"]] <- list(language="R",args=character(),packaged_sha256="8ea87334fad4a5e2414113503a825c5d1ea8867ee162d7e2377020a31cfebbc9",code=r"----------------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
+# National and subnational descriptive percentages. Supply the prepared project
+# root through the country entry point; no existing report is an input.
+country <- Sys.getenv('ANALYSIS_COUNTRY')
+if (!country%in%c('Ethiopia','Nigeria','DRC')) stop('Set ANALYSIS_COUNTRY through the country entry point.')
+root <- Sys.getenv(paste0(toupper(country),'_PROJECT_ROOT'))
+if (!nzchar(root)) stop('A prepared project root is required.')
+source(file.path(root,'Code','dhs_survey_tools.R'),local=TRUE)
+raw <- switch(country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
+ Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
+episodes <- switch(country,Ethiopia='ethiopia_2024_table_7_11_episodes.rds',
+ Nigeria='nigeria_2024_table_7_12_episodes.rds',DRC='drc_2023_24_table_7_13_episodes.rds')
+ir <- readRDS(file.path(root,raw)); e <- readRDS(file.path(root,'Data/Derived',episodes))
+frame <- dhs_frame(ir)
+modern_codes <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
+actionable <- c(1L,4L,5L,6L,7L,8L,10L,15L)
+reason_groups <- list('Method failure'=1L,'Wanted pregnancy'=2L,
+ 'Other fertility'=c(9L,12L,13L),'Bleeding changes'=15L,
+ 'Other side effects/health'=c(4L,5L),'Wanted more effective method'=7L,
+ 'Access/cost/convenience'=c(6L,8L,10L),'Partner/spousal disapproval'=3L,
+ 'Other/unspecified'=c(11L,14L,96L,98L,99L,0L))
+method_group <- function(code) {
+ x <- rep('Other modern',length(code));x[code==1L]<-'Pill';x[code==2L]<-'IUD'
+ x[code==3L]<-'Injectables';x[code==11L]<-'Implants';x[code==16L]<-'EC'
+ x[!code%in%c(modern_codes,16L)]<-'Non-modern/no method';x
+}
+women <- data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),
+ stratum=as.character(ir$v022),region=as.character(ir$v024),
+ modern=as.numeric(ir$v313)==3L,method=method_group(as.numeric(ir$v312)))
+e$cluster <- as.character(ir$v021[e$woman_row]);e$stratum <- as.character(ir$v022[e$woman_row])
+e$region <- as.character(ir$v024[e$woman_row]);e$group <- method_group(e$method_code)
+dw <- dhs_design(women,frame);de <- dhs_design(e,frame)
+scopes <- c('National',sort(unique(women$region)))
+results <- list();check <- 0
+add <- function(design,data,indicator,domain,analysis,scope,category,method='All') {
+ z <- dhs_percentage(design,indicator,domain)
+ valid <- domain & !is.na(indicator)
+ plain <- if(any(valid))100*sum(data$wt[valid]*as.numeric(indicator[valid]))/sum(data$wt[valid])else NA_real_
+ if(is.finite(plain)) {
+   if(abs(z['percent']-plain)>1e-9) stop('Survey and weighted descriptive point estimates disagree.')
+   check <<- check+1L
+ }
+ results[[length(results)+1L]] <<- data.frame(country=country,analysis=analysis,
+  scope=scope,method=method,category=category,as.list(z),row.names=NULL,
+  observed_events=sum(as.logical(indicator[valid])),
+  limited_sample=sum(valid)<25L || sum(as.logical(indicator[valid]))<10L,
+  uncertainty='survey Taylor linearization; full PSU frame; 95% t interval',
+  stringsAsFactors=FALSE)
+}
+for(scope in scopes) {
+ wdomain <- if(scope=='National')rep(TRUE,nrow(women))else women$region==scope
+ edomain <- if(scope=='National')rep(TRUE,nrow(e))else e$region==scope
+ add(dw,women,women$modern,wdomain,'All-women mCPR',scope,'Modern use including EC')
+ for(m in c('Injectables','Implants','Pill','IUD','Other modern','EC')) {
+  add(dw,women,women$method==m,wdomain & women$modern,'Current modern-method mix',scope,m)
+  add(dw,women,women$modern & women$method==m,wdomain,'Method-specific prevalence among all women',scope,m)
+ }
+ start_domain <- edomain & e$entry==0L
+ for(m in sort(unique(e$group))) add(de,e,e$group==m,start_domain,'Observed starts: all methods',scope,m)
+ for(m in c('Injectables','Implants','Pill','IUD','Other modern'))
+  add(de,e,e$group==m,start_domain & e$method_code%in%modern_codes,'Observed starts: modern excluding EC',scope,m)
+ for(m in c('All','Injectables','Implants','Pill','IUD','Other modern')) {
+  mdomain <- edomain & e$method_code%in%modern_codes & (m=='All' | e$group==m)
+  for(window in c('All eligible endings','First-12-month endings')) {
+   ended <- mdomain & e$discontinued
+   if(window=='First-12-month endings')ended<-ended & e$exposure<=12 & e$entry<e$exposure
+   # These are shares AMONG observed endings, not life-table discontinuation risks.
+   for(reason in names(reason_groups))add(de,e,e$reason_code%in%reason_groups[[reason]],ended,
+    paste('Recorded reason shares:',window),scope,reason,m)
+   for(reason in c('Method failure','Bleeding changes','Other side effects/health',
+                    'Wanted more effective method','Access/cost/convenience'))
+    add(de,e,e$reason_code%in%reason_groups[[reason]],ended & e$reason_code%in%actionable,
+     paste('Shares within potentially actionable endings:',window),scope,reason,m)
+  }
+ }
+}
+out <- file.path(root,'output/Supporting_data');dir.create(out,recursive=TRUE,showWarnings=FALSE)
+write.csv(do.call(rbind,results),file.path(out,'dhs_survey_descriptive_percentages.csv'),row.names=FALSE,na='')
+metadata <- data.frame(country=country,weight='v005 / 1000000',PSU='v021',stratum='v022',
+ PSUs=nrow(frame),strata=length(unique(frame$stratum)),
+ design_df=survey::degf(dw),point_comparisons=check,
+ all_point_comparisons_passed=TRUE,full_frame_including_zero_domain_PSUs=TRUE,
+ repeated_episodes_kept_within_PSU=TRUE,survey_version=as.character(packageVersion('survey')))
+write.csv(metadata,file.path(out,'dhs_survey_design_checks.csv'),row.names=FALSE)
+cat('Survey descriptives complete:',country,';',check,'weighted point comparisons passed.\n')
+)----------------------")
 
 if (sys.nframe() == 0L) main()

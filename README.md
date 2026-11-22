@@ -5,6 +5,8 @@ DHS contraceptive-calendar analyses for Ethiopia (2024–25), Nigeria (2024), an
 ## Repository structure
 
 - `build_reports.R`: national report build entry point.
+- `survey_design.R`: shared survey-design estimators and inherited-record checks.
+- `tests/test_survey_design.R`: portable design and estimator-equivalence tests.
 - `<Country>_analysis/<Country>_final_html_analysis.R`: each country's analytical and reporting source.
 - `report_tools.py`: shared rendering and read-only report comparisons.
 - `geography.json`: pinned public map geometry and attribution; no survey records.
@@ -12,6 +14,7 @@ DHS contraceptive-calendar analyses for Ethiopia (2024–25), Nigeria (2024), an
 - `discontinuation_extensions/run_analysis.R`: independent extensions and interactive maps.
 - `renv.lock` and `requirements.txt`: dependency versions.
 - [Data access](docs/data-access.md): parameterized IR inputs and R download instructions.
+- [Methods and reproduction](docs/methods.md): calendar construction, cohorts, models, planning calculations and report checks.
 
 Source resources are expanded into private runtime directories during execution. Survey microdata, fitted-model caches, credentials and individual-level intermediate records are not repository inputs or contents.
 
@@ -33,6 +36,7 @@ DRC's display-only slide-preview gallery also requires LibreOffice (`soffice`).
 From the repository root:
 
 ```sh
+Rscript tests/test_survey_design.R
 Rscript build_reports.R --check --python=python3
 Rscript build_reports.R --country=Nigeria --ir-file="$DHS_IR_FILE" \
   --output-dir="$DHS_BUILD_DIR/nigeria" --python=python3 --cores=4
@@ -40,7 +44,7 @@ Rscript build_reports.R --country=Nigeria --ir-file="$DHS_IR_FILE" \
 
 Use `Ethiopia` or `DRC` for the other countries. The output directory must be new and outside the repository. The build reconstructs calendars and episodes from the IR, computes weighted estimates, fits models and 500 joint planning survey replicates, and renders a new HTML. Existing HTML and cached fitted results are not used to calculate estimates. Full bootstrap runs can be lengthy.
 
-Approved HTML and PPTX files are read-only references. Comparisons run after estimation and require a matching reference version; differences stop validation without replacing approved files. `--reference-dir` supplies an alternative directory with the same country-folder layout. DRC uses the reviewed PPTX only for its displayed slide-preview gallery. Successful reports are written under the private output directory.
+Approved HTML and PPTX files are read-only references. Use `--reference-policy=report` to produce a candidate and record differences for review; the default `strict` policy requires agreement. Comparisons run after estimation and require a matching reference version; differences stop validation without replacing approved files. `--reference-dir` supplies an alternative directory with the same country-folder layout. DRC uses the reviewed PPTX only for its displayed slide-preview gallery. Successful reports are written under the private output directory.
 
 `--check` verifies source syntax without fitting models. `--extract-source="$SOURCE_INSPECTION_DIR"` expands the source into an empty private directory for inspection. Complete builds additionally compare native slide tables, HTML table cells, report text/navigation and embedded figures. Fonts and rendering-library differences can require review.
 
@@ -56,13 +60,13 @@ The extensions HTML includes reason-specific timing, alluvials, reason-specific 
 
 All three IRs and a new private output directory are required. `--target=extensions` or `--target=maps` selects one report; the default produces both. This module reconstructs its own records and uses 1,999 full-frame survey-bootstrap replicates.
 
-The three state entry points export numerical results and figures. They do not author the combined state PowerPoint or rebuild its complete combined HTML. The national command covers the three national reports.
+The three state entry points export numerical results and figures. The extracted `tools/refresh_state_report_tables.py` refreshes the 60 analytical tables in the existing combined state HTML from those exports; presentation-table synchronization uses the same maintenance utility as the national reports. State scripts do not independently author the complete combined HTML layout or PowerPoint. See [state reproduction](docs/methods.md#state-tables) for commands. The national command covers the three national reports.
 
 ## Analytical definitions
 
 Continuing-modern-method discontinuation excludes EC as an original method. Potentially actionable causes comprise method failure, wanting a more effective method, bleeding changes, other side effects/health, and access/cost/convenience. Partner/spousal disapproval is separate. EC remains part of all-women current mCPR and subsequent modern use.
 
-Point estimates use woman weights. Survey inference resamples the full PSU/stratum frame, keeping each woman's episodes together. Main planning counts every actionable ending as a lost modern user. Switching/restarting sensitivities account for modern use at the common next-12-month endpoint. Historical and AFT probabilities condition on method and elapsed use.
+All estimates inherit the DHS woman weight (`v005 / 1,000,000`), PSU (`v021`) and stratum (`v022`). The [survey-design implementation](docs/survey-design.md) covers survey percentages, binary and multinomial regression, AFT fits and full-frame PSU inference for life tables and planning. Transformations preserve woman linkage and the original design identifiers. Main planning counts every actionable ending as a lost modern user. Switching/restarting sensitivities account for modern use at the common next-12-month endpoint. Historical and AFT probabilities condition on method and elapsed use.
 
 Outcome years are 2026 for Ethiopia and 2025 for Nigeria/DRC. [UN WPP population inputs](https://population.un.org/wpp/), growth assumptions and selected AFT families are held fixed in the intervals. mCPR contributions are conditional scenarios rather than established intervention effects.
 
@@ -76,7 +80,9 @@ The validated survey releases produce these analytical counts:
 | Nigeria | 163,203 | 11,210 | 8,341 |
 | DRC | 132,217 | 8,934 | 4,146 |
 
-Independent IR-based verification covers planning point fits and all 500 joint replicates. Report comparisons cover 510 national HTML tables, 171 embedded figures and 164 native PowerPoint table counterparts. These checks apply to the validated reference versions; they do not certify a different report version or future forecast accuracy. Native-table comparison does not independently verify text embedded in slide images.
+The survey-design update was rebuilt from the authorized IR inputs, including planning point fits and all 500 joint replicates per country. Repeat rendering reproduced all three updated national HTMLs byte-for-byte: 508 tables and 171 embedded figures in total. All 164 editable PowerPoint tables match the updated HTMLs. The extensions and maps also rebuilt and matched their checked reports. These checks apply to the supplied survey releases and documented dependencies; source checks alone do not certify a complete rebuild or future forecast accuracy. Native-table comparison does not independently verify text embedded in slide images.
+
+The state run used 999 descriptive and 999 joint planning replicates. All 60 exported state tables reconcile exactly with the refreshed combined HTML, and its 45 editable presentation tables match. The state reporting limitation described above remains: those entry points export numerical content and figures, rather than independently authoring the complete combined document layout.
 
 Published DHS checks match all 66 Ethiopian and 110 Nigerian tested rate cells. DRC matches 104 of 110 tested rate cells, with six 0.1-pp differences documented. Sparse DRC IUD original-ending/transition estimates use Other-modern curves. DRC's modeled-transition sensitivity overpredicted held-out month-12 modern use by 5.37 pp and remains a sensitivity rather than a primary estimate.
 

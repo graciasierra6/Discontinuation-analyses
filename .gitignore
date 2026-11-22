@@ -1,0 +1,19 @@
+# Private survey inputs and individual-level intermediate records
+*.dta
+*.sav
+*.sas7bdat
+*.rds
+*.RData
+*.rda
+*.zip
+
+# Runtime output, credentials and editor caches
+analysis_output/
+private/
+*.log
+.Renviron
+.Rhistory
+.Rproj.user/
+__pycache__/
+*.pyc
+.DS_Store

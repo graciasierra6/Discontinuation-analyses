@@ -4,9 +4,9 @@ CONTROLLER_CODE <- r"-----------------------(#!/usr/bin/env Rscript
 # Cold national rebuild from an authorized, caller-supplied DHS IR file.
 main<-function(){
   a<-commandArgs(TRUE)
-  if('--help'%in%a){cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=OUTPUT [--python=python3] [--cores=4] [--soffice=soffice]\nA new output directory is required. Restricted inputs and intermediate records remain there. Approved presentations are read-only comparison artifacts.\n');quit(status=0)}
-  opt<-list(python=Sys.getenv('PYTHON',unset='python3'),cores='4',soffice=Sys.getenv('SOFFICE',unset='soffice'))
-  for(x in a){if(!grepl('^--[^=]+=.+$',x))stop('Use --name=value arguments.');k<-sub('^--([^=]+)=.*$','\\1',x);if(!k%in%c('country','ir-file','output-dir','python','cores','soffice'))stop('Unknown option.');opt[[k]]<-sub('^--[^=]+=','',x)}
+  if('--help'%in%a){cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=OUTPUT [--python=python3] [--cores=4] [--soffice=soffice] [--reference-policy=strict|report]\nA new output directory is required. Restricted inputs and intermediate records remain there. Approved presentations are read-only comparison artifacts.\n');quit(status=0)}
+  opt<-list('reference-policy'='strict',python=Sys.getenv('PYTHON',unset='python3'),cores='4',soffice=Sys.getenv('SOFFICE',unset='soffice'))
+  for(x in a){if(!grepl('^--[^=]+=.+$',x))stop('Use --name=value arguments.');k<-sub('^--([^=]+)=.*$','\\1',x);if(!k%in%c('country','ir-file','output-dir','python','cores','soffice','reference-policy'))stop('Unknown option.');opt[[k]]<-sub('^--[^=]+=','',x)}
   if(!all(c('country','ir-file','output-dir')%in%names(opt)))stop('Supply country, ir-file and output-dir.')
   country<-opt$country;if(!country%in%c('Ethiopia','Nigeria','DRC'))stop('Unknown country.')
   f<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1]);if(!file.exists(f))f<-gsub('~+~',' ',f,fixed=TRUE);repo<-dirname(normalizePath(f))
@@ -29,12 +29,14 @@ main<-function(){
   if(!file.exists(entry))stop('The preparation source snapshot is missing.')
   logs<-file.path(root,'output/logs');stats<-file.path(root,'output/survey_planning');tables<-file.path(root,'output/planning_tables')
   run<-function(exe,arguments,label,cwd=NULL){old<-getwd();on.exit(setwd(old),add=TRUE);if(!is.null(cwd))setwd(cwd);cat('Running ',label,'\n',sep='');flush.console();status<-system2(exe,shQuote(arguments),stdout=file.path(logs,paste0(label,'.log')),stderr=file.path(logs,paste0(label,'.log')));if(status!=0L)stop('Stage failed: ',label,'. Inspect its runtime log.')}
+  if(!opt[['reference-policy']]%in%c('strict','report'))stop('Invalid reference policy.')
   do.call(Sys.setenv,setNames(list(root),paste0(toupper(country),'_PROJECT_ROOT')))
   if(country=='Ethiopia')stopifnot(file.copy(file.path(repo,'Ethiopia_analysis/reference_data/ethiopia_adm1_hdx_2025.geojson'),file.path(root,'output/Supporting_data/ethiopia_adm1_hdx_2025.geojson'),overwrite=TRUE))
   modules<-switch(country,
    Nigeria=c('03_nigeria_zone_models.R','04_nigeria_subgroups_and_tests.R','13_nigeria_all_reason_models.R','17_nigeria_selected_reason_models.R','26_nigeria_actionable_method_zone_models.R','29_zone_method_mix_decomposition.R','09_nigeria_post_discontinuation_pathways.R','34_nigeria_historical_current_user_pathways.R','37_nigeria_selected_reason_extensions.R','38_nigeria_other_reason_followup.R','40_nigeria_selected_current_user_planning.R','42_nigeria_crossvalidated_selected_risk_strata.R','16_nigeria_all_reason_current_user_bridge.py','22_nigeria_landmark_support.R','25_duration_aware_cause_pp_tables.R','35_nigeria_alluvial_figures.R','44_nigeria_replication_figures.R','202_nigeria_survey_coefficients.R'),
    DRC=c('04_drc_province_models.R','17_drc_selected_reason_subgroups.R','18_drc_method_timing.R','26_drc_reference_slide_data.R','27_drc_all_reason_subgroup_model.R','28_drc_province_mcpr.R','32_drc_actionable_subgroup_predictions.R','34_drc_html_extra_analyses.R','36_drc_other_reason_followup.R','37_drc_selected_reason_province_models.R','38_drc_injectable_reason_destinations.R','41_drc_selected_reason_risk_strata.R','216_reconcile_reason_distributions.R','09_drc_post_discontinuation_pathways.R','12_drc_2026_planning.py','211_full_frame_survey_inference.R'),
-   Ethiopia=c('211_presentation_inputs.R','212_allcause_inputs.R','10_retained_reason_distribution.R','12_reason_mix_by_method_restricted.R','14_restricted_discontinuation_curve.R','16_mix_vs_restricted_discontinuation.R','18_initiation_mix_excluding_ec.R','19_mix_vs_allcause_excluding_ec.R','21_other_reason_breakdown.R','23_infrequent_sex_followup_states.R','25_other_recorded_reason_followup.R','31_method_experience_12_month_detail.R','34_selected_reason_regression.R','36_selected_reason_contrasts.R','37_selected_reason_regional_analysis.R','39_selected_reason_other_breakdown.R','40_unadjusted_selected_regional_ci.R','42_regional_method_mix_diagnostic.R','43_injectable_regional_reason_ci.R','44_selected_region_method_ci.R','45_injectable_region_checkpoints.R','46_regional_modern_start_mix.R','47_regional_mix_vs_allcause_method_panels.R','49_rebuild_presentation_figures_tables.R','51_duration_adjusted_reason_projection.R','53_descriptive_selected_reason_subgroups.R','54_extended_selected_reason_regression.R','56_crossvalidated_selected_reason_risk_strata.R','58_selected_reason_by_method_duration_class.R','60_short_acting_selected_reason_distribution.R','63_regional_episode_mix_vs_selected_risk.R','70_four_marital_four_parity_selected_regression.R','72_five_wealth_four_marital_selected_regression.R','79_age_15_19_selected_by_method.R','80_descriptive_characteristics_selected_reasons.R','82_descriptive_characteristics_method_experience_reasons.R','84_method_experience_age_timepoints.R','86_top_three_reasons_by_subgroup_and_method.R','88_direct_next_month_modern_switch_life_table.R','90_regional_method_experience_detailed.R','91_plot_regional_method_experience_detailed.R','95_regional_actionable_timepoints.R','96_plot_regional_actionable_timepoints.R','98_preview_actionable_heatmap_locator.R','99_leadership_regional_timing_locator.R','100_regional_initiation_mix_stacked.R','105_regional_actionable_method_pair_preview.R','108_regional_actionable_reason_mix_by_method.R','112_regional_actionable_adjusted_models.R','114_regional_actionable_sample_audit.R','115_dhs_late_entry_reconciliation.R','120_relevel_regional_actionable_models.R','117_export_regional_actionable_model_results.R','119_regional_actionable_design_pvalues.R','122_matched_cohort_regional_raw_for_visual.R','130_regional_actionable_raw_pairwise_bootstrap.R','133_test_regional_actionable_method_mix_differences.R','134_regional_actionable_all_region_method_mix.R','136_regional_actionable_pairwise_shared_mix.py','138_regional_actionable_3_month_pairwise_tests.R','141_regional_method_interaction_actionable.R','144_global_regional_method_interaction_test.R','145_test_actionable_regional_rates_injectables_implants.R','148_injectable_actionable_fully_adjusted_regional_tests.R','209_finalize_regional_inference.R','139_plot_regional_actionable_three_comparisons.R','142_plot_regional_method_interaction_actionable.R','146_plot_actionable_regional_injectables_implants.R','149_plot_injectable_three_stage_regional_tests.R','213_render_allcause_subgroups.py'))
+   Ethiopia=c('211_presentation_inputs.R','212_allcause_inputs.R','08_compare_wanted_pregnancy_and_switching.R','10_retained_reason_distribution.R','12_reason_mix_by_method_restricted.R','14_restricted_discontinuation_curve.R','18_initiation_mix_excluding_ec.R','16_mix_vs_restricted_discontinuation.R','19_mix_vs_allcause_excluding_ec.R','21_other_reason_breakdown.R','23_infrequent_sex_followup_states.R','25_other_recorded_reason_followup.R','31_method_experience_12_month_detail.R','34_selected_reason_regression.R','36_selected_reason_contrasts.R','37_selected_reason_regional_analysis.R','39_selected_reason_other_breakdown.R','40_unadjusted_selected_regional_ci.R','42_regional_method_mix_diagnostic.R','43_injectable_regional_reason_ci.R','44_selected_region_method_ci.R','45_injectable_region_checkpoints.R','46_regional_modern_start_mix.R','47_regional_mix_vs_allcause_method_panels.R','49_rebuild_presentation_figures_tables.R','51_duration_adjusted_reason_projection.R','53_descriptive_selected_reason_subgroups.R','54_extended_selected_reason_regression.R','56_crossvalidated_selected_reason_risk_strata.R','58_selected_reason_by_method_duration_class.R','60_short_acting_selected_reason_distribution.R','63_regional_episode_mix_vs_selected_risk.R','70_four_marital_four_parity_selected_regression.R','72_five_wealth_four_marital_selected_regression.R','79_age_15_19_selected_by_method.R','80_descriptive_characteristics_selected_reasons.R','82_descriptive_characteristics_method_experience_reasons.R','84_method_experience_age_timepoints.R','86_top_three_reasons_by_subgroup_and_method.R','88_direct_next_month_modern_switch_life_table.R','90_regional_method_experience_detailed.R','91_plot_regional_method_experience_detailed.R','95_regional_actionable_timepoints.R','96_plot_regional_actionable_timepoints.R','98_preview_actionable_heatmap_locator.R','99_leadership_regional_timing_locator.R','100_regional_initiation_mix_stacked.R','105_regional_actionable_method_pair_preview.R','108_regional_actionable_reason_mix_by_method.R','112_regional_actionable_adjusted_models.R','114_regional_actionable_sample_audit.R','115_dhs_late_entry_reconciliation.R','120_relevel_regional_actionable_models.R','117_export_regional_actionable_model_results.R','119_regional_actionable_design_pvalues.R','122_matched_cohort_regional_raw_for_visual.R','130_regional_actionable_raw_pairwise_bootstrap.R','133_test_regional_actionable_method_mix_differences.R','134_regional_actionable_all_region_method_mix.R','136_regional_actionable_pairwise_shared_mix.py','138_regional_actionable_3_month_pairwise_tests.R','141_regional_method_interaction_actionable.R','144_global_regional_method_interaction_test.R','145_test_actionable_regional_rates_injectables_implants.R','148_injectable_actionable_fully_adjusted_regional_tests.R','209_finalize_regional_inference.R','139_plot_regional_actionable_three_comparisons.R','142_plot_regional_method_interaction_actionable.R','146_plot_actionable_regional_injectables_implants.R','149_plot_injectable_three_stage_regional_tests.R','213_render_allcause_subgroups.py'))
+  modules <- c(modules,'dhs_survey_descriptives.R')
   # Model inference keeps repeated episode-months within the sampled woman's PSU.
   if(country=='Ethiopia')Sys.setenv(BOOTSTRAP_REPS='300',REGIONAL_ACTIONABLE_BOOTSTRAP_REPS='500')
   run(rscript,c(entry,paste0('--run=',paste(modules,collapse=',')),paste0('--project-root=',root),paste0('--python=',opt$python)),'national_analysis_modules')
@@ -44,10 +46,21 @@ main<-function(){
   if(country!='Ethiopia'&&file.exists(file.path(stats,'transition_validation.json')))file.copy(file.path(stats,'transition_validation.json'),file.path(tables,'transition_validation.json'),overwrite=TRUE)
   assembler<-file.path(repo,'tools',if(country=='Ethiopia')'assemble_ethiopia.py'else'assemble_national.py')
   run(opt$python,c(assembler,paste0('--country=',country),paste0('--project-root=',root),paste0('--repo-root=',repo),paste0('--statistics-dir=',stats),paste0('--table-dir=',tables),paste0('--rscript=',rscript),paste0('--soffice=',opt$soffice)),'assemble_national_html')
+  run(opt$python,c(file.path(repo,'tools/restore_report_navigation.py'),'--country',country,'--source',file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html')),'--output',file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html'))),'restore_publication_navigation')
+  comparisons_passed <- TRUE
+  compare_reference <- function(exe,arguments,label) {
+    result <- arguments[match('--output',arguments)+1L]
+    status <- system2(exe,shQuote(arguments),stdout=file.path(logs,paste0(label,'.log')),stderr=file.path(logs,paste0(label,'.log')))
+    if(status!=0L) {
+      if(!file.exists(result)||status!=1L||opt[['reference-policy']]=='strict')stop('Reference comparison failed: ',label)
+      comparisons_passed <<- FALSE
+      cat('Reference differences require review: ',label,'\n',sep='')
+    }
+  }
   report<-file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html'));deck<-file.path(repo,paste0(country,'_analysis'),switch(country,Ethiopia='ethiopia_presentation.pptx',Nigeria='Nigeria_discontinuation.pptx',DRC='DRC_discontinuation.pptx'))
-  run(opt$python,c(file.path(repo,'tools/check_html_pptx.py'),'--html',report,'--pptx',deck,'--output',file.path(root,'output/validation/html_presentation_comparison.json')),'compare_presentation_tables')
+  compare_reference(opt$python,c(file.path(repo,'tools/check_html_pptx.py'),'--html',report,'--pptx',deck,'--output',file.path(root,'output/validation/html_presentation_comparison.json')),'compare_presentation_tables')
   reference_html<-file.path(repo,paste0(country,'_analysis'),paste0(country,'_discontinuation_analysis.html'))
-  run(opt$python,c(file.path(repo,'tools/check_report_reproduction.py'),'--reference',reference_html,'--rebuilt',report,'--output',file.path(root,'output/validation/final_html_comparison.json')),'compare_final_report')
+  compare_reference(opt$python,c(file.path(repo,'tools/check_report_reproduction.py'),'--reference',reference_html,'--rebuilt',report,'--output',file.path(root,'output/validation/final_html_comparison.json')),'compare_final_report')
   verify_frozen()
   # Publish only inside the caller's private output tree; no approved artifact is edited.
   final_report<-file.path(root,'output',basename(reference_html))
@@ -55,9 +68,9 @@ main<-function(){
   stopifnot(file.copy(deck,file.path(root,'output',basename(deck)),overwrite=TRUE))
   input_audit<-jsonlite::read_json(file.path(root,'output/validation/input_validation.json'),simplifyVector=TRUE)
   comparison<-jsonlite::read_json(file.path(root,'output/validation/html_presentation_comparison.json'),simplifyVector=TRUE)
-  jsonlite::write_json(list(status='pass',country=country,input_sha256=input_audit$sha256,full_report_regenerated=TRUE,planning_replicates=500L,prior_html_used_for_estimation=FALSE,saved_fitted_results_used_for_estimation=FALSE,presentation_edited=FALSE,final_reports_unchanged=TRUE,full_html_content_comparison='pass',report_file=basename(final_report),presentation_file=basename(deck),native_presentation_tables=as.integer(comparison$native_tables),native_tables_matching=as.integer(comparison$matched_tables),image_based_presentation_tables='not independently checked',scope='Cold raw-IR national numerical analyses and report rendering; conditional descriptive/model estimates, not proof of causal intervention effectiveness.'),file.path(root,'output/validation/national_build.json'),auto_unbox=TRUE,pretty=TRUE)
+  jsonlite::write_json(list(status=if(comparisons_passed)'pass'else'reference_differences_require_review',country=country,input_sha256=input_audit$sha256,full_report_regenerated=TRUE,planning_replicates=500L,prior_html_used_for_estimation=FALSE,saved_fitted_results_used_for_estimation=FALSE,presentation_edited=FALSE,final_reports_unchanged=TRUE,full_html_content_comparison=if(comparisons_passed)'pass'else'differences_require_review',report_file=basename(final_report),presentation_file=basename(deck),native_presentation_tables=as.integer(comparison$native_tables),native_tables_matching=as.integer(comparison$matched_tables),image_based_presentation_tables='not independently checked',scope='Cold raw-IR national numerical analyses and report rendering; conditional descriptive/model estimates, not proof of causal intervention effectiveness.'),file.path(root,'output/validation/national_build.json'),auto_unbox=TRUE,pretty=TRUE)
   verify_frozen()
-  cat('Completed cold national rebuild and presentation table checks. The approved PPTX was not edited.\n')
+  cat(if(comparisons_passed)'Completed cold national rebuild and reference checks.\n'else'Completed numerical build; reference differences require review.\n')
 }
 main()
 )-----------------------"
@@ -120,6 +133,7 @@ stages<-switch(country,
  DRC=c('02_drc_descriptive_analyses.R','05_drc_current_user_planning.R',
   '06_drc_historical_landmarks.R','07_drc_duration_aware_planning.R',
   '08_drc_aft_duration_by_method_cause.R'))
+stages <- c(stages,'dhs_survey_descriptives.R')
 run(rscript,c(entry,paste0('--run=',paste(stages,collapse=',')),paste0('--project-root=',root),
  paste0('--ir-file=',input)),'planning_inputs')
 stats<-file.path(root,'output/survey_planning')
@@ -207,18 +221,18 @@ materialize_sources<-function(repo,destination,python,reference){
 main<-function(){
  args<-commandArgs(TRUE)
  if('--help'%in%args||!length(args)){
-  cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=PRIVATE_NEW_DIRECTORY [--python=python3] [--cores=4] [--reference-dir=REPOSITORY]\n')
+  cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=PRIVATE_NEW_DIRECTORY [--python=python3] [--cores=4] [--reference-dir=REPOSITORY] [--reference-policy=strict|report]\n')
   cat('Rscript build_reports.R --check [--python=python3]\n')
   cat('Rscript build_reports.R --extract-source=PRIVATE_DIRECTORY [--python=python3]\n')
   cat('Existing HTML/PPTX files are read-only. Reference files are used after estimation; DRC also displays the reviewed slide preview.\n')
   return(invisible(NULL))
  }
- opt<-list(python=Sys.getenv('PYTHON',unset='python3'),cores='4',soffice=Sys.getenv('SOFFICE',unset='soffice'),check=FALSE)
+ opt<-list('reference-policy'='strict',python=Sys.getenv('PYTHON',unset='python3'),cores='4',soffice=Sys.getenv('SOFFICE',unset='soffice'),check=FALSE)
  for(x in args){
   if(x=='--check'){opt$check<-TRUE;next}
   if(!grepl('^--[^=]+=.+$',x))stop('Use --name=value arguments.')
   key<-sub('^--([^=]+)=.*$','\\1',x)
-  if(!key%in%c('country','ir-file','output-dir','python','cores','soffice','reference-dir','extract-source'))stop('Unknown option.')
+  if(!key%in%c('country','ir-file','output-dir','python','cores','soffice','reference-dir','extract-source','reference-policy'))stop('Unknown option.')
   opt[[key]]<-sub('^--[^=]+=','',x)
  }
  script<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1]);if(!file.exists(script))script<-gsub('~+~',' ',script,fixed=TRUE)
@@ -254,7 +268,7 @@ main<-function(){
  if(!all(file.exists(file.path(reference,needed))))stop('Approved HTML/PPTX references are missing. Supply --reference-dir or merge the code update into the existing repository.')
  materialize_sources(repo,runtime,opt$python,reference)
  rscript<-file.path(R.home('bin'),'Rscript')
- status<-system2(rscript,shQuote(c(file.path(runtime,'build_reports.R'),paste0('--country=',country),paste0('--ir-file=',input),paste0('--output-dir=',output),paste0('--python=',opt$python),paste0('--cores=',opt$cores),paste0('--soffice=',opt$soffice))))
+ status<-system2(rscript,shQuote(c(file.path(runtime,'build_reports.R'),paste0('--country=',country),paste0('--ir-file=',input),paste0('--output-dir=',output),paste0('--python=',opt$python),paste0('--cores=',opt$cores),paste0('--soffice=',opt$soffice),paste0('--reference-policy=',opt[['reference-policy']]))))
  if(status!=0L)stop('The build or reference comparison did not pass. Existing reports were not replaced; inspect private runtime validation files.')
  cat('Independent build and read-only report comparisons completed. Existing reports are unchanged.\n')
 }
