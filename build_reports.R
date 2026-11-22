@@ -1,5 +1,34 @@
 #!/usr/bin/env Rscript
-# Build a national report from a caller-supplied IR, keeping approved reports read-only.
+# Rebuild national DHS contraceptive-calendar reports from parameterized IR inputs.
+# Surveys: Ethiopia DHS 2024–25 (ETIR8A), Nigeria DHS 2024 (NGIR8B), DRC DHS
+# 2023–24 (CDIR81); respondents are all women ages 15–49.
+# Country scripts reconstruct episodes/person-months from vcal_1 and vcal_2,
+# preserve woman linkage and inherit v005/1e6, v021 and v022 survey design fields.
+# This controller prepares country-specific dependencies before the analytical run.
+# Existing HTML/PPTX files are read-only validation references; no input IR is embedded.
+
+# Package setup: install missing packages, then attach them before analysis.
+# For the validated package versions, run renv::restore() from the repo root first.
+# Help, source inspection and syntax checks do not install the full analysis stack.
+REQUIRED_R_PACKAGES <- c('digest', 'jsonlite')
+setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  packages <- unique(as.character(packages))
+  available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
+  missing <- packages[!available]
+  if (length(missing)) {
+    if (!isTRUE(install_missing))
+      stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
+    utils::install.packages(missing, repos='https://cloud.r-project.org')
+  }
+  missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
+  if (length(missing))
+    stop('Package installation was unsuccessful: ', paste(missing, collapse=', '),
+         '. Check the package system requirements and restore the documented environment.', call.=FALSE)
+  suppressPackageStartupMessages(invisible(lapply(packages, function(package)
+    library(package, character.only=TRUE, quietly=TRUE, warn.conflicts=FALSE))))
+  invisible(packages)
+}
+
 CONTROLLER_CODE <- r"-----------------------(#!/usr/bin/env Rscript
 # Cold national rebuild from an authorized, caller-supplied DHS IR file.
 main<-function(){
@@ -47,6 +76,7 @@ main<-function(){
   assembler<-file.path(repo,'tools',if(country=='Ethiopia')'assemble_ethiopia.py'else'assemble_national.py')
   run(opt$python,c(assembler,paste0('--country=',country),paste0('--project-root=',root),paste0('--repo-root=',repo),paste0('--statistics-dir=',stats),paste0('--table-dir=',tables),paste0('--rscript=',rscript),paste0('--soffice=',opt$soffice)),'assemble_national_html')
   run(opt$python,c(file.path(repo,'tools/restore_report_navigation.py'),'--country',country,'--source',file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html')),'--output',file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html'))),'restore_publication_navigation')
+  run(opt$python,c(file.path(repo,'method_sensitivity_report.py'),'--country',country,'--project-root',root,'--html',file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html'))),'append_method_sensitivity')
   comparisons_passed <- TRUE
   compare_reference <- function(exe,arguments,label) {
     result <- arguments[match('--output',arguments)+1L]
@@ -141,6 +171,7 @@ audit<-switch(country,Ethiopia='planning_audit.R',Nigeria='310_nigeria_planning_
 previous<-getwd();setwd(file.path(root,'Code'))
 run(rscript,c(audit,root,stats,'500',as.character(cores)),'joint_survey_models')
 setwd(previous)
+if(country!='Ethiopia')run(rscript,c(file.path(root,'Code/999_method_group_sensitivity.R'),country,root,file.path(root,'output/method_group_sensitivity')),'separate_method_sensitivity')
 point<-readRDS(file.path(stats,'planning_point.rds'))
 draws<-readRDS(file.path(stats,'planning_replicates.rds'))
 stopifnot(length(draws)==500L,identical(dim(point$risk),c(9L,5L,5L)),
@@ -204,6 +235,7 @@ materialize_sources<-function(repo,destination,python,reference){
  geometry<-jsonlite::read_json(file.path(repo,'geography.json'))$files
  for(name in names(geometry))write_source(geometry[[name]],file.path(destination,name))
  stopifnot(file.copy(file.path(repo,'geography.json'),file.path(destination,'geography.json'),overwrite=TRUE))
+ stopifnot(file.copy(file.path(repo,'method_sensitivity_report.py'),file.path(destination,'method_sensitivity_report.py'),overwrite=TRUE))
  write_source(CONTROLLER_CODE,file.path(destination,'build_reports.R'))
  write_source(PLANNING_CODE,file.path(destination,'recompute_planning.R'))
  status<-system2(python,shQuote(c(file.path(repo,'report_tools.py'),paste0('--extract=',destination))))
@@ -237,7 +269,7 @@ main<-function(){
  }
  script<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1]);if(!file.exists(script))script<-gsub('~+~',' ',script,fixed=TRUE)
  repo<-dirname(normalizePath(script));reference<-if(is.null(opt[['reference-dir']]))repo else normalizePath(opt[['reference-dir']],mustWork=TRUE)
- if(!requireNamespace('jsonlite',quietly=TRUE)||!requireNamespace('digest',quietly=TRUE))stop('Restore the R dependencies before building.')
+ setup_analysis_packages()
  originals<-file.path(reference,reference_files());originals<-originals[file.exists(originals)]
  hashes<-vapply(originals,function(p)digest::digest(p,file=TRUE,algo='sha256'),'')
  on.exit({current<-vapply(originals,function(p)if(file.exists(p))digest::digest(p,file=TRUE,algo='sha256')else NA_character_,'');if(!identical(hashes,current))stop('A frozen report changed; validation failed.')},add=TRUE)
@@ -258,6 +290,8 @@ main<-function(){
  }
  if(!all(c('country','ir-file','output-dir')%in%names(opt)))stop('Supply country, ir-file and output-dir.')
  country<-opt$country;if(!country%in%c('Ethiopia','Nigeria','DRC'))stop('Unknown country.')
+ country_source<-new.env();sys.source(file.path(repo,paste0(country,'_analysis'),paste0(country,'_final_html_analysis.R')),country_source)
+ country_source$setup_analysis_packages()
  input<-normalizePath(opt[['ir-file']],mustWork=TRUE)
  for(parent in unique(c(repo,reference)))if(startsWith(input,paste0(parent,.Platform$file.sep)))stop('Keep the IR in private storage outside the repository.')
  output<-opt[['output-dir']]

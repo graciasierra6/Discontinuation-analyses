@@ -1,5 +1,38 @@
 #!/usr/bin/env Rscript
-# Independent IR-based extensions, return/continuation curves and interactive maps.
+# Independent DHS contraceptive-calendar extensions, switching and maps.
+# Data: original women's IR files for Ethiopia DHS 2024–25 (ETIR8A), Nigeria DHS
+# 2024 (NGIR8B), and DRC DHS 2023–24 (CDIR81); all women ages 15–49.
+# Required inputs are parameterized: --ethiopia-ir, --nigeria-ir and --drc-ir
+# (or the corresponding documented runtime environment variables).
+# vcal_1 supplies monthly use/pregnancy; vcal_2 supplies stopping reasons.
+# The embedded prepare_ir.R reconstructs chronological runs and episode records,
+# aligning calendar positions with v008 and v017–v019. Histories precede interview.
+# Woman linkage is preserved across episodes and subsequent months. Survey weight:
+# v005/1e6; PSU: v021; stratum: v022. The full sampling frame is retained.
+# This module reconstructs its own analytical records from the IR inputs.
+
+# Package setup: install missing packages, then attach them before analysis.
+# For the validated package versions, run renv::restore() from the repo root first.
+# Help, source inspection and syntax checks do not install the full analysis stack.
+REQUIRED_R_PACKAGES <- c('digest', 'grid', 'haven', 'jsonlite', 'MASS', 'nnet', 'stats', 'survey', 'survival', 'svglite', 'tools')
+setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  packages <- unique(as.character(packages))
+  available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
+  missing <- packages[!available]
+  if (length(missing)) {
+    if (!isTRUE(install_missing))
+      stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
+    utils::install.packages(missing, repos='https://cloud.r-project.org')
+  }
+  missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
+  if (length(missing))
+    stop('Package installation was unsuccessful: ', paste(missing, collapse=', '),
+         '. Check the package system requirements and restore the documented environment.', call.=FALSE)
+  suppressPackageStartupMessages(invisible(lapply(packages, function(package)
+    library(package, character.only=TRUE, quietly=TRUE, warn.conflicts=FALSE))))
+  invisible(packages)
+}
+
 EXTENSION_FILES <- list()
 EXTENSION_FILES[["src/R/calculate_curves.R"]] <- r"--------------------------(#!/usr/bin/env Rscript
 # Parameterized analysis of first modern return and continuity after return.
@@ -2667,7 +2700,7 @@ run_extensions<-function(){
   public_root <- dirname(normalizePath(script,mustWork=TRUE))
   repo_root <- dirname(public_root)
   if(is.null(opt[['output-dir']]))stop('Supply --output-dir in private storage outside the repository.',call.=FALSE)
-  if(!requireNamespace('jsonlite',quietly=TRUE))stop('Install jsonlite first.',call.=FALSE)
+  setup_analysis_packages()
   dir.create(opt[['output-dir']],recursive=TRUE,showWarnings=FALSE)
   opt[['output-dir']]<-normalizePath(opt[['output-dir']])
   if(startsWith(opt[['output-dir']],paste0(repo_root,.Platform$file.sep))||identical(opt[['output-dir']],repo_root))stop('Use a private output directory outside the repository.',call.=FALSE)
@@ -2678,9 +2711,7 @@ run_extensions<-function(){
   geometry<-jsonlite::read_json(file.path(repo_root,'geography.json'))$files
   prefix<-'discontinuation_extensions/'
   for(rel in names(geometry)[startsWith(names(geometry),prefix)]){dest<-file.path(root,substring(rel,nchar(prefix)+1L));dir.create(dirname(dest),recursive=TRUE,showWarnings=FALSE);writeLines(enc2utf8(geometry[[rel]]),dest,sep='',useBytes=TRUE)}
-  needed <- c('haven','jsonlite','survival','survey','digest','svglite')
-  missing <- needed[!vapply(needed,requireNamespace,TRUE,quietly=TRUE)]
-  if(length(missing))stop('Install required R packages: ',paste(missing,collapse=', '),call.=FALSE)
+
   python <- Sys.which(opt$python)
   if(!nzchar(python))stop('Supply a working Python 3 executable with --python.',call.=FALSE)
   run <- function(exe,parameters,label) {

@@ -1,9 +1,37 @@
 #!/usr/bin/env Rscript
-# State discontinuation analysis, Nigeria DHS 2024.
-# Standalone numerical source for the current combined three-state report.
-# Required input: the full authorized women's IR file, not a state-only subset.
-# No personal locations, credentials, or survey microdata are embedded.
-# Run with --help for parameterized input and output options.
+# Kano analysis using Nigeria DHS 2024 women's Individual Recode, release NGIR8B.
+# Supply the FULL authorized national IR with --ir-file or DHS_IR_FILE.
+# Respondents: women ages 15–49, regardless of marital status; Kano is a survey domain.
+# Monthly method use/pregnancy (vcal_1) and stopping reasons (vcal_2) are converted
+# into episode-level records below, with calendar alignment from v008 and v017–v019.
+# Histories cover earlier months, not only the 2024 interview year. A woman may
+# contribute multiple episodes; the full survey frame is retained for inference.
+# Current mCPR/method: v313/v312. Weight: v005/1e6; PSU: v021; stratum: v022.
+# Planning baseline: 2024; outcome year: 2025. Population/growth assumptions are fixed.
+# The joint three-state models export Kano tables/figures; this script does not
+# independently author the combined HTML or PowerPoint layout. See --help and README.
+
+# Package setup: install missing packages, then attach them before analysis.
+# For the validated package versions, run renv::restore() from the repo root first.
+# Help, source inspection and syntax checks do not install the full analysis stack.
+REQUIRED_R_PACKAGES <- c('digest', 'haven', 'jsonlite', 'MASS', 'nnet', 'parallel', 'stats', 'survey', 'survival', 'svglite', 'tools', 'xml2')
+setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  packages <- unique(as.character(packages))
+  available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
+  missing <- packages[!available]
+  if (length(missing)) {
+    if (!isTRUE(install_missing))
+      stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
+    utils::install.packages(missing, repos='https://cloud.r-project.org')
+  }
+  missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
+  if (length(missing))
+    stop('Package installation was unsuccessful: ', paste(missing, collapse=', '),
+         '. Check the package system requirements and restore the documented environment.', call.=FALSE)
+  suppressPackageStartupMessages(invisible(lapply(packages, function(package)
+    library(package, character.only=TRUE, quietly=TRUE, warn.conflicts=FALSE))))
+  invisible(packages)
+}
 
 # DHS design utilities. Inputs are supplied by the calling analysis.
 # No finite population correction: use the with-replacement PSU approximation.
@@ -319,11 +347,8 @@ if (isTRUE(options$help)) {
   quit(status = 0L)
 }
 
-packages <- c("haven", "jsonlite", "survival", "survey", "digest", "svglite")
-if (!is.null(options[["reference-html"]])) packages <- c(packages, "xml2")
-missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing)) stop(paste("Install required R packages:", paste(missing, collapse = ", ")))
-suppressPackageStartupMessages(library(survival))
+packages <- REQUIRED_R_PACKAGES
+setup_analysis_packages()
 input_file <- options[["ir-file"]]
 if (is.null(input_file)) input_file <- Sys.getenv("DHS_IR_FILE", unset = "")
 if (!nzchar(input_file) || !file.exists(input_file)) stop("Supply an existing --ir-file or DHS_IR_FILE.")

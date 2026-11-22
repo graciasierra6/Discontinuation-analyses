@@ -1,14 +1,39 @@
-# National report source: --run=full rebuilds from the supplied IR file.
-# Optional legacy --run=revised-html refreshes a supplied report from fitted statistics.
-# --run=prepare reconstructs the calendar; full report builds use the root build pipeline.
-# Parameterized IR preparation: --run=prepare; --validate-input checks inputs only.
-# Updated survey-design and planning inference. Use --run=survey-update after core inputs and derived episodes are available.
-# New planning tables are derived from output/survey_planning/planning_intervals.csv.
 #!/usr/bin/env Rscript
-# Nigeria — numerical source companion to the final HTML
-# Parameterized inputs and project-relative outputs; no survey microdata embedded.
-# Original analysis definitions and numerical expressions are retained.
-# Historical variants are distinct modules, not a single interchangeable model.
+# Nigeria DHS 2024: contraceptive discontinuation and switching.
+# Data: original women's Individual Recode (IR), validated release NGIR8B.
+# Respondents are women ages 15–49, regardless of marital status.
+# vcal_1 records monthly contraceptive use/pregnancy; vcal_2 records stopping reasons.
+# Calendar positions are aligned using v008 and v017–v019, then reconstructed as
+# episode-level and person-month records. A woman can contribute multiple episodes.
+# The survey year identifies the interview round; calendar histories cover earlier
+# months as well. Each analysis states its retrospective window and eligibility.
+# Current use/mCPR uses v312 and v313. Survey weight: v005/1e6; PSU: v021; stratum: v022.
+# Planning baseline: 2024; outcome year: 2025. Population inputs are documented separately.
+# Supply the authorized IR through --ir-file or DHS_IR_FILE; no microdata are embedded.
+# The root build_reports.R runs fresh estimation and HTML rendering.
+
+# Package setup: install missing packages, then attach them before analysis.
+# For the validated package versions, run renv::restore() from the repo root first.
+# Help, source inspection and syntax checks do not install the full analysis stack.
+REQUIRED_R_PACKAGES <- c('abind', 'data.table', 'digest', 'ggplot2', 'grDevices', 'grid', 'gridExtra', 'haven', 'jsonlite', 'MASS', 'nnet', 'parallel', 'scales', 'sf', 'splines', 'stats', 'survey', 'survival', 'svglite', 'tools')
+setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  packages <- unique(as.character(packages))
+  available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
+  missing <- packages[!available]
+  if (length(missing)) {
+    if (!isTRUE(install_missing))
+      stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
+    utils::install.packages(missing, repos='https://cloud.r-project.org')
+  }
+  missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
+  if (length(missing))
+    stop('Package installation was unsuccessful: ', paste(missing, collapse=', '),
+         '. Check the package system requirements and restore the documented environment.', call.=FALSE)
+  suppressPackageStartupMessages(invisible(lapply(packages, function(package)
+    library(package, character.only=TRUE, quietly=TRUE, warn.conflicts=FALSE))))
+  invisible(packages)
+}
+
 RECONCILIATION_CODE <- r"-----(#!/usr/bin/env python3
 """Reconcile saved HTML with aggregate numerical outputs, without editing it.
 
@@ -178,14 +203,21 @@ def main():
     if a.strict:raise SystemExit(2)
 if __name__=='__main__':main()
 )-----"
+
 COUNTRY <- "Nigeria"
+
 REPORT_BASENAME <- "Nigeria_discontinuation_analysis.html"
-REPORT_SHA256 <- "7e855f8a903a2903a552fd5856d32697dc5e46a24d8af2deba56f89d4c68beff"
+
+REPORT_SHA256 <- "9681f56c3a79fa0ae8524667f018c6d208d5de812e0579d1b52eb633df857980"
+
 RAW_RELATIVE <- "Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds"
+
 CORE_MODULES <- c("01_nigeria_calendar_life_table.R")
+
 PLANNING_MODULES <- c("01_nigeria_calendar_life_table.R", "02_nigeria_descriptive_analyses.R", "08_nigeria_population_and_planning.R", "22_nigeria_landmark_support.R", "23_nigeria_current_user_switch_and_duration.R", "91_nigeria_aft_switching_bridge.R", "95_build_duration_planning_data.py")
-REQUIRED_R_PACKAGES <- c('digest','haven','jsonlite','survey','survival','nnet','ggplot2','grid','gridExtra','parallel','scales','sf','svglite')
+
 BOOTSTRAP_ENV <- c("NIGERIA_PLANNING_BOOTSTRAP_REPS", "BOOTSTRAP_REPS", "NIGERIA_ALL_REASON_BOOTSTRAP_REPS", "NIGERIA_ALL_REASON_MODEL_BOOTSTRAP_REPS", "NIGERIA_BOOTSTRAP_REPS", "NIGERIA_METHOD_ZONE_REPS", "NIGERIA_MODEL_BOOTSTRAP_REPS", "NIGERIA_SELECTED_BOOTSTRAP_REPS", "NIGERIA_SELECTED_MODEL_BOOTSTRAP_REPS", "NIGERIA_SUBGROUP_BOOTSTRAP_REPS", "REFERENCE_BOOTSTRAP_REPS", "REFERENCE_MODEL_REPS", "RISK_STRATA_BOOTSTRAP_REPS")
+
 SECTION_INDEX <- r"-----(section_id	title
 methodology	What each probability measures
 current-use	Current modern use and implications for user-loss planning
@@ -243,60 +275,8 @@ switch-bridge	Direct modern switching reduces the gross user-loss illustration
 duration-bridge	Accounting for elapsed use and modern status at year end
 duration-aware-cause-pp-matrices	Actionable endings and year-end modern use: method by cause)-----"
 
-# USAGE (relative example locations; provide your own authorized IR file):
-#   Rscript Nigeria_final_html_analysis.R --list
-#   Rscript Nigeria_final_html_analysis.R --validate
-#   Rscript Nigeria_final_html_analysis.R --extract --project-root=analysis_output
-#   Rscript Nigeria_final_html_analysis.R --run=core --project-root=analysis_output --ir-file=data/individual_recode.dta
-#   Rscript Nigeria_final_html_analysis.R --run=MODULE_NAME --project-root=analysis_output --ir-file=data/individual_recode.dta
-#
-# --reconcile --report-html=report.html --project-root=analysis_output
-# optionally takes --fresh-root for independently rebuilt outputs. It writes
-# a table/figure inventory and discrepancy records; candidate matches are NOT
-# a complete validation or report renderer. Requires Python with lxml.
-# Numerical execution does not require an existing HTML. Legacy in-place HTML
-# updates in the two early Ethiopia modules are disabled unless explicitly set
-# with RENDER_LEGACY_HTML=true. No statistical expression is changed by that guard.
-# --verify-planning --report-html=report.html --project-root=analysis_output
-# --fresh-root=rebuilt_output verifies and renders the historical/AFT tables only.
-# --run=planning rebuilds the saved three-approach planning outputs from the IR
-# plus frozen aggregate population inputs. It does not regenerate the full HTML.
-# --run also accepts a comma-separated ordered list of module filenames.
-# --auxiliary-dir can supply other inputs in the original project-relative
-# structure (Data/..., output/Supporting_data/...). Nothing is downloaded.
-# --overwrite permits replacing extracted code or aggregate input files.
-# --python selects the interpreter for the explicitly identified Python helpers.
-# --bootstrap-reps overrides recognized bootstrap environment settings; omit it
-# to retain each module's historical default. Model resampling can be lengthy.
-#
-# AUDIT UPDATE: --run=reference runs the shared reference-alignment module after
-# --run=core. It writes separate outputs and never alters checked HTML or PPTX.
-# REFERENCE_TASKS selects descriptive,risk_strata,models,pathways.
-# REFERENCE_MODEL_SPECS selects individual model IDs. For diagnostic runs use
-# REFERENCE_BOOTSTRAP_REPS=0 and REFERENCE_MODEL_REPS=0; those runs emit no CIs.
-# Corrected coverage: native reason groups; condoms in short-acting methods;
-# five method categories in shared-mix comparisons; held-out PSU risk groups;
-# full method-by-subgroup reasons; 15-49-at-start model cohort; model variants.
-# IMPORTANT: archived modules retain prior report definitions for provenance.
-# New outputs require reconciliation before claiming that final reports agree.
-# Syntax validation is not proof of full statistical/report replication.
-# This file is an executable SOURCE COLLECTION, not an automatic replay of
-# every historical model variant. Source modules remain separate because the
-# final report accumulated different outcomes, cohorts, and specifications.
-# Select the modules needed in dependency order; their actual source() calls
-# and input/output filenames are preserved. The core alias builds calendar
-# episodes and published-table validation, with the original country checks.
-# Detailed analysis modules require the upstream derived files they read.
-# RDS/DTA microdata, maps, and fitted model objects are NOT embedded.
-# Only the small, frozen external population inputs used by the report are
-# embedded. Provide a replacement via --auxiliary-dir to change those inputs.
-# Python helpers are included where original numerical arithmetic was Python;
-# they are not represented as original R code. Reporting source is included below as REPORT_FILES. It is expanded only
-# into the private runtime directory. This file does not edit either
-# checked final document or promise pixel-identical HTML regeneration.
-
 stopifnot(getRversion() >= '4.0.0')
-MODULES <- list()
+
 EXTERNAL_INPUTS <- list()
 
 parse_options <- function(args) {
@@ -408,7 +388,6 @@ prepare_ir <- function(root, ir_file) {
   invisible(NULL)
 }
 
-# Delegate complete reports to the raw-IR national build, not a saved-results refresh.
 run_full_rebuild <- function(opt,planning_only=FALSE) {
  f<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
  if(!file.exists(f))f<-gsub('~+~',' ',f,fixed=TRUE)
@@ -465,6 +444,7 @@ main <- function() {
     cat('Parsed ',length(rnames),' embedded R modules successfully.\n',sep='')
   }
   if (!isTRUE(opt$extract) && is.null(opt$run) && !isTRUE(opt[['validate-input']])) return(invisible(NULL))
+  setup_analysis_packages(packages=if(is.null(opt$run) && !isTRUE(opt[['validate-input']])) 'digest' else REQUIRED_R_PACKAGES)
   root <- if (!is.null(opt[['project-root']])) opt[['project-root']] else
     Sys.getenv('ANALYSIS_ROOT',unset=file.path('analysis_output',tolower(COUNTRY)))
   aux <- if (!is.null(opt[['auxiliary-dir']])) opt[['auxiliary-dir']] else ''
@@ -535,14 +515,12 @@ main <- function() {
   invisible(NULL)
 }
 
-# Frozen aggregate external population input used for the final report.
 EXTERNAL_INPUTS[["output/Supporting_data/nigeria_wpp2024_wra_2024_2026.csv"]] <- r"-----(year,women_15_49,source
 2024,55819549.5,"UN World Population Prospects 2024, female single ages, medium variant, 1 July"
 2025,57393553.0,"UN World Population Prospects 2024, female single ages, medium variant, 1 July"
 2026,59000784.5,"UN World Population Prospects 2024, female single ages, medium variant, 1 July"
 )-----"
 
-# Frozen published aggregate validation reference; no microdata.
 EXTERNAL_INPUTS[["output/Supporting_data/nigeria_published_table_7_13_reason_distribution.csv"]] <- r"-----(reason,IUD,Injectables,Implants,Pill,Male condom,Emergency contraception,Rhythm,Withdrawal,Other,All methods
 Became pregnant while using,1.7,4.4,1.4,7.2,4.7,6.5,12.3,14.7,6.1,6.2
 Wanted to become pregnant,35.6,34.7,41.8,27.7,28.4,26.5,49.1,39.3,24.2,34.0
@@ -562,15 +540,480 @@ Don’t know,0.0,0.5,0.8,0.5,1.2,0.5,0.3,0.4,0.3,0.6
 Missing,0.0,0.3,0.6,0.1,0.7,1.4,0.4,0.0,0.3,0.4
 )-----"
 
-# =============================================================================
-# ORIGINAL MODULE: 200_reference_analysis_extensions.R
-# LANGUAGE: R
-MODULES[["200_reference_analysis_extensions.R"]] <- list(
-  language="R",
-  original_sha256="b42549fa5545c5225a7cc1c299954ae15ed5c680f59729fd1a93c6ca17ea015e",
-  packaged_sha256="83b5793e868f9655acc5fdb1c05fc65cc39b4070b921c4ccf5287954e79c92a1",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+read_validated_ir <- function(ir_file, expected_sha256='') {
+  for (pkg in c('haven','jsonlite','digest'))
+    if (!requireNamespace(pkg, quietly=TRUE)) stop('Install required R package: ',pkg,call.=FALSE)
+  if (!nzchar(ir_file) || !file.exists(ir_file))
+    stop('Supply an existing authorized IR file with --ir-file or DHS_IR_FILE.',call.=FALSE)
+  ext <- tolower(tools::file_ext(ir_file))
+  allowed <- if(COUNTRY=='Ethiopia') 'dta' else c('dta','rds')
+  if (!ext %in% allowed) stop('Unsupported input format for this country.',call.=FALSE)
+  sha <- digest::digest(file=ir_file, algo='sha256')
+  if (nzchar(expected_sha256) && (!grepl('^[a-fA-F0-9]{64}$',expected_sha256) ||
+      !identical(tolower(expected_sha256),sha)))
+    stop('Input SHA-256 does not match --expected-ir-sha256.',call.=FALSE)
+  x <- tryCatch(if(ext=='dta') as.data.frame(haven::read_dta(ir_file)) else readRDS(ir_file),
+    error=function(e)stop('Cannot read the supplied IR file; verify format and integrity.',call.=FALSE))
+  if (!is.data.frame(x)) stop('IR input must be a woman-level data frame.',call.=FALSE)
+  expected <- if(COUNTRY=='Ethiopia') c(21395L,6648L,797L,27L) else c(39050L,6411L,1380L,74L)
+  required <- c('caseid','v000','v005','v008','v011','v012','v017','v018','v019',
+                'v021','v022','v024','v025','v106','v190','v312','v313','v337',
+                'v501','vcal_1','vcal_2')
+  if(COUNTRY=='Nigeria') required<-c(required,'sstate')
+  missing <- setdiff(required,names(x))
+  if(length(missing))stop('Required IR variables missing: ',paste(missing,collapse=', '),call.=FALSE)
+  if(anyDuplicated(names(x)) || anyDuplicated(x$caseid) || anyNA(x$caseid))
+    stop('IR variables and woman identifiers must be unique and nonmissing.',call.=FALSE)
+  if(nrow(x)!=expected[1] || ncol(x)!=expected[2])
+    stop('IR dimensions differ from the validated country release; review before analysis.',call.=FALSE)
+  num <- function(k)as.numeric(x[[k]])
+  if(!all(as.character(x$v000)==if(COUNTRY=='Ethiopia')'ET8'else'NG8'))
+    stop('Wrong country/recode phase.',call.=FALSE)
+  keys<-c('v005','v008','v011','v012','v017','v018','v019','v021','v022','v024')
+  if(any(vapply(keys,function(k)any(!is.finite(num(k))),FALSE)))
+    stop('Nonfinite required dates, weights or survey-design fields.',call.=FALSE)
+  stopifnot(all(num('v005')>0),all(num('v012')%in%15:49),
+    all(num('v019')>=1 & num('v019')<=80),
+    all(num('v008')-num('v017')+1==num('v019')),
+    all(num('v018')+num('v019')==81),
+    is.character(x$vcal_1),is.character(x$vcal_2),
+    !anyNA(x$vcal_1),!anyNA(x$vcal_2),all(nchar(x$vcal_1)==80L),
+    all(nchar(x$vcal_2)<=80L),length(grep('^b3_',names(x)))>0)
+  f<-unique(data.frame(psu=num('v021'),stratum=num('v022')))
+  stopifnot(nrow(f)==expected[3],length(unique(f$stratum))==expected[4],
+    !anyDuplicated(f$psu),all(table(f$stratum)>1))
+  if(COUNTRY=='Nigeria')stopifnot(all(num('v024')%in%1:6))
+  # Never trim, reverse, filter or impute the raw input here.
+  list(data=x,sha256=sha,format=ext,rows=nrow(x),columns=ncol(x),
+       psus=nrow(f),strata=length(unique(f$stratum)))
+}
+
+write_ir_validation <- function(root, v) {
+  dest<-file.path(root,'output','validation');dir.create(dest,recursive=TRUE,showWarnings=FALSE)
+  fields<-list(country=COUNTRY,input_parameter='--ir-file or DHS_IR_FILE',
+    format=v$format,sha256=v$sha256,women=v$rows,variables=v$columns,
+    psus=v$psus,strata=v$strata,calendar_alignment='passed',unique_women='passed',
+    source_file_modified=FALSE,api_used=FALSE,
+    validated_utc=format(Sys.time(),'%Y-%m-%dT%H:%M:%SZ',tz='UTC'))
+  jsonlite::write_json(fields,file.path(dest,'input_validation.json'),auto_unbox=TRUE,pretty=TRUE)
+  packages<-c('haven','jsonlite','digest','survey','survival','nnet','ggplot2')
+  vers<-vapply(packages,function(p)if(requireNamespace(p,quietly=TRUE))
+    as.character(utils::packageVersion(p))else'not installed','')
+  write.csv(data.frame(package=c('R',packages),version=c(as.character(getRversion()),vers)),
+    file.path(dest,'software_versions.csv'),row.names=FALSE)
+}
+
+complete_preparation_audit <- function(root, v) {
+  prefix<-if(COUNTRY=='Ethiopia')'ethiopia'else'nigeria'
+  derived<-file.path(root,'Data','Derived')
+  load<-function(name)readRDS(file.path(derived,name))
+  events<-load(paste0(prefix,'_2024_calendar_events.rds'))
+  ep<-load(if(COUNTRY=='Ethiopia')'ethiopia_2024_table_7_11_episodes.rds'else'nigeria_2024_table_7_12_episodes.rds')
+  months<-load(paste0(prefix,'_2024_calendar_months.rds'))
+  cov<-load(if(COUNTRY=='Ethiopia')'ethiopia_2024_full_model_episode_covariates.rds'else'nigeria_2024_model_episode_covariates.rds')
+  person<-load(paste0(prefix,'_2024_person_month.rds'))
+  frame<-load(paste0(prefix,'_2024_full_survey_frame.rds'))
+  stopifnot(nrow(months)==sum(as.integer(v$data$v019)),
+    nrow(months)==sum(events$duration),all(ep$entry<ep$exposure),
+    all(ep$entry<12),!anyDuplicated(ep$episode_id),
+    nrow(frame)==v$psus,length(unique(frame$stratum))==v$strata,
+    all(ep$wt==as.numeric(v$data$v005[ep$woman_row])/1e6),
+    sum(person$outcome=='actionable')>0,
+    !anyNA(person[,c('wt','cluster','stratum','month','outcome')]))
+  for_month<-if(COUNTRY=='Ethiopia')cov else cov
+  stopifnot(nrow(person)==sum(pmin(12L,for_month$exposure)-for_month$entry))
+  # Every retained episode-month uses the original woman's weight; other
+  # endings remain competing events. Calendar nonuse is not a method episode.
+  if(COUNTRY=='Ethiopia'){
+    audit<-jsonlite::read_json(file.path(root,'output/Supporting_data/Table_7_11/table_7_11_results.json'))$audit
+    stopifnot(audit$rate_cells_matching==66,audit$count_cells_matching==6,
+      nrow(events)==89220,nrow(ep)==9068,nrow(cov)==8611,nrow(person)==70691,
+      sum(person$outcome=='actionable')==1321)
+    validated_cells<-66L;validated_counts<-6L
+  }else{
+    audit<-read.csv(file.path(root,'output/Supporting_data/nigeria_table_7_12_validation.csv'))
+    stopifnot(sum(audit$rate_cells_matching)==110,all(audit$episode_count_matching),
+      nrow(events)==163203,nrow(ep)==11210,nrow(cov)==8341,nrow(person)==69445)
+    validated_cells<-110L;validated_counts<-10L
+  }
+  files<-list.files(derived,pattern='\\.rds$',full.names=TRUE)
+  hashes<-data.frame(file=paste0('Data/Derived/',basename(files)),
+    sha256=vapply(files,function(f)digest::digest(file=f,algo='sha256'),''))
+  dest<-file.path(root,'output/validation')
+  write.csv(hashes,file.path(dest,'derived_file_checksums.csv'),row.names=FALSE)
+  result<-list(country=COUNTRY,input_sha256=v$sha256,
+    calendar_runs=nrow(events),calendar_months=nrow(months),
+    published_table_episodes=nrow(ep),model_episodes=nrow(cov),
+    model_episode_months=nrow(person),psus=nrow(frame),strata=v$strata,
+    dhs_rate_cells_matching=validated_cells,dhs_episode_counts_matching=validated_counts,
+    input_preparation_complete=TRUE,full_html_regeneration=FALSE,
+    html_and_pptx_modified=FALSE)
+  jsonlite::write_json(result,file.path(dest,'preparation_validation.json'),
+    auto_unbox=TRUE,pretty=TRUE,digits=15)
+  cat('Preparation passed: ',nrow(events),' calendar runs; ',nrow(ep),
+      ' published-table episodes; ',nrow(cov),' model episodes.\n',sep='')
+}
+
+REVISED_GROWTH_ASSUMPTIONS <- r"--------({
+  "scenarios": [
+    {
+      "scenario": "6-year DHS trend",
+      "annual_change_pp": 0.4318981911348668
+    },
+    {
+      "scenario": "11-year DHS trend",
+      "annual_change_pp": 0.1777353742882184
+    },
+    {
+      "scenario": "FPET-informed growth",
+      "annual_change_pp": 0.4
+    }
+  ],
+  "rates_from": {
+    "dhs2013": 11.149075984364499,
+    "dhs2018": 10.5127759547257,
+    "dhs2024": 13.104165101534901,
+    "fpet2024": 13.2,
+    "fpet2025": 13.6
+  }
+})--------"
+
+REVISED_TABLE_SCHEMA <- r"--------([
+  {
+    "title": "First-year: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "First-year: users by method and cause",
+    "kind": "cause",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "First-year: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 1
+  },
+  {
+    "title": "First-year: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 2
+  },
+  {
+    "title": "First-year: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 1,
+    "scenario": 3
+  },
+  {
+    "title": "First-year: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 1,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: users by method and cause",
+    "kind": "cause",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "Historical duration-aware: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 1
+  },
+  {
+    "title": "Historical duration-aware: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 2
+  },
+  {
+    "title": "Historical duration-aware: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 2,
+    "scenario": 3
+  },
+  {
+    "title": "Historical duration-aware: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 2,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: users by method and cause",
+    "kind": "cause",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "AFT survival: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 1
+  },
+  {
+    "title": "AFT survival: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 2
+  },
+  {
+    "title": "AFT survival: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 3,
+    "scenario": 3
+  },
+  {
+    "title": "AFT survival: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 3,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: users by method and cause",
+    "kind": "cause",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "Historical sensitivity: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 1
+  },
+  {
+    "title": "Historical sensitivity: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 2
+  },
+  {
+    "title": "Historical sensitivity: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 4,
+    "scenario": 3
+  },
+  {
+    "title": "Historical sensitivity: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 4,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: actionable discontinuation and mCPR",
+    "kind": "method",
+    "approach": 5,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: users by method and cause",
+    "kind": "cause",
+    "approach": 5,
+    "scenario": null
+  },
+  {
+    "title": "AFT sensitivity: mCPR growth scenarios",
+    "kind": "baseline",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: mCPR if actionable losses are avoided",
+    "kind": "scenario",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: 6-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 1
+  },
+  {
+    "title": "AFT sensitivity: 11-year DHS trend by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 2
+  },
+  {
+    "title": "AFT sensitivity: FPET-informed growth by method",
+    "kind": "method_scenario",
+    "approach": 5,
+    "scenario": 3
+  },
+  {
+    "title": "AFT sensitivity: mCPR equivalent by cause",
+    "kind": "cause_pp",
+    "approach": 5,
+    "scenario": null
+  }
+])--------"
+
+REVISION_HELPER_NAMES <- c("300_revised_planning.R", "301_revised_tables.py", "302_revised_html.py",
+"303_validate_revised.py", "wording.py")
+
+run_revised_report <- function(opt) {
+  if (!requireNamespace("jsonlite",quietly=TRUE) || !requireNamespace("digest",quietly=TRUE))
+    stop("Install jsonlite and digest.")
+  root <- opt[["project-root"]]
+  if (is.null(root)) root <- file.path("analysis_output",tolower(COUNTRY),"revised")
+  dir.create(root,recursive=TRUE,showWarnings=FALSE);root<-normalizePath(root,mustWork=TRUE)
+  script_arg<-grep("^--file=",commandArgs(),value=TRUE)
+  script_folder<-if(length(script_arg))dirname(sub("^--file=","",script_arg[1]))else"."
+  stats <- opt[["statistics-dir"]]
+  if(is.null(stats))stats<-file.path(script_folder,"revision_inputs")
+  if (is.null(stats)||!dir.exists(stats)) stop("Supply --statistics-dir with fitted point estimates and survey bootstrap draws.")
+  stats<-normalizePath(stats,mustWork=TRUE)
+  required<-c("planning_point.rds","planning_replicates.rds",if(COUNTRY=="Ethiopia")"metadata.json"else"planning_metadata.rds")
+  if(COUNTRY=="Ethiopia")required<-c(required,"planning_intervals.csv")
+  if(!all(file.exists(file.path(stats,required))))stop("The numerical input directory is incomplete.")
+  if(length(readRDS(file.path(stats,"planning_replicates.rds")))!=500L)
+    stop("The saved-report revision requires the validated 500-replicate numerical output.")
+  build<-file.path(root,"build");result<-file.path(root,"output");code<-file.path(root,"Code")
+  for(d in c(build,result,code))dir.create(d,recursive=TRUE,showWarnings=FALSE)
+  for(n in names(REVISION_HELPERS))writeLines(REVISION_HELPERS[[n]],file.path(code,n),useBytes=TRUE)
+  assumptions<-opt[["revision-inputs"]]
+  if(is.null(assumptions)) {assumptions<-file.path(build,"growth_assumptions.json");writeLines(REVISED_GROWTH_ASSUMPTIONS,assumptions,useBytes=TRUE)}
+  if(!file.exists(assumptions))stop("Revision assumptions file does not exist.")
+  schema<-file.path(build,"table_schema.json");writeLines(REVISED_TABLE_SCHEMA,schema,useBytes=TRUE)
+  python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
+  run<-function(exe,args) {
+    status<-system2(exe,shQuote(args))
+    if(!identical(status,0L))stop("Revised build failed; no checked report was overwritten.")
+  }
+  run(file.path(R.home("bin"),"Rscript"),c(file.path(code,"300_revised_planning.R"),stats,assumptions,build))
+  if(identical(opt$run,"revised-planning"))return(invisible(NULL))
+  template<-opt[["base-html"]]
+  if(is.null(template)) {
+    template<-file.path(script_folder,REPORT_BASENAME)
+  }
+  if(!file.exists(template))stop("Supply --base-html with the latest validated report layout.")
+  template<-normalizePath(template,mustWork=TRUE)
+  target<-file.path(result,REPORT_BASENAME)
+  if(identical(normalizePath(target,mustWork=FALSE),template))stop("Build output must differ from the input report.")
+  run(python,c(file.path(code,"301_revised_tables.py"),build,schema,build))
+  if(COUNTRY=="Ethiopia") {
+    run(python,c(file.path(code,"302_revised_html.py"),build,schema,template,target))
+  } else if(COUNTRY=="Nigeria") {
+    run(python,c(file.path(code,"302_revised_html.py"),template,build,file.path(build,"planning_html.json"),target))
+  } else {
+    run(python,c(file.path(code,"302_revised_html.py"),template,template,build,file.path(build,"planning_html.json"),target))
+  }
+  run(python,c(file.path(code,"303_validate_revised.py"),COUNTRY,template,target,build,result))
+  cat("Revised HTML build completed. Review output/revised_build_validation.json for its scope.\n")
+}
+
+REQUIRED_R_PACKAGES <- unique(c(REQUIRED_R_PACKAGES,"abind"))
+
+
+
+
+
+
+run_revised_report <- function(opt) {
+ if(!requireNamespace("jsonlite",quietly=TRUE)||!requireNamespace("digest",quietly=TRUE))stop("Install jsonlite and digest.")
+ root<-if(!is.null(opt[["project-root"]]))opt[["project-root"]]else file.path("analysis_output","nigeria","updated")
+ for(n in c("build","output","Code"))dir.create(file.path(root,n),recursive=TRUE,showWarnings=FALSE)
+ script_arg<-grep("^--file=",commandArgs(),value=TRUE);folder<-if(length(script_arg))dirname(sub("^--file=","",script_arg[1]))else"."
+ stats<-if(!is.null(opt[["statistics-dir"]]))opt[["statistics-dir"]]else file.path(folder,"revision_inputs")
+ need<-c("planning_point.rds","planning_replicates.rds","planning_metadata.rds","transition_validation.json")
+ if(!all(file.exists(file.path(stats,need))))stop("Supply the fitted numerical inputs, including the new transition sensitivity.")
+ if(dim(readRDS(file.path(stats,"planning_point.rds"))$risk)[1]!=9L)stop("Expected nine risk components, including modeled transitions.")
+ if(length(readRDS(file.path(stats,"planning_replicates.rds")))!=500L)stop("The report requires all 500 valid joint survey replicates.")
+ code<-file.path(root,"Code");build<-file.path(root,"build");result<-file.path(root,"output")
+ for(n in names(REVISION_HELPERS))writeLines(REVISION_HELPERS[[n]],file.path(code,n),useBytes=TRUE)
+ file.copy(file.path(stats,"transition_validation.json"),file.path(build,"transition_validation.json"),overwrite=TRUE)
+ assumptions<-opt[["revision-inputs"]];if(is.null(assumptions)){assumptions<-file.path(build,"growth_assumptions.json");writeLines(REVISED_GROWTH_ASSUMPTIONS,assumptions,useBytes=TRUE)}
+ schema<-file.path(build,"original_table_schema.json");writeLines(REVISED_TABLE_SCHEMA,schema,useBytes=TRUE)
+ python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
+ run<-function(exe,a){status<-system2(exe,shQuote(a));if(status!=0L)stop("Report build failed.")}
+ run(file.path(R.home("bin"),"Rscript"),c(file.path(code,"300_revised_planning.R"),stats,assumptions,build))
+ run(python,c(file.path(code,"301_revised_tables.py"),build,schema,build))
+ if(identical(opt$run,"revised-planning"))return(invisible(NULL))
+ base<-if(!is.null(opt[["base-html"]]))opt[["base-html"]]else file.path(folder,REPORT_BASENAME)
+ target<-file.path(result,REPORT_BASENAME)
+ if(!file.exists(base))stop("Supply the validated HTML layout.")
+ if(identical(normalizePath(base),normalizePath(target,mustWork=FALSE)))stop("Output must differ from the input report.")
+ run(python,c(file.path(code,"302_revised_html.py"),base,build,file.path(build,"planning_html.json"),target))
+ run(python,c(file.path(code,"303_validate_revised.py"),COUNTRY,base,target,build,result))
+ cat("Rebuilt 48 planning tables and updated the companion diagnostics. Other chapters and figures retained.\n")
+}
+
+MODULES <- list()
+MODULES[["200_reference_analysis_extensions.R"]] <- list(language="R", packaged_sha256="15ce23019c6dda0f20e2e02c759630f98f8daf3f2bd5669b7c105d61d7c3c3fb", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -586,7 +1029,7 @@ dhs_set_context(country='Nigeria',root=.dhs_root)
 # Country differences in geography, source labels and population are retained.
 # Run after the country's calendar module. Supply ANALYSIS_COUNTRY and its
 # COUNTRY_PROJECT_ROOT; DHS_IR_FILE can override the staged IR input.
-# REFERENCE_TASKS: descriptive,risk_strata,models,pathways (default: all four).
+# REFERENCE_TASKS: descriptive,models,pathways (default: all three).
 # REFERENCE_BOOTSTRAP_REPS and REFERENCE_MODEL_REPS default to 400.
 # Fewer than 100 replicates is diagnostic only: no CIs or p-values are emitted.
 # REFERENCE_MODEL_SPECS can select a comma-separated subset of model IDs below.
@@ -598,7 +1041,8 @@ root <- Sys.getenv(paste0(toupper(country),'_PROJECT_ROOT'))
 if (!nzchar(root)) stop('Set the country project root.')
 out <- file.path(root,'output','reference_alignment')
 dir.create(out,recursive=TRUE,showWarnings=FALSE)
-tasks <- strsplit(Sys.getenv('REFERENCE_TASKS','descriptive,risk_strata,models,pathways'),',',fixed=TRUE)[[1]]
+tasks <- strsplit(Sys.getenv('REFERENCE_TASKS','descriptive,models,pathways'),',',fixed=TRUE)[[1]]
+if('risk_strata'%in%tasks)stop('The retired optional risk_strata task was removed. Use the country report risk-profile module instead.')
 B <- as.integer(Sys.getenv('REFERENCE_BOOTSTRAP_REPS','400'))
 MB <- as.integer(Sys.getenv('REFERENCE_MODEL_REPS','400'))
 stopifnot(is.finite(B),B>=0,is.finite(MB),MB>=0)
@@ -689,13 +1133,18 @@ cif <- function(x,weights=x$wt,horizons=c(3L,6L,9L,12L),codes=all_reason_codes) 
  ans
 }
 design <- function(x) {
- frame<-unique(x[,c('cluster','stratum')]);frame$id<-seq_len(nrow(frame))
- list(frame=frame,groups=split(frame$id,frame$stratum),id=match(x$cluster,frame$cluster))
+ # Use the full IR frame, then map the current analytical rows into that frame.
+ frame<-unique(data.frame(cluster=paste(as.integer(ir$v022),as.integer(ir$v021),sep=':'),
+                          stratum=as.integer(ir$v022)))
+ stopifnot(!anyNA(frame),all(table(frame$stratum)>1L))
+ frame$id<-seq_len(nrow(frame));id<-match(x$cluster,frame$cluster)
+ stopifnot(length(id)==nrow(x),!anyNA(id),all(x$stratum==frame$stratum[id]))
+ list(frame=frame,groups=split(frame$id,frame$stratum),id=id)
 }
 resample_psu <- function(des,b) {
  set.seed(20261031L+b); mult<-numeric(nrow(des$frame))
  for(ids in des$groups) {
-  n<-length(ids);mult[ids]<-if(n==1L)1 else n/(n-1)*tabulate(sample.int(n,n-1,replace=TRUE),nbins=n)
+  n<-length(ids);stopifnot(n>1L);mult[ids]<-n/(n-1)*tabulate(sample.int(n,n-1,replace=TRUE),nbins=n)
  }
  mult
 }
@@ -802,35 +1251,6 @@ risk_individual <- function(fit,x,horizon=12L) {
   v<-v+s*p[,'target'];s<-s*p[,'continue']
  }
  100*v
-}
-
-if('risk_strata'%in%tasks) {
- # Match Ethiopia 56: method + age + legacy parity, held-out PSUs, ALL eligible
- # complete-case episodes, rather than full-model in-sample observed starters.
- des<-design_d;set.seed(20261005L);fold<-integer(nrow(des$frame))
- for(ids in des$groups)fold[ids]<-sample(rep(1:5,length.out=length(ids)))
- x<-d;x$fold<-fold[des$id];p<-person_months(x,'selected');scores<-rep(NA_real_,nrow(x))
- f<-outcome~month+method_group+age+parity_legacy
- for(k in 1:5) {
-  fit<-fit_model(f,p[p$fold!=k,]);ix<-which(x$fold==k);scores[ix]<-risk_individual(fit,x[ix,])
- }
- wq<-function(q){o<-order(scores);scores[o][which(cumsum(x$wt[o])/sum(x$wt)>=q)[1L]]}
- cuts<-c(wq(1/3),wq(2/3));stopifnot(all(is.finite(scores)),cuts[1]<cuts[2])
- x$risk_band<-factor(ifelse(scores<=cuts[1],'Lower',ifelse(scores<=cuts[2],'Middle','Higher')),levels=c('Lower','Middle','Higher'))
- bands<-do.call(rbind,lapply(levels(x$risk_band),function(k){z<-x[x$risk_band==k,];v<-cif(z,horizons=12)
-  data.frame(band=k,episodes=nrow(z),mean_oof_predicted_pct=weighted.mean(scores[x$risk_band==k],z$wt),
-   observed_selected_pct=sum(v[,!colnames(v)%in%c('Wanted pregnancy','Partner disapproval')]),lower_cut=cuts[1],upper_cut=cuts[2])}))
- boot<-matrix(NA_real_,B,3)
- for(b in seq_len(B)){ww<-x$wt*resample_psu(des,b)[des$id];for(j in 1:3){ix<-which(x$risk_band==levels(x$risk_band)[j]);v<-cif(x[ix,],ww[ix],12);boot[b,j]<-sum(v[,!colnames(v)%in%c('Wanted pregnancy','Partner disapproval')])}}
- bands$ci_low<-vapply(1:3,function(j)ci(boot[,j],B)[1],0.0);bands$ci_high<-vapply(1:3,function(j)ci(boot[,j],B)[2],0.0)
- bands$uncertainty<-'PSU bootstrap with held-out scores fixed; excludes training uncertainty'
- emit(bands,'crossvalidated_risk_bands')
- prof<-list()
- for(v in c('method_group','age','parity_legacy','marital','education','wealth','residence','region'))for(k in levels(x$risk_band))for(level in levels(x[[v]])) {
-  z<-x[x$risk_band==k,];prof[[length(prof)+1L]]<-data.frame(band=k,covariate=v,category=level,
-   episodes=sum(z[[v]]==level),share_pct=100*sum(z$wt[z[[v]]==level])/sum(z$wt))
- }
- emit(do.call(rbind,prof),'crossvalidated_risk_band_profiles')
 }
 
 # Model families retain the precise distinction between all/selected/actionable
@@ -976,7 +1396,7 @@ if('pathways'%in%tasks) {
  landmarks<-list();chars<-strsplit('123456789WNALCFEMS~','')[[1]]
  for(i in seq_len(nrow(ir))) {
   p<-as.integer(ir$v018[i])+15L;if(p>80)next
-  orig<-substring(ir$vcal_1[i],p,p);mc<-match(orig,chars);if(!mc%in%modern)next
+  orig<-substring(ir$vcal_1[i],p,p);mc<-match(orig,chars);if(!mc%in%modern || mc%in%c(6L,7L))next
   dur<-1L;while(p+dur<=80 && substring(ir$vcal_1[i],p+dur,p+dur)==orig)dur<-dur+1L
   after<-substring(ir$vcal_1[i],p-1:12,p-1:12);change<-which(after!=orig)
   event<-if(length(change))min(change) else NA_integer_
@@ -991,7 +1411,7 @@ if('pathways'%in%tasks) {
    reason_code=reason,month12_modern=match(after[12],chars)%in%c(modern,16L))
  }
  land<-do.call(rbind,landmarks);current<-data.frame(method=method_name(as.integer(ir$v312)),
-  duration=as.numeric(ir$v337),wt=as.numeric(ir$v005)/1e6,modern=as.integer(ir$v313)==3 & as.integer(ir$v312)%in%modern)
+  duration=as.numeric(ir$v337),wt=as.numeric(ir$v005)/1e6,modern=as.integer(ir$v313)==3 & as.integer(ir$v312)%in%setdiff(modern,c(6L,7L)))
  current<-current[current$modern & is.finite(current$duration)&current$duration<997,]
  current$duration_band<-ifelse(current$duration<=12,'0-12','13+')
  probs<-list()
@@ -1011,18 +1431,9 @@ emit(data.frame(country=country,tasks=paste(tasks,collapse=','),descriptive_reps
  inference_available=B>=100,model_inference_available=MB>=100,
  outputs_update_final_reports=FALSE), 'execution_settings')
 cat('Reference-aligned tasks completed for ',country,'.\n',sep='')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 201_verify_planning_html.py
-# LANGUAGE: Python
-MODULES[["201_verify_planning_html.py"]] <- list(
-  language="Python",
-  original_sha256="dd7600bad84be2898f4324c71c67f6ceffa9b8d9335c6f6315ccd83e0bc50853",
-  packaged_sha256="dd7600bad84be2898f4324c71c67f6ceffa9b8d9335c6f6315ccd83e0bc50853",
-  args=character(),
-  code=r"-----(#!/usr/bin/env python3
+MODULES[["201_verify_planning_html.py"]] <- list(language="Python", packaged_sha256="dd7600bad84be2898f4324c71c67f6ceffa9b8d9335c6f6315ccd83e0bc50853", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Rebuild duration-planning tables from freshly computed aggregate results.
 
 This verifies only the named planning sections, not the complete report.
@@ -1082,18 +1493,10 @@ def main():
  print(json.dumps({'country':a.country,'tables_checked':len(audit),'numeric_matches':sum(x['numeric_cells_match'] for x in audit),'text_matches':sum(x['all_text_matches'] for x in audit)},indent=2))
  if not all(x['numeric_cells_match'] for x in audit):raise SystemExit(2)
 if __name__=='__main__':main()
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 01_nigeria_calendar_life_table.R
-# LANGUAGE: R
-MODULES[["01_nigeria_calendar_life_table.R"]] <- list(
-  language="R",
-  original_sha256="ad1e23657d3b1475145818b8003cdd06d3879647a46c215ec70895983cd5538a",
-  packaged_sha256="98fb72c1c3302ce123ae4bb76280fb389456149c32ae13bc5194c93f22e1b401",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["01_nigeria_calendar_life_table.R"]] <- list(language="R", packaged_sha256="8e34e454d6fc973204cc8538d49b5fe2dcb1ea6a95e1ce6a0804a79efb662715", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -1314,17 +1717,10 @@ print(audit,row.names=FALSE)
 cat('Exact published rate cells:',sum(matching[,1:11]),'of',length(matching[,1:11]),'\n')
 cat('Exact published episode counts:',sum(matching[,12]),'of',nrow(matching),'\n')
 if(!all(matching))stop('Nigeria Table 7.12 replication does not yet match every published cell.')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 02_nigeria_descriptive_analyses.R
-# LANGUAGE: R
-MODULES[["02_nigeria_descriptive_analyses.R"]] <- list(
- language="R",
- packaged_sha256="113002d366e70dfcd3c748800a4ac99a67507e57c1b1b6fa5e20f665009aa55b",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["02_nigeria_descriptive_analyses.R"]] <- list(language="R", packaged_sha256="53d8285fd8779a8916a8c3ec125c3d39e05eae1563b154429e8a46fbeb1a5cc5", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -1527,17 +1923,10 @@ cat('Modern episodes:',nrow(e),'National actionable 12-month rate:',
 print(times[times$month==12 & times$scope %in% c('National',zone_names),
   c('scope','eligible_episodes_n','actionable_endings_n','actionable_pct','ci_low','ci_high')],
   row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 03_nigeria_zone_models.R
-# LANGUAGE: R
-MODULES[["03_nigeria_zone_models.R"]] <- list(
- language="R",
- packaged_sha256="69352785ee4ff3c352ed8edae3284190de391e7a3a79d9890bfd55dad853214d",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["03_nigeria_zone_models.R"]] <- list(language="R", packaged_sha256="5c48b32868ea5b1adc39388345b63b998d1a7cbc2ec20d440616cd1a4a3f262e", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -1749,17 +2138,10 @@ if(B>0L){
 print(point,row.names=FALSE)
 
 source(file.path(root,"Code","202_nigeria_survey_coefficients.R"),local=TRUE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 04_nigeria_subgroups_and_tests.R
-# LANGUAGE: R
-MODULES[["04_nigeria_subgroups_and_tests.R"]] <- list(
- language="R",
- packaged_sha256="34608a29ae95c21eb30b5add644c2d12b487471b12201b0e631050b9e19339db",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["04_nigeria_subgroups_and_tests.R"]] <- list(language="R", packaged_sha256="a10bedd671364b040fcf2e9be60f385e6bf42c8e0c409419d86c80678d73dffb", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -1881,18 +2263,10 @@ write.csv(tests,file.path(support,'nigeria_zone_pairwise_three_stages.csv'),
  row.names=FALSE)
 cat('Subgroups:',nrow(point),' pairwise rows:',nrow(tests),'\n')
 print(aggregate(significant_5pct~stage,tests,sum),row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 08_nigeria_population_and_planning.R
-# LANGUAGE: R
-MODULES[["08_nigeria_population_and_planning.R"]] <- list(
-  language="R",
-  original_sha256="806433f8204aefbda17806f6e4b34ebda4dc81720d17e7acdd9fc8ad7d7b9767",
-  packaged_sha256="85b0186068f9732d690d76e3301478fa1e651f9790e73d26be15afac4623b1e1",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["08_nigeria_population_and_planning.R"]] <- list(language="R", packaged_sha256="3820c11985ffbd4aa0fdf9ac7b1d235474f7c329ee36f864694995dca1a15b8e", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -1912,9 +2286,17 @@ root <- Sys.getenv("NIGERIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd()
 out <- file.path(root,'output/Supporting_data')
 ir <- readRDS(file.path(Sys.getenv("NIGERIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE)), 'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'))
 e <- readRDS(file.path(root,'Data/Derived/nigeria_2024_modern_episodes.rds'))
+e <- e[!e$method_code %in% c(6L,7L),]
 times <- read.csv(file.path(out,'nigeria_actionable_timepoints.csv'))
 reasons <- read.csv(file.path(out,'nigeria_actionable_reason_mix.csv'))
 wra <- read.csv(file.path(out,'nigeria_wpp2024_wra_2024_2026.csv'))
+d <- e[e$method_group=='Other modern',];S<-1;F<-numeric(5)
+ccode<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L))
+for(t in 1:12){at<-d$entry<t & d$exposure>=t;en<-at & d$discontinued & d$exposure==t;den<-sum(d$wt[at]);F<-F+S*vapply(ccode,function(cc)sum(d$wt[en & d$reason_code%in%cc])/den,0.0);S<-S*(1-sum(d$wt[en])/den)}
+times$actionable_pct[times$scope=='National: Other modern' & times$month==12]<-100*sum(F)
+rnames<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
+for(j in 1:5)reasons$cause_specific_12_month_pct[reasons$scope=='National: Other modern' & reasons$reason==rnames[j]]<-100*F[j]
+
 stopifnot(all(c(2024,2025,2026) %in% wra$year),nrow(ir)==39050L)
 modern <- as.numeric(ir$v313)==3
 code <- as.numeric(ir$v312)
@@ -1923,11 +2305,12 @@ method[code==3] <- 'Injectables';method[code==11] <- 'Implants'
 method[code==1] <- 'Pill';method[code==2] <- 'IUD'
 method[code==16] <- 'EC'
 method[modern & is.na(method)] <- 'Other modern'
+method[code%in%c(6L,7L)] <- 'Permanent methods'
 stopifnot(all(!is.na(method[modern])),all(is.na(method[!modern])))
 wt <- as.numeric(ir$v005)/1e6
 mcpr <- 100*sum(wt[modern])/sum(wt)
 stopifnot(round(mcpr,1)==13.1)
-lev <- c('Injectables','Implants','Pill','IUD','Other modern','EC')
+lev <- c('Injectables','Implants','Pill','IUD','Other modern','EC','Permanent methods')
 mix <- data.frame(method=lev,weighted_users=vapply(lev,function(m)sum(wt[method==m],na.rm=TRUE),0.0))
 mix$share_current_modern_pct <- 100*mix$weighted_users/sum(mix$weighted_users)
 mix$current_method_prevalence_pct <- mcpr*mix$share_current_modern_pct/100
@@ -1957,7 +2340,7 @@ mix$current_users_2025 <- central$current_users_2025*mix$share_current_modern_pc
 mix$actionable_first_year_risk_pct <- NA_real_
 for(i in seq_len(nrow(mix))){
   m <- mix$method[i]
-  if(m!='EC') mix$actionable_first_year_risk_pct[i] <- times$actionable_pct[times$scope==paste0('National: ',m) & times$month==12]
+  if(!m%in%c('EC','Permanent methods')) mix$actionable_first_year_risk_pct[i] <- times$actionable_pct[times$scope==paste0('National: ',m) & times$month==12]
 }
 mix$illustrative_original_method_endings <- mix$current_users_2025*mix$actionable_first_year_risk_pct/100
 mix$illustrative_original_method_endings[is.na(mix$illustrative_original_method_endings)] <- 0
@@ -1971,8 +2354,8 @@ stopifnot(max(abs(aggregate(illustrative_users~method,cause,sum)$illustrative_us
 # A first-month switch to another modern method is not an immediate exit from
 # modern contraceptive use. This descriptive bridge is from episode endings,
 # without claiming to identify modern use at year-end.
-modern_codes <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
-e$modern_next <- e$next_code %in% modern_codes
+modern_codes <- c(1L,2L,3L,5L,11L,13L,14L,15L,17L,18L,19L,20L)
+e$modern_next <- e$next_code %in% c(modern_codes,6L,7L,14L,16L)
 e$modern_next[is.na(e$modern_next)] <- FALSE
 e$actionable <- e$discontinued & e$reason_code %in% c(1L,4L,5L,6L,7L,8L,10L,15L)
 e$eligible_event <- e$actionable & e$exposure<=12
@@ -2004,18 +2387,25 @@ write.csv(scenarios,file.path(out,'nigeria_2026_mcpr_scenarios.csv'),row.names=F
 cat('WRA 2024',w24,'users 2024',current_users_2024,'WRA 2025',w25,
   'WRA 2026',w26,'DHS 2024 mCPR',mcpr,'gross illustrative endings',gross,
   'after immediate switch',net_immediate,'\n')
-)-----"
-)
 
-# =============================================================================
-# ORIGINAL MODULE: 09_nigeria_post_discontinuation_pathways.R
-# LANGUAGE: R
-MODULES[["09_nigeria_post_discontinuation_pathways.R"]] <- list(
-  language="R",
-  original_sha256="0432d66d7c32bcadf3c0dd63e80b5eb84a0a7b79ed6bf0f3d251fca49679d058",
-  packaged_sha256="b828aadc62b3c12a40417bef550d84a4ecf9924ba9c1c61d23e9d44145640be4",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+
+# Separate first-year reversible-origin rates for the older all-cause
+# planning illustration; descriptive DHS timepoints remain unchanged.
+pt <- read.csv(file.path(out,'nigeria_modern_all_reason_timepoints.csv'))
+pr <- read.csv(file.path(out,'nigeria_modern_all_reason_reason_mix.csv'))
+rlabel <- unique(pr$reason[pr$scope=='National'])
+for(m in c('Injectables','Implants','Pill','IUD','Other modern')){
+ z<-e[e$method_group==m,];S<-1;F9<-numeric(9)
+ for(t in 1:12){at<-z$entry<t & z$exposure>=t;en<-at & z$discontinued & z$exposure==t;den<-sum(z$wt[at]);F9<-F9+S*vapply(1:9,function(j)sum(z$wt[en & z$reason==j])/den,0.0);S<-S*(1-sum(z$wt[en])/den)}
+ pt$all_reason_pct[pt$scope==paste0('National: ',m)&pt$month==12]<-100*sum(F9)
+ for(j in 1:9)pr$cause_specific_12_month_pct[pr$scope==paste0('National: ',m)&pr$reason==rlabel[j]]<-100*F9[j]
+}
+write.csv(pt,file.path(out,'nigeria_reversible_planning_all_reason_timepoints.csv'),row.names=FALSE)
+write.csv(pr,file.path(out,'nigeria_reversible_planning_all_reason_reason_mix.csv'),row.names=FALSE)
+)----------------------")
+
+MODULES[["09_nigeria_post_discontinuation_pathways.R"]] <- list(language="R", packaged_sha256="5a4b60698fc1d2d4b64973e9ce623d288da17acd0e4a0f6b0e7496a26262f835", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2105,17 +2495,10 @@ selected <- selected[,c('month_after_ending','status','weighted_events','percent
   'observed_ending_events_n','weighted_ending_events')]
 write.csv(selected,file.path(out,'nigeria_selected_reason_post_ending_pathways.csv'),row.names=FALSE)
 print(selected)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 12_nigeria_all_reason_bridge.R
-# LANGUAGE: R
-MODULES[["12_nigeria_all_reason_bridge.R"]] <- list(
- language="R",
- packaged_sha256="0d124e49f2692f4643895ba069e4a288e8c74d7c46a86db83f2a966a5971b158",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["12_nigeria_all_reason_bridge.R"]] <- list(language="R", packaged_sha256="3fab85ec36db0026bb1d2badd8931de2e2da88827ebec207be17123a12bfb8e8", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2231,17 +2614,10 @@ write.csv(reason,file.path(support,'nigeria_modern_all_reason_reason_mix.csv'),r
 cat('National all-cause / selected / actionable:',
   unlist(times[times$scope=='National' & times$month==12,
     c('all_reason_pct','selected_reason_pct','actionable_pct')]),'\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 13_nigeria_all_reason_models.R
-# LANGUAGE: R
-MODULES[["13_nigeria_all_reason_models.R"]] <- list(
- language="R",
- packaged_sha256="4bae9983e8cec001d5b78360dbffc01b26e9a8b57869bb5b87f1150b38539ffa",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["13_nigeria_all_reason_models.R"]] <- list(language="R", packaged_sha256="f0daa85241b249b2164d574398c52c24dd3a62ded9c4797b9047f163673da0fd", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2370,18 +2746,10 @@ for(j in seq_len(nrow(subgroup_rows))){
 write.csv(zone_rows,file.path(support,'nigeria_all_reason_zone_models.csv'),row.names=FALSE)
 write.csv(subgroup_rows,file.path(support,'nigeria_all_reason_adjusted_subgroups.csv'),row.names=FALSE)
 cat('All-reason adjusted zone/subgroup output saved:',nrow(zone_rows),nrow(subgroup_rows),'rows\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 15_nigeria_initiation_mix.R
-# LANGUAGE: R
-MODULES[["15_nigeria_initiation_mix.R"]] <- list(
-  language="R",
-  original_sha256="98fc88f596b7ad0010eca101cf8da3b4795327341b055a102cc505a40db2d33e",
-  packaged_sha256="639a944b13cde5a2f9d53d2b9d48d2671e18ba999f60c417a937192511ebe393",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["15_nigeria_initiation_mix.R"]] <- list(language="R", packaged_sha256="2a49bb418badb47a74e70e11fc89e478441e6e2601deb5b204ab1f935b3d5f64", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2452,17 +2820,10 @@ zone_mix <- do.call(rbind,zone_rows)
 stopifnot(max(abs(aggregate(start_share_pct~scope,zone_mix,sum)$start_share_pct-100))<1e-8)
 write.csv(zone_mix,file.path(root,'output/Supporting_data/nigeria_zone_all_method_start_mix.csv'),row.names=FALSE)
 print(z[z$scope=='Overall',c('method','start_share_pct')],row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 17_nigeria_selected_reason_models.R
-# LANGUAGE: R
-MODULES[["17_nigeria_selected_reason_models.R"]] <- list(
- language="R",
- packaged_sha256="7ca32dbf8fa0dc782fdc20b9a812a7877adfd785ecb408fde936199e3d964526",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["17_nigeria_selected_reason_models.R"]] <- list(language="R", packaged_sha256="9281435ee9fea6814ffb40ec6b0270ac79bdf8770edc46dc2de5de1496dcb163", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2601,18 +2962,10 @@ for(j in seq_len(nrow(subgroup_rows))){
 write.csv(zone_rows,file.path(support,'nigeria_selected_reason_zone_models.csv'),row.names=FALSE)
 write.csv(subgroup_rows,file.path(support,'nigeria_selected_reason_adjusted_subgroups.csv'),row.names=FALSE)
 cat('Selected-reason adjusted zone/subgroup output saved:',nrow(zone_rows),nrow(subgroup_rows),'rows\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 22_nigeria_landmark_support.R
-# LANGUAGE: R
-MODULES[["22_nigeria_landmark_support.R"]] <- list(
-  language="R",
-  original_sha256="e3bceabf4adf1d6171f3f54bfac7b5287b8e5046fc4dd62911fb303160b7ec87",
-  packaged_sha256="8e11a0a40bcac914dc2e5b163c03a18a9bb3f0e978812250d36a6efdfd976d25",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["22_nigeria_landmark_support.R"]] <- list(language="R", packaged_sha256="1510714ffa80d6c0922fac4ba9732126ab94f196014f2ae246fe67ace01c203c", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2627,11 +2980,11 @@ dhs_set_context(country='Nigeria',root=.dhs_root)
 root <- Sys.getenv("NIGERIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
 events <- readRDS(file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'))
 ir <- readRDS(file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'))
-modern <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
+modern <- c(1L,2L,3L,5L,11L,13L,14L,15L,17L,18L,19L,20L)
 grp <- function(code) ifelse(code==3L,'Injectables',ifelse(code==11L,'Implants',ifelse(code==1L,'Pill',ifelse(code==2L,'IUD','Other modern'))))
 br <- c(-1,3,6,12,24,36,48,60,Inf)
 labs <- c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
-current <- ir[as.numeric(ir$v313)==3 & as.numeric(ir$v312)!=16,]
+current <- ir[as.numeric(ir$v313)==3 & !as.numeric(ir$v312)%in%c(6L,7L,16L),]
 current$method <- grp(as.integer(current$v312))
 current$bin <- cut(as.numeric(current$v337),br,labels=labs)
 cat('CURRENT USERS BY METHOD AND DURATION\n')
@@ -2649,18 +3002,10 @@ land <- do.call(rbind,land[!vapply(land,is.null,logical(1))])
 land$bin <- cut(land$duration-1L,br,labels=labs)
 cat('HISTORICAL OBSERVED LANDMARKS WITH FOLLOW-UP\n')
 print(with(land,table(method,bin)),quote=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 23_nigeria_current_user_switch_and_duration.R
-# LANGUAGE: R
-MODULES[["23_nigeria_current_user_switch_and_duration.R"]] <- list(
-  language="R",
-  original_sha256="f20383478e7b82fb7c7020c5d4243efec5179f553dd9bedb784cd59b4b311c6b",
-  packaged_sha256="ff6b8088a177b0bd0b3c6f6c3d7772e05b9431879e5411469231f546823f677a",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["23_nigeria_current_user_switch_and_duration.R"]] <- list(language="R", packaged_sha256="72f372be10bfd95750d313565717ac8de18c51d1719811f29618b75e1c7845e7", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2692,12 +3037,13 @@ out <- file.path(root,'output/Supporting_data')
 data_dir <- file.path(root,'Data/Derived')
 ir <- readRDS(file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'))
 episodes <- readRDS(file.path(data_dir,'nigeria_2024_modern_episodes.rds'))
+episodes <- episodes[!episodes$method_code %in% c(6L,7L),]
 calendar <- readRDS(file.path(data_dir,'nigeria_2024_calendar_events.rds'))
 users <- read.csv(file.path(out,'nigeria_current_users_by_method_and_actionable_projection.csv'))
 scenario <- read.csv(file.path(out,'nigeria_2026_mcpr_scenarios.csv'))
 stopifnot(nrow(ir)==39050L,all(c('method','current_users_2025','illustrative_original_method_endings') %in% names(users)))
 
-modern <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
+modern <- c(1L,2L,3L,5L,11L,13L,14L,15L,17L,18L,19L,20L)
 methods <- c('Injectables','Implants','Pill','IUD','Other modern')
 causes <- c('Method failure','Wanted more effective method','Changes in menstrual bleeding',
             'Other side effects/health','Access/cost/convenience')
@@ -2715,7 +3061,7 @@ episodes$actionable <- episodes$discontinued & episodes$exposure<=12 &
 endings <- episodes[episodes$actionable,]
 endings$method <- method_group(endings$method_code)
 endings$cause <- cause_group(endings$reason_code)
-endings$direct_modern <- endings$next_code %in% modern
+endings$direct_modern <- endings$next_code %in% c(modern,6L,7L,14L,16L)
 endings$direct_modern[is.na(endings$direct_modern)] <- FALSE
 stopifnot(!anyNA(endings$cause))
 bridge <- users[match(methods,users$method),c('method','current_users_2025',
@@ -2749,21 +3095,16 @@ cause_bridge <- do.call(rbind,lapply(methods,function(m)do.call(rbind,lapply(cau
 # Calibrate the cause-specific allocations to the independently estimated
 # method total, so every cause table reconciles exactly to the bridge above.
 # This preserves the relative observed switching pattern across causes.
+# Cause-specific direct-switch counts stay bounded by their own endings.
 for(m in methods){
-  ix <- which(cause_bridge$method==m)
-  target <- bridge$illustrative_direct_modern_switchers[bridge$method==m]
-  allocated <- sum(cause_bridge$illustrative_direct_modern_switchers[ix])
-  if(allocated>0){
-    cause_bridge$illustrative_direct_modern_switchers[ix] <-
-      cause_bridge$illustrative_direct_modern_switchers[ix]*target/allocated
-  }
-  cause_bridge$illustrative_not_directly_switching[ix] <-
-    cause_bridge$illustrative_original_method_endings[ix]-
-    cause_bridge$illustrative_direct_modern_switchers[ix]
-  cause_bridge$direct_modern_switch_pct[ix] <-
-    100*cause_bridge$illustrative_direct_modern_switchers[ix]/
-    cause_bridge$illustrative_original_method_endings[ix]
+ ix <- cause_bridge$method==m
+ j <- which(bridge$method==m)
+ total <- sum(cause_bridge$illustrative_direct_modern_switchers[ix])
+ bridge$illustrative_direct_modern_switchers[j] <- total
+ bridge$illustrative_not_directly_switching[j] <- bridge$illustrative_original_method_endings[j]-total
+ bridge$direct_modern_switch_pct[j] <- 100*total/bridge$illustrative_original_method_endings[j]
 }
+write.csv(bridge,file.path(out,'nigeria_switch_bridge_by_method.csv'),row.names=FALSE)
 write.csv(cause_bridge,file.path(out,'nigeria_switch_bridge_by_method_cause.csv'),row.names=FALSE)
 
 # B. The retrospective calendar is recorded in month units. A landmark can
@@ -2788,9 +3129,9 @@ for(i in seq_len(nrow(eligible_spells))){
   stopifnot(all(next_event>0L),all(person_events$end[next_event]>=future))
   code12 <- person_events$method_code[next_event]
   action <- a$end<future & a$reason_code %in% c(1L,4L,5L,6L,7L,8L,10L,15L)
-  direct <- action & a$next_code %in% modern
+  direct <- action & a$next_code %in% c(modern,6L,7L,14L,16L)
   direct[is.na(direct)] <- FALSE
-  modern12 <- code12 %in% modern
+  modern12 <- code12 %in% c(modern,6L,7L,14L,16L)
   records[[i]] <- data.frame(woman_row=a$woman_row,method=method_group(a$method_code),
     duration_completed=landmark-a$start,wt=a$wt,actionable=action,
     ending_reason_code=ifelse(a$end<future,a$reason_code,NA_integer_),
@@ -2806,7 +3147,7 @@ stopifnot(nrow(landmarks)>50000L,!anyNA(landmarks$duration_bin),
   all(landmarks$direct_switch<=landmarks$actionable),
   all(landmarks$actionable_nonmodern_at_month12+landmarks$actionable_modern_at_month12==landmarks$actionable))
 
-current <- ir[as.numeric(ir$v313)==3 & as.numeric(ir$v312)!=16,]
+current <- ir[as.numeric(ir$v313)==3 & !as.numeric(ir$v312)%in%c(6L,7L,16L),]
 current$method <- method_group(as.integer(current$v312))
 current$duration_completed <- as.numeric(current$v337)
 current$duration_bin <- cut(current$duration_completed,bins,labels=bin_labels)
@@ -2930,18 +3271,10 @@ print(duration[,c('method','current_users_61plus_share_pct','actionable_ending_r
 print(scenario_bridge[,c('scenario','first_year_gross_endings','first_year_not_directly_switching',
   'duration_aware_actionable_endings','duration_aware_nonmodern_at_month12',
   'descriptive_nonmodern_at_month12_pp')],row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 25_duration_aware_cause_pp_tables.R
-# LANGUAGE: R
-MODULES[["25_duration_aware_cause_pp_tables.R"]] <- list(
-  language="R",
-  original_sha256="f86676c094610444737b95e1fb33d544963c976dda20f4567209f48808eb79c1",
-  packaged_sha256="50222b6deb2919cc7f5809a5f5dff0764476c476fe4e17701f2e57437140e293",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["25_duration_aware_cause_pp_tables.R"]] <- list(language="R", packaged_sha256="13fc649893ca2b2155a50d65008bba12f70aba8c6107d08e3429962db23c1b27", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -2988,17 +3321,10 @@ out <- causes[c("method", "reason", "year_end_nonmodern", "mcpr_equivalent_pp", 
 output_file <- file.path(support, paste0(tolower(country), "_duration_aware_cause_pp_matrix.csv"))
 write.csv(out, output_file, row.names = FALSE)
 message("Saved ", output_file)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 26_nigeria_actionable_method_zone_models.R
-# LANGUAGE: R
-MODULES[["26_nigeria_actionable_method_zone_models.R"]] <- list(
- language="R",
- packaged_sha256="b44ad9f0d85e39bfd28c28d160638294ef3acbbc49ed49ecc11ea311a6b5849b",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["26_nigeria_actionable_method_zone_models.R"]] <- list(language="R", packaged_sha256="d95e2eddd542f73cc5978d78b337b9fb0ba83d9ce3096cdc6fbbddca99eb459d", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -3261,17 +3587,10 @@ print(points,row.names=FALSE)
 print(global,row.names=FALSE)
 cat('Holm-significant within-method pairs:\n')
 print(pairs[pairs$significant_5pct,],row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 29_zone_method_mix_decomposition.R
-# LANGUAGE: R
-MODULES[["29_zone_method_mix_decomposition.R"]] <- list(
- language="R",
- packaged_sha256="96585a924209225ec7ca466cd2b58aebdfee0a10258ec5454cdef25f23375e04",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["29_zone_method_mix_decomposition.R"]] <- list(language="R", packaged_sha256="4b07ff78de8ee41085b809b7f046092c2a22f4a3051b56d947776a5e612d38fa", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -3385,18 +3704,10 @@ out <- file.path(root,'output/Supporting_data')
 write.csv(summary,file.path(out,'nigeria_actionable_zone_method_mix_decomposition.csv'),row.names=FALSE)
 write.csv(detail,file.path(out,'nigeria_actionable_zone_method_mix_cells.csv'),row.names=FALSE)
 cat('Wrote',nrow(summary),'decomposition rows and',nrow(detail),'cells\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 34_nigeria_historical_current_user_pathways.R
-# LANGUAGE: R
-MODULES[["34_nigeria_historical_current_user_pathways.R"]] <- list(
-  language="R",
-  original_sha256="893c5c21009af098f15c556ea5b7853550dd3627f727889dc0c31df74cf3a015",
-  packaged_sha256="0e50acc325767666373af4eaa81d5523eba57e78150a3b6fb223a0362472d8a1",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["34_nigeria_historical_current_user_pathways.R"]] <- list(language="R", packaged_sha256="28d4e1b7d3813ef8105e8bd804492a2173be4da16a4b8abfe2a5721fb0781556", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -3460,7 +3771,7 @@ for(i in seq_len(nrow(ir))){
   k<-k+1L
   rows[[k]]<-data.frame(woman_row=i,wt=as.numeric(ir$v005[i])/1e6,
     cluster=as.integer(ir$v021[i]),stratum=as.integer(ir$v022[i]),
-    baseline_method=group(b),baseline_duration=baseline_month[i]-a$start[bi]+1L,
+    baseline_code=b,baseline_method=group(b),baseline_duration=baseline_month[i]-a$start[bi]+1L,
     month3_status=status(3L),month12_status=status(12L),
     any_gross_exit=any(!effective),stringsAsFactors=FALSE)
 }
@@ -3478,7 +3789,7 @@ write.csv(flows,file.path(out,'nigeria_current_user_pathway_flows.csv'),row.name
 current <- data.frame(method_code=as.integer(ir$v312),
  duration=as.numeric(ir$v337),wt=as.numeric(ir$v005)/1e6,
  modern=as.integer(ir$v313)==3)
-current <- current[current$modern & current$method_code %in% modern &
+current <- current[current$modern & current$method_code %in% setdiff(modern,c(6L,7L)) &
  is.finite(current$duration) & current$duration<997,]
 current$method <- group(current$method_code)
 current$duration_group <- durgroup(current$duration)
@@ -3486,6 +3797,7 @@ current_cells <- aggregate(wt~method+duration_group,current,sum)
 names(current_cells)[3]<-'current_weight'
 current_cells$current_share <- current_cells$current_weight/sum(current_cells$current_weight)
 write.csv(current_cells,file.path(out,'nigeria_current_user_method_duration_distribution.csv'),row.names=FALSE)
+h <- h[!h$baseline_code%in%c(6L,7L),]
 historical <- aggregate(wt~baseline_method+duration_group+outcome,h,sum)
 historical_n <- aggregate(woman_row~baseline_method+duration_group,h,length)
 names(historical_n)[3]<-'historical_n'
@@ -3510,18 +3822,10 @@ write.csv(summary,file.path(out,'nigeria_standardized_current_user_pathway_summa
 cat('Historical women',nrow(h),'current modern users',nrow(current),
     'smallest historical cell',min(historical_n$historical_n),'\n')
 print(summary)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 35_nigeria_alluvial_figures.R
-# LANGUAGE: R
-MODULES[["35_nigeria_alluvial_figures.R"]] <- list(
-  language="R",
-  original_sha256="22fdb192d06b81108fb4a07f313fdfda386c25531ce429e93154a4bf6a3c82ec",
-  packaged_sha256="5ebc5945aa4ba9ccb6b77972e514caf6e89752ad892da18c0e3b0289829b8f03",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["35_nigeria_alluvial_figures.R"]] <- list(language="R", packaged_sha256="e0c2527cfa4157a0d9bc3231d913e8e161a84954223d60ca4f79dc58eb86c88a", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -3713,17 +4017,10 @@ for (reason_set in c('all','selected')) for (follow_month in c(1L,12L)) {
   write.csv(z,file.path(support,sub('\\.png$','.csv',name)),row.names=FALSE)
 }
 cat('Created seven alluvial PNGs and source flow tables\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 37_nigeria_selected_reason_extensions.R
-# LANGUAGE: R
-MODULES[["37_nigeria_selected_reason_extensions.R"]] <- list(
- language="R",
- packaged_sha256="511c64f7d5584953c4188e757282ef276376af269b63586f9483224debadcee2",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["37_nigeria_selected_reason_extensions.R"]] <- list(language="R", packaged_sha256="0def94362a3b887176097a9b80857e136adbe9c4635578b5ae7a830d5d1f72a0", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -3861,18 +4158,10 @@ other_breakdown$group<-ifelse(other_breakdown$reason_code%in%c(9L,12L,13L),
 write.csv(other_breakdown,file.path(out,'nigeria_other_reason_code_breakdown.csv'),row.names=FALSE)
 cat('Wrote',nrow(point),'selected-reason rows; bootstrapped',length(ci_keys),
     'aggregate scopes with',B,'replicates\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 38_nigeria_other_reason_followup.R
-# LANGUAGE: R
-MODULES[["38_nigeria_other_reason_followup.R"]] <- list(
-  language="R",
-  original_sha256="7563925b7cd91bb3f8b195294616cd79623b25fbd74acfb92a19b13f52ac1164",
-  packaged_sha256="7ac715b05a57cbb9a029ca144f941ac4d87c18a9777443c0379f19fbe46bfe58",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["38_nigeria_other_reason_followup.R"]] <- list(language="R", packaged_sha256="95e442578fb9f6e34e4049256e5be886cd0708d63834f51aceb299b7b942539f", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -3930,18 +4219,10 @@ for(k in c(1L,12L)){
 result<-do.call(rbind,all)
 write.csv(result,file.path(out,'nigeria_other_reason_followup.csv'),row.names=FALSE)
 cat('Other first-year endings',nrow(z),'follow-up rows',nrow(result),'\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 40_nigeria_selected_current_user_planning.R
-# LANGUAGE: R
-MODULES[["40_nigeria_selected_current_user_planning.R"]] <- list(
-  language="R",
-  original_sha256="03d384508bfc9040a08f7535ec49a516dea510769c9400a3adf8bef06723758b",
-  packaged_sha256="ca938cbfec994f85c3119648ef1cc0bb2be56a90b652df39ec8ea8e556df0388",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["40_nigeria_selected_current_user_planning.R"]] <- list(language="R", packaged_sha256="d7882914dd1c9844245938999079aac3f4f38a57842a54057654a08290ebbd6d", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -3965,6 +4246,10 @@ reason<-list('Method failure'=1L,'Other fertility-related'=c(9L,12L,13L),
  'Wanted more effective method'=7L,'Access/cost/convenience'=c(6L,8L,10L),
  'Other recorded reasons'=c(11L,96L,98L,99L,0L))
 labels<-c('0–3','4–6','7–12','13–24','25–36','37–48','49–60','61+')
+ep<-readRDS(file.path(root,'Data/Derived/nigeria_2024_modern_episodes.rds'))
+ep<-ep[!ep$method_code%in%c(6L,7L),]
+first_risk<-function(m,codes){z<-ep[ep$method_group==m,];S<-1;F<-0
+ for(t in 1:12){at<-z$entry<t & z$exposure>=t;en<-at & z$discontinued & z$exposure==t;den<-sum(z$wt[at]);F<-F+S*sum(z$wt[en & z$reason_code%in%codes])/den;S<-S*(1-sum(z$wt[en])/den)};100*F}
 rows<-list()
 for(m in methods){
  stock<-users$current_users_2025[users$method==m]
@@ -3983,8 +4268,8 @@ for(m in methods){
    }
    risk<-sum(shares*probs)
    rows[[length(rows)+1L]]<-data.frame(method=m,reason=names(reason)[j],
-     current_users_2025=stock,first_year_cause_risk_pct=first[[paste0('cause_',j,'_pct')]],
-     first_year_illustrative_endings=stock*first[[paste0('cause_',j,'_pct')]]/100,
+     current_users_2025=stock,first_year_cause_risk_pct=first_risk(m,event),
+     first_year_illustrative_endings=stock*first_risk(m,event)/100,
      duration_aware_next12_risk_pct=100*risk,
      duration_aware_illustrative_endings=stock*risk,
      minimum_historical_bin_landmarks=min(support_n),
@@ -3999,17 +4284,10 @@ totals<-aggregate(cbind(first_year_illustrative_endings,duration_aware_illustrat
 total<-colSums(totals[,2:3])
 cat('First-year illustrative selected endings',round(total[1]),
     'duration-aware selected endings',round(total[2]),'\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 42_nigeria_crossvalidated_selected_risk_strata.R
-# LANGUAGE: R
-MODULES[["42_nigeria_crossvalidated_selected_risk_strata.R"]] <- list(
- language="R",
- packaged_sha256="fbe3ed675cf7bf474d9d0539fd91032e11c24b34e86a836a60a8f10a52cb54d6",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["42_nigeria_crossvalidated_selected_risk_strata.R"]] <- list(language="R", packaged_sha256="8c668d86988db26b02adc9f16d697d607c1382a3ca348db67e930bd12831cd05", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -4041,6 +4319,7 @@ out <- file.path(project,"output","Supporting_data")
 if(!requireNamespace("nnet",quietly=TRUE))
   install.packages("nnet",repos="https://cloud.r-project.org")
 e <- readRDS(file.path(project,"Data/Derived/nigeria_2024_model_episode_covariates.rds"))
+e <- e[!e$method_code %in% c(6L,7L),]
 e$selected_event <- e$discontinued & e$exposure<=12 & e$entry<e$exposure & !(e$reason_code%in%c(2L,3L))
 e$method_group <- factor(e$method_group,
   levels=c("Injectables","Implants","Pill","IUD","Other modern"))
@@ -4048,7 +4327,7 @@ e$age_group <- factor(e$age_group,levels=levels(e$age_group))
 e$parity_group <- factor(e$parity_group,levels=levels(e$parity_group))
 e$cluster <- as.character(e$cluster)
 e$stratum <- as.integer(e$stratum)
-stopifnot(nrow(e)==8341L)
+stopifnot(nrow(e)>0L)
 
 life <- function(d,w=d$wt){
   if(!nrow(d)||sum(w)<=0)return(NA_real_)
@@ -4199,18 +4478,10 @@ write.csv(data.frame(eligible_episodes=nrow(e),weighted_episodes=sum(e$wt),
 cat("Out-of-fold cut-points:",round(cut1,2),round(cut2,2),"percent\n")
 print(risk_rows,row.names=FALSE)
 print(differences,row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 44_nigeria_replication_figures.R
-# LANGUAGE: R
-MODULES[["44_nigeria_replication_figures.R"]] <- list(
-  language="R",
-  original_sha256="f2394cf4bee2b3bd23bb7da6dc713abdb8830ecb77352f3060faf6a64a598743",
-  packaged_sha256="4f350373f9749bec8a74f3f92440434c163b1c6b08acb6a6778d6363366c0678",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["44_nigeria_replication_figures.R"]] <- list(language="R", packaged_sha256="3ec36d9aaf19d547dcd2e861e660d02c0eb00c7afcaf26358e199ba9ace372ea", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -4346,18 +4617,10 @@ ih$reason_label<-factor(ih$reason_label,levels=rev(c('Method failure','Wanted mo
 ip<-ggplot(ih,aes(duration_group,reason_label,fill=share))+geom_tile(color='white',linewidth=2)+geom_text(aes(label=sprintf('%.0f',share)),size=4,color='black')+scale_fill_gradient(low='#E8F1F3',high=teal)+scale_x_discrete(position='top',labels=c('1–3\nmonths','4–6\nmonths','7–12\nmonths','No method\nnext month'))+labs(title='Injectable ending timing and next-month nonuse by reason',subtitle='First three columns sum to 100 within reason; final column is a separate next-month outcome',x=NULL,y=NULL,fill='Percent')+base+theme(panel.grid=element_blank(),legend.position='none')
 save(ip,'nigeria_injectable_reason_timing_destination_heatmap.svg',12,5.5)
 cat('Created Nigeria figures in',assets,'\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 70_modern_five_year_reasons.R
-# LANGUAGE: R
-MODULES[["70_modern_five_year_reasons.R"]] <- list(
-  language="R",
-  original_sha256="3dcf3ea84c4d8dd75c9c25d05507e97931fcbf5e531deeb528d6715a516edbef",
-  packaged_sha256="1ef5a1bbdc09ae8439fd508a3da06e510286799168dc563de43083603e7b2db7",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["70_modern_five_year_reasons.R"]] <- list(language="R", packaged_sha256="484b8482c02efa21a0e364bfef6fb38bcad0c2b3f955ea4160cde54145a709f1", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -4441,18 +4704,10 @@ write.csv(seven_out,file.path(root,'output/Supporting_data/nigeria_modern_five_y
 print(seven_out,row.names=FALSE)
 print(out[out$method=='All modern',],row.names=FALSE)
 cat(dest,'\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 89_nigeria_aft_duration_by_method.R
-# LANGUAGE: R
-MODULES[["89_nigeria_aft_duration_by_method.R"]] <- list(
-  language="R",
-  original_sha256="158523d270b12c8419c73c92dbcc8c634065b910bb868f2add188e1eb786fd52",
-  packaged_sha256="956cc87556dac58bb5cfe3c7e1ff57946a35cc5ad98c2f4b592425be8ba58064",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["89_nigeria_aft_duration_by_method.R"]] <- list(language="R", packaged_sha256="793e0ed65522f0361e7c81d15a1de9098ffd3db022217af11be0184a74d4a06f", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -4468,12 +4723,13 @@ dhs_set_context(country='Nigeria',root=.dhs_root)
 root <- Sys.getenv("NIGERIA_PROJECT_ROOT", unset=normalizePath(file.path(getwd(), ".."), mustWork=FALSE))
 support <- file.path(root, 'output/Supporting_data')
 e <- readRDS(file.path(root, 'Data/Derived/nigeria_2024_modern_episodes.rds'))
+e <- e[!e$method_code %in% c(6L,7L),]
 ir <- readRDS(file.path(root, 'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'))
 stocks <- read.csv(file.path(support, 'nigeria_current_users_by_method_and_actionable_projection.csv'))
 landmark <- read.csv(file.path(support, 'nigeria_duration_aware_current_user_bridge.csv'))
 wra26 <- read.csv(file.path(support, 'nigeria_2026_mcpr_scenarios.csv'))$wra_2026[1]
 
-modern_codes <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
+modern_codes <- c(1L,2L,3L,5L,11L,13L,14L,15L,17L,18L,19L,20L)
 methods <- c('Injectables','Implants','Pill','IUD','Other modern')
 method_group <- function(z) ifelse(z==3L,'Injectables',ifelse(z==11L,'Implants',
   ifelse(z==1L,'Pill',ifelse(z==2L,'IUD','Other modern'))))
@@ -4485,7 +4741,7 @@ e <- e[e$entry==0L & e$method_code %in% modern_codes & e$exposure>0L,]
 e$method <- factor(method_group(e$method_code),levels=methods)
 e$action_event <- as.integer(e$discontinued & e$reason_code %in% actionable_codes)
 e$other_event <- as.integer(e$discontinued & !e$reason_code %in% actionable_codes)
-stopifnot(nrow(e)==7520L,all(e$action_event+e$other_event<=1L),
+stopifnot(nrow(e)>0L,all(e$action_event+e$other_event<=1L),
   all(e$exposure>=1L),max(e$exposure)<=72L)
 
 suppressPackageStartupMessages(library(survival))
@@ -4586,18 +4842,10 @@ fit_report <- data.frame(distribution=names(model_a$aic),
 write.csv(fit_report,file.path(support,'nigeria_survival_model_duration_fit.csv'),row.names=FALSE)
 cat('Nigeria AFT gross original-method endings',sum(out$survival_model_original_method_endings[1:5]),'\n')
 cat('Selected AFT distributions:',model_a$distribution,'for actionable,',model_o$distribution,'for other endings\n')
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 90_nigeria_aft_duration_by_method_cause.R
-# LANGUAGE: R
-MODULES[["90_nigeria_aft_duration_by_method_cause.R"]] <- list(
-  language="R",
-  original_sha256="40195f4a4cec99c244a718eccfeafa1539829ee3c58aa4bf0d454f3e2f8e83f2",
-  packaged_sha256="349b543b9bfbcbbdd74c0ff9ff1d9bf227020c922f97fb98fac97ba6e19e5bda",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["90_nigeria_aft_duration_by_method_cause.R"]] <- list(language="R", packaged_sha256="f7619dab036cf3841b11675d7bac6e8e815ec37beeae58b2d3ba99ea55131d57", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -4693,18 +4941,10 @@ write.csv(data.frame(cause=causes,distribution=vapply(fitted,`[[`,'','dist'),
   file.path(support,'nigeria_survival_model_cause_fit.csv'),row.names=FALSE)
 print(rows[,c('method','reason','conditional_next12_risk_pct',
   'modeled_original_method_endings','gross_mcpr_equivalent_pp','cause_event_n')],row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 91_nigeria_aft_switching_bridge.R
-# LANGUAGE: R
-MODULES[["91_nigeria_aft_switching_bridge.R"]] <- list(
-  language="R",
-  original_sha256="4d2acbd3332a50766a00a534d0188940006b41698762d06be5c83e789e8bda5d",
-  packaged_sha256="eda72f3d153c1d45372dcd70884d90f7ed4adf7325ef7c32aaee3e13f0d47a7f",
-  args=character(),
-  code=r"-----(# DHS complex survey design for this module.
+MODULES[["91_nigeria_aft_switching_bridge.R"]] <- list(language="R", packaged_sha256="b62124600876443aa0b69a92cb3c407ffeb9a1475da23e0e5a103a8f74afe2de", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -4824,18 +5064,9 @@ cat('AFT original endings',sum(method_summary$model_original_method_endings),
   '\nSparse/fallback transition cells',sum(support$transition_source!='method × cause × duration'),
   'of',nrow(support),'\n')
 print(compare,row.names=FALSE)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 08a_extract_nigeria_wpp_population.py
-# LANGUAGE: Python
-MODULES[["08a_extract_nigeria_wpp_population.py"]] <- list(
-  language="Python",
-  original_sha256="1a1f737183c672910feca8b6fef8fabdff43066abbf2a79380a32d0eb3a10b41",
-  packaged_sha256="967828c11743b6c9718585493a84d17db7387244c127dc1cfaf7bb0b32a76cef",
-  args=character(),
-  code=r"-----("""Extract Nigeria women aged 15–49 from the UN WPP 2024 medium variant.
+MODULES[["08a_extract_nigeria_wpp_population.py"]] <- list(language="Python", packaged_sha256="967828c11743b6c9718585493a84d17db7387244c127dc1cfaf7bb0b32a76cef", args=character(0), code=r"----------------------("""Extract Nigeria women aged 15–49 from the UN WPP 2024 medium variant.
 
 Input is the official UN female single-age workbook already in the user's data
 folder. The workbook reports thousands at 1 July, so sum ages 15–49 and
@@ -4861,18 +5092,9 @@ assert len(rows)==3
 with out.open('w',newline='') as f:
     writer=csv.DictWriter(f,fieldnames=rows[0].keys());writer.writeheader();writer.writerows(rows)
 print(rows)
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 16_nigeria_all_reason_current_user_bridge.py
-# LANGUAGE: Python
-MODULES[["16_nigeria_all_reason_current_user_bridge.py"]] <- list(
-  language="Python",
-  original_sha256="a2a5f2793676b5ae39bd4cd10fccc95b593f9a378f1cfd36720f1d2ab43bbd36",
-  packaged_sha256="a2a5f2793676b5ae39bd4cd10fccc95b593f9a378f1cfd36720f1d2ab43bbd36",
-  args=character(),
-  code=r"-----(#!/usr/bin/env python3
+MODULES[["16_nigeria_all_reason_current_user_bridge.py"]] <- list(language="Python", packaged_sha256="b376cab32dadfa5f9ddf981a16a99f0ca252e2650a272d20b26cc18b20caefd3", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Build the Ethiopia-style all-reason current-user planning bridge.
 
 This is an illustration, not a next-year forecast: first-year probabilities
@@ -4898,8 +5120,8 @@ def write(name, rows, fields):
         writer.writerows(rows)
 
 
-times = read("nigeria_modern_all_reason_timepoints.csv")
-reasons = read("nigeria_modern_all_reason_reason_mix.csv")
+times = read("nigeria_reversible_planning_all_reason_timepoints.csv")
+reasons = read("nigeria_reversible_planning_all_reason_reason_mix.csv")
 users = read("nigeria_current_users_by_method_and_actionable_projection.csv")
 methods = ["Injectables", "Implants", "Pill", "IUD", "Other modern"]
 cause_names = [r["reason"] for r in reasons if r["scope"] == "National"]
@@ -4932,18 +5154,9 @@ for method in methods:
 write("nigeria_current_users_all_reason_projection.csv", summary, list(summary[0]))
 write("nigeria_current_users_all_reason_by_cause.csv", causes, list(causes[0]))
 print("All-reason illustrative original-method endings:", round(sum(r["illustrative_original_method_endings"] for r in summary)))
-)-----"
-)
+)----------------------")
 
-# =============================================================================
-# ORIGINAL MODULE: 95_build_duration_planning_data.py
-# LANGUAGE: Python
-MODULES[["95_build_duration_planning_data.py"]] <- list(
-  language="Python",
-  original_sha256="4810707d5e0f27b2d90b24e9014ff7cecd89ee5aa18435e08e5a3219090fdd21",
-  packaged_sha256="0739af4266246c1aaeef664e1fab5786c27657f767e08a1b87ed3e76f27577a7",
-  args=character(),
-  code=r"-----(#!/usr/bin/env python3
+MODULES[["95_build_duration_planning_data.py"]] <- list(language="Python", packaged_sha256="0739af4266246c1aaeef664e1fab5786c27657f767e08a1b87ed3e76f27577a7", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Build Nigeria counterparts to Ethiopia's historical/AFT planning tables."""
 import csv
 import json
@@ -5153,14 +5366,10 @@ def final_labels(value):
     if isinstance(value,dict): return {k:final_labels(v) for k,v in value.items()}
     return value
 out.write_text(json.dumps(final_labels(json.loads(out.read_text())),indent=2))
-)-----"
-)
+)----------------------")
 
-MODULES[["202_nigeria_survey_coefficients.R"]] <- list(
- language="R",
- packaged_sha256="3d746ca23c66ba8d6147117ca5072fe9f654c63a83a9cbf1783bf322c09a7181",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["202_nigeria_survey_coefficients.R"]] <- list(language="R", packaged_sha256="3f36d2b236294a5d5edb12feee092a5536d4510b4a4681d94fea956e1a2b3b47", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -5190,14 +5399,10 @@ for(k in 1:2){
 }
 write.csv(do.call(rbind,rows),file.path(out,'nigeria_actionable_zone_model_odds_ratios.csv'),row.names=FALSE)
 cat('Full-frame cluster/strata sandwich:',nrow(f),'PSUs;',length(g),'strata;',df,'degrees of freedom\n')
-)-----"
-)
+)----------------------")
 
-MODULES[["203_nigeria_planning_survey_ci.R"]] <- list(
- language="R",
- packaged_sha256="ce9e561b24b6dfc8bdf962ccdcb85c15f1d0211fa4da3c39eb4c48d341c10a5f",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["203_nigeria_planning_survey_ci.R"]] <- list(language="R", packaged_sha256="1418d5c97dbd818cf9c967e1438b1a9be7839f4c0ee8c2330d1d911a395bf978", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -5215,6 +5420,7 @@ B<-as.integer(Sys.getenv('NIGERIA_PLANNING_BOOTSTRAP_REPS','500'));cores<-4L
 suppressPackageStartupMessages(library(survival))
 ir<-readRDS(file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'))
 e<-readRDS(file.path(root,'Data/Derived/nigeria_2024_modern_episodes.rds'))
+e<-e[!e$method_code%in%c(6L,7L),]
 cal<-readRDS(file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'))
 sup<-file.path(root,'output/Supporting_data')
 script_file<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -5231,8 +5437,8 @@ w24<-pop$women_15_49[pop$year==2024]
 methods<-c('Injectables','Implants','Pill','IUD','Other modern')
 causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
 codes<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L)); action<-unlist(codes)
-modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
-endpoint_modern<-c(modern,16L)
+modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L);modern<-setdiff(modern,c(6L,7L))
+endpoint_modern<-c(modern,6L,7L,16L)
 method_group<-function(x)ifelse(x==3,'Injectables',ifelse(x==11,'Implants',ifelse(x==1,'Pill',ifelse(x==2,'IUD','Other modern'))))
 cause_group<-function(x){z<-rep(NA_integer_,length(x));for(j in 1:5)z[x %in% codes[[j]]]<-j;z}
 wt<-as.numeric(ir$v005)/1e6;psu<-as.numeric(ir$v021);stratum<-as.numeric(ir$v022)
@@ -5240,6 +5446,7 @@ frame<-unique(data.frame(psu,stratum)); stopifnot(!anyDuplicated(frame$psu))
 strata<-split(seq_len(nrow(frame)),frame$stratum);stopifnot(all(lengths(strata)>1))
 psu_index<-match(psu,frame$psu)
 u<-as.numeric(ir$v313)==3;umethod<-method_group(as.numeric(ir$v312));umethod[as.numeric(ir$v312)==16]<-'EC'
+umethod[as.numeric(ir$v312)%in%c(6L,7L)]<-'Permanent methods'
 uindex<-which(u & as.numeric(ir$v312) %in% modern)
 current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=dhs_current_duration(ir,uindex),wt=wt[uindex])
 stopifnot(all(is.finite(current$elapsed)),all(current$elapsed>=0))
@@ -5290,7 +5497,7 @@ write.csv(do.call(rbind,support),file.path(out,'switching_support.csv'),row.name
 measure<-function(mult,replicate=0L){
  old_dhs<-options(dhs.replication=replicate>0L);on.exit(options(old_dhs),add=TRUE)
  iw<-wt*mult[psu_index];ew<-e$wt*mult[psu_index[e$woman_row]];lw<-land$wt*mult[psu_index[land$woman]];cw<-current$wt*mult[psu_index[current$woman]]
- mcpr<-100*sum(iw[u])/sum(iw);mix<-vapply(c(methods,'EC'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0)
+ mcpr<-100*sum(iw[u])/sum(iw);mix<-vapply(c(methods,'EC','Permanent methods'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0)
  stock<-w25*(mcpr+.4)/100*mix
  # Main gross estimates, year-end switching sensitivities, and direct-switch diagnostics.
  result<-array(0,c(8,5,5),dimnames=list(c('First-year gross','Historical gross','AFT gross','Historical switching','AFT switching','First-year direct switches','Historical direct switches','AFT direct switches'),methods,causes))
@@ -5301,9 +5508,8 @@ measure<-function(mult,replicate=0L){
    v<-v+surv*h;surv<-surv*(1-sum(ew[end])/den)}
   risk[1,m,]<-v
   ends<-d[e$discontinued[d] & e$exposure[d]<=12 & e$reason_code[d] %in% action]
-  denend<-sum(ew[ends]);target<-if(denend>0)sum(v)*sum(ew[ends][e$next_code[ends] %in% endpoint_modern])/denend else 0
   raw<-vapply(1:5,function(j){ii<-ends[e$reason_code[ends] %in% codes[[j]]];den<-sum(ew[ii]);if(den>0)v[j]*sum(ew[ii][e$next_code[ii] %in% endpoint_modern])/den else 0},0)
-  risk[6,m,]<-if(sum(raw)>0)raw*target/sum(raw) else raw
+  risk[6,m,]<-raw
   ix<-ci_index[[m]];cwtotal<-sum(cw[ix]);for(b in 1:8){share<-sum(cw[ix[current$bin[ix]==b]])/cwtotal;if(share==0)next
    z<-land_index[[m]][[b]];den<-sum(lw[z]);if(den<=0)stop('Empty landmark cell')
    for(j in 1:5){risk[2,m,j]<-risk[2,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j])/den
@@ -5324,10 +5530,8 @@ measure<-function(mult,replicate=0L){
  list(counts=result,risk=risk,mcpr=mcpr,mix=mix,stock=stock,users2024=w24*mcpr/100*mix)
 }
 point<-measure(rep(1,nrow(frame)));saveRDS(point,file.path(out,'planning_point.rds'))
-# Preserve and verify gross estimands before running resampling.
-href<-read.csv(file.path(sup,'nigeria_duration_aware_current_user_bridge.csv'));aref<-read.csv(file.path(sup,'nigeria_aft_switching_by_method.csv'))
-stopifnot(max(abs(rowSums(point$counts[2,,])-href$projected_actionable_original_method_endings[match(methods,href$method)]))<.1,
- max(abs(rowSums(point$counts[3,,])-aref$model_original_method_endings[match(methods,aref$method)]))<.1)
+# Current national report tables use the full build entry point.
+# Permanent users have no modeled stopping probability in this earlier diagnostic.
 cat('Point totals:',apply(point$counts,1,sum),'\n');flush.console()
 checkpoint<-file.path(out,'replicates');dir.create(checkpoint,showWarnings=FALSE)
 one<-function(b){dest<-file.path(checkpoint,sprintf('rep_%04d.rds',b));if(file.exists(dest))return(readRDS(dest));set.seed(20261105L+b)
@@ -5336,14 +5540,10 @@ one<-function(b){dest<-file.path(checkpoint,sprintf('rep_%04d.rds',b));if(file.e
 if(B>0){draws<-parallel::mclapply(seq_len(B),one,mc.cores=cores,mc.preschedule=FALSE);valid<-!vapply(draws,function(x)!is.null(x$error),FALSE)
  cat('Valid',sum(valid),'of',B,'\n');stopifnot(mean(valid)>=.95);saveRDS(draws,file.path(out,'planning_replicates.rds'))}
 saveRDS(list(wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(strata),replicates=B,methods=methods,causes=causes,definitions=c('Gross: every actionable original-method ending treated as year-end loss','Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes','AFT uncertainty conditional on selected distribution families','Population and growth scenarios fixed')),file.path(out,'planning_metadata.rds'))
-)-----"
-)
+)----------------------")
 
-MODULES[["204_summarize_planning.R"]] <- list(
- language="R",
- packaged_sha256="b53f55926f82947d9342685dc7191b4115cd570ff1da1e510aebb250d7ca79e6",
- args=character(),
- code=r"-----(# DHS complex survey design for this module.
+MODULES[["204_summarize_planning.R"]] <- list(language="R", packaged_sha256="aba890f805ef4078e2c1dcfaee9bbb34a60f6a1a4b02dc8877f8cff3c579d479", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -5375,128 +5575,10 @@ pt<-metrics(p);ds<-vapply(d,metrics,pt);lo<-apply(ds,1,quantile,.025);hi<-apply(
 write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(o,'planning_intervals.csv'),row.names=FALSE)
 jsonlite::write_json(meta,file.path(o,'metadata.json'),auto_unbox=TRUE,pretty=TRUE)
 cat('95% intervals for',length(pt),'metrics from',ncol(ds),'valid replicates\n')
-)-----"
-)
+)----------------------")
 
-
-# Parameterized input/preparation helpers
-# Parameterized, local-file input validation. No API calls are made.
-read_validated_ir <- function(ir_file, expected_sha256='') {
-  for (pkg in c('haven','jsonlite','digest'))
-    if (!requireNamespace(pkg, quietly=TRUE)) stop('Install required R package: ',pkg,call.=FALSE)
-  if (!nzchar(ir_file) || !file.exists(ir_file))
-    stop('Supply an existing authorized IR file with --ir-file or DHS_IR_FILE.',call.=FALSE)
-  ext <- tolower(tools::file_ext(ir_file))
-  allowed <- if(COUNTRY=='Ethiopia') 'dta' else c('dta','rds')
-  if (!ext %in% allowed) stop('Unsupported input format for this country.',call.=FALSE)
-  sha <- digest::digest(file=ir_file, algo='sha256')
-  if (nzchar(expected_sha256) && (!grepl('^[a-fA-F0-9]{64}$',expected_sha256) ||
-      !identical(tolower(expected_sha256),sha)))
-    stop('Input SHA-256 does not match --expected-ir-sha256.',call.=FALSE)
-  x <- tryCatch(if(ext=='dta') as.data.frame(haven::read_dta(ir_file)) else readRDS(ir_file),
-    error=function(e)stop('Cannot read the supplied IR file; verify format and integrity.',call.=FALSE))
-  if (!is.data.frame(x)) stop('IR input must be a woman-level data frame.',call.=FALSE)
-  expected <- if(COUNTRY=='Ethiopia') c(21395L,6648L,797L,27L) else c(39050L,6411L,1380L,74L)
-  required <- c('caseid','v000','v005','v008','v011','v012','v017','v018','v019',
-                'v021','v022','v024','v025','v106','v190','v312','v313','v337',
-                'v501','vcal_1','vcal_2')
-  if(COUNTRY=='Nigeria') required<-c(required,'sstate')
-  missing <- setdiff(required,names(x))
-  if(length(missing))stop('Required IR variables missing: ',paste(missing,collapse=', '),call.=FALSE)
-  if(anyDuplicated(names(x)) || anyDuplicated(x$caseid) || anyNA(x$caseid))
-    stop('IR variables and woman identifiers must be unique and nonmissing.',call.=FALSE)
-  if(nrow(x)!=expected[1] || ncol(x)!=expected[2])
-    stop('IR dimensions differ from the validated country release; review before analysis.',call.=FALSE)
-  num <- function(k)as.numeric(x[[k]])
-  if(!all(as.character(x$v000)==if(COUNTRY=='Ethiopia')'ET8'else'NG8'))
-    stop('Wrong country/recode phase.',call.=FALSE)
-  keys<-c('v005','v008','v011','v012','v017','v018','v019','v021','v022','v024')
-  if(any(vapply(keys,function(k)any(!is.finite(num(k))),FALSE)))
-    stop('Nonfinite required dates, weights or survey-design fields.',call.=FALSE)
-  stopifnot(all(num('v005')>0),all(num('v012')%in%15:49),
-    all(num('v019')>=1 & num('v019')<=80),
-    all(num('v008')-num('v017')+1==num('v019')),
-    all(num('v018')+num('v019')==81),
-    is.character(x$vcal_1),is.character(x$vcal_2),
-    !anyNA(x$vcal_1),!anyNA(x$vcal_2),all(nchar(x$vcal_1)==80L),
-    all(nchar(x$vcal_2)<=80L),length(grep('^b3_',names(x)))>0)
-  f<-unique(data.frame(psu=num('v021'),stratum=num('v022')))
-  stopifnot(nrow(f)==expected[3],length(unique(f$stratum))==expected[4],
-    !anyDuplicated(f$psu),all(table(f$stratum)>1))
-  if(COUNTRY=='Nigeria')stopifnot(all(num('v024')%in%1:6))
-  # Never trim, reverse, filter or impute the raw input here.
-  list(data=x,sha256=sha,format=ext,rows=nrow(x),columns=ncol(x),
-       psus=nrow(f),strata=length(unique(f$stratum)))
-}
-
-write_ir_validation <- function(root, v) {
-  dest<-file.path(root,'output','validation');dir.create(dest,recursive=TRUE,showWarnings=FALSE)
-  fields<-list(country=COUNTRY,input_parameter='--ir-file or DHS_IR_FILE',
-    format=v$format,sha256=v$sha256,women=v$rows,variables=v$columns,
-    psus=v$psus,strata=v$strata,calendar_alignment='passed',unique_women='passed',
-    source_file_modified=FALSE,api_used=FALSE,
-    validated_utc=format(Sys.time(),'%Y-%m-%dT%H:%M:%SZ',tz='UTC'))
-  jsonlite::write_json(fields,file.path(dest,'input_validation.json'),auto_unbox=TRUE,pretty=TRUE)
-  packages<-c('haven','jsonlite','digest','survey','survival','nnet','ggplot2')
-  vers<-vapply(packages,function(p)if(requireNamespace(p,quietly=TRUE))
-    as.character(utils::packageVersion(p))else'not installed','')
-  write.csv(data.frame(package=c('R',packages),version=c(as.character(getRversion()),vers)),
-    file.path(dest,'software_versions.csv'),row.names=FALSE)
-}
-
-complete_preparation_audit <- function(root, v) {
-  prefix<-if(COUNTRY=='Ethiopia')'ethiopia'else'nigeria'
-  derived<-file.path(root,'Data','Derived')
-  load<-function(name)readRDS(file.path(derived,name))
-  events<-load(paste0(prefix,'_2024_calendar_events.rds'))
-  ep<-load(if(COUNTRY=='Ethiopia')'ethiopia_2024_table_7_11_episodes.rds'else'nigeria_2024_table_7_12_episodes.rds')
-  months<-load(paste0(prefix,'_2024_calendar_months.rds'))
-  cov<-load(if(COUNTRY=='Ethiopia')'ethiopia_2024_full_model_episode_covariates.rds'else'nigeria_2024_model_episode_covariates.rds')
-  person<-load(paste0(prefix,'_2024_person_month.rds'))
-  frame<-load(paste0(prefix,'_2024_full_survey_frame.rds'))
-  stopifnot(nrow(months)==sum(as.integer(v$data$v019)),
-    nrow(months)==sum(events$duration),all(ep$entry<ep$exposure),
-    all(ep$entry<12),!anyDuplicated(ep$episode_id),
-    nrow(frame)==v$psus,length(unique(frame$stratum))==v$strata,
-    all(ep$wt==as.numeric(v$data$v005[ep$woman_row])/1e6),
-    sum(person$outcome=='actionable')>0,
-    !anyNA(person[,c('wt','cluster','stratum','month','outcome')]))
-  for_month<-if(COUNTRY=='Ethiopia')cov else cov
-  stopifnot(nrow(person)==sum(pmin(12L,for_month$exposure)-for_month$entry))
-  # Every retained episode-month uses the original woman's weight; other
-  # endings remain competing events. Calendar nonuse is not a method episode.
-  if(COUNTRY=='Ethiopia'){
-    audit<-jsonlite::read_json(file.path(root,'output/Supporting_data/Table_7_11/table_7_11_results.json'))$audit
-    stopifnot(audit$rate_cells_matching==66,audit$count_cells_matching==6,
-      nrow(events)==89220,nrow(ep)==9068,nrow(cov)==8611,nrow(person)==70691,
-      sum(person$outcome=='actionable')==1321)
-    validated_cells<-66L;validated_counts<-6L
-  }else{
-    audit<-read.csv(file.path(root,'output/Supporting_data/nigeria_table_7_12_validation.csv'))
-    stopifnot(sum(audit$rate_cells_matching)==110,all(audit$episode_count_matching),
-      nrow(events)==163203,nrow(ep)==11210,nrow(cov)==8341,nrow(person)==69445)
-    validated_cells<-110L;validated_counts<-10L
-  }
-  files<-list.files(derived,pattern='\\.rds$',full.names=TRUE)
-  hashes<-data.frame(file=paste0('Data/Derived/',basename(files)),
-    sha256=vapply(files,function(f)digest::digest(file=f,algo='sha256'),''))
-  dest<-file.path(root,'output/validation')
-  write.csv(hashes,file.path(dest,'derived_file_checksums.csv'),row.names=FALSE)
-  result<-list(country=COUNTRY,input_sha256=v$sha256,
-    calendar_runs=nrow(events),calendar_months=nrow(months),
-    published_table_episodes=nrow(ep),model_episodes=nrow(cov),
-    model_episode_months=nrow(person),psus=nrow(frame),strata=v$strata,
-    dhs_rate_cells_matching=validated_cells,dhs_episode_counts_matching=validated_counts,
-    input_preparation_complete=TRUE,full_html_regeneration=FALSE,
-    html_and_pptx_modified=FALSE)
-  jsonlite::write_json(result,file.path(dest,'preparation_validation.json'),
-    auto_unbox=TRUE,pretty=TRUE,digits=15)
-  cat('Preparation passed: ',nrow(events),' calendar runs; ',nrow(ep),
-      ' published-table episodes; ',nrow(cov),' model episodes.\n',sep='')
-}
-
-
-MODULES[["210_prepare_analysis_inputs.R"]] <- list(language="R", packaged_sha256="f2c4bd04955dea25c3444eea139defcb8423db9423e03d2b7e31c63b049215f5", args=character(), code=r"-----(# DHS complex survey design for this module.
+MODULES[["210_prepare_analysis_inputs.R"]] <- list(language="R", packaged_sha256="1e3e1102e7c840c9c611e2ea772935416db5073aa88cd6309f05c1fa4679f23d", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -5663,291 +5745,9 @@ current_users<-data.frame(woman_row=current,method_code=as.integer(ir$v312[curre
  region=as.integer(ir$v024[current]))
 saveRDS(current_users,file.path(derived,paste0(prefix,'_2024_current_modern_users.rds')))
 cat('Created source-aligned calendar months, full survey frame and current-user inputs.\n')
-)-----")
+)----------------------")
 
-# Register labelled-variable conversions in every fresh module subprocess.
-for (module_name in names(MODULES)) if(MODULES[[module_name]]$language=='R') {
-  MODULES[[module_name]]$code <- paste0("if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')\n", MODULES[[module_name]]$code)
-}
-
-# Execute only when called as the command-line entry point.
-
-# Latest revision calculations and incremental report rendering.
-REVISED_GROWTH_ASSUMPTIONS <- r"--------({
-  "scenarios": [
-    {
-      "scenario": "6-year DHS trend",
-      "annual_change_pp": 0.4318981911348668
-    },
-    {
-      "scenario": "11-year DHS trend",
-      "annual_change_pp": 0.1777353742882184
-    },
-    {
-      "scenario": "FPET-informed growth",
-      "annual_change_pp": 0.4
-    }
-  ],
-  "rates_from": {
-    "dhs2013": 11.149075984364499,
-    "dhs2018": 10.5127759547257,
-    "dhs2024": 13.104165101534901,
-    "fpet2024": 13.2,
-    "fpet2025": 13.6
-  }
-})--------"
-REVISED_TABLE_SCHEMA <- r"--------([
-  {
-    "title": "First-year: actionable discontinuation and mCPR",
-    "kind": "method",
-    "approach": 1,
-    "scenario": null
-  },
-  {
-    "title": "First-year: users by method and cause",
-    "kind": "cause",
-    "approach": 1,
-    "scenario": null
-  },
-  {
-    "title": "First-year: mCPR growth scenarios",
-    "kind": "baseline",
-    "approach": 1,
-    "scenario": 3
-  },
-  {
-    "title": "First-year: mCPR if actionable losses are avoided",
-    "kind": "scenario",
-    "approach": 1,
-    "scenario": 3
-  },
-  {
-    "title": "First-year: 6-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 1,
-    "scenario": 1
-  },
-  {
-    "title": "First-year: 11-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 1,
-    "scenario": 2
-  },
-  {
-    "title": "First-year: FPET-informed growth by method",
-    "kind": "method_scenario",
-    "approach": 1,
-    "scenario": 3
-  },
-  {
-    "title": "First-year: mCPR equivalent by cause",
-    "kind": "cause_pp",
-    "approach": 1,
-    "scenario": null
-  },
-  {
-    "title": "Historical duration-aware: actionable discontinuation and mCPR",
-    "kind": "method",
-    "approach": 2,
-    "scenario": null
-  },
-  {
-    "title": "Historical duration-aware: users by method and cause",
-    "kind": "cause",
-    "approach": 2,
-    "scenario": null
-  },
-  {
-    "title": "Historical duration-aware: mCPR growth scenarios",
-    "kind": "baseline",
-    "approach": 2,
-    "scenario": 3
-  },
-  {
-    "title": "Historical duration-aware: mCPR if actionable losses are avoided",
-    "kind": "scenario",
-    "approach": 2,
-    "scenario": 3
-  },
-  {
-    "title": "Historical duration-aware: 6-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 2,
-    "scenario": 1
-  },
-  {
-    "title": "Historical duration-aware: 11-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 2,
-    "scenario": 2
-  },
-  {
-    "title": "Historical duration-aware: FPET-informed growth by method",
-    "kind": "method_scenario",
-    "approach": 2,
-    "scenario": 3
-  },
-  {
-    "title": "Historical duration-aware: mCPR equivalent by cause",
-    "kind": "cause_pp",
-    "approach": 2,
-    "scenario": null
-  },
-  {
-    "title": "AFT survival: actionable discontinuation and mCPR",
-    "kind": "method",
-    "approach": 3,
-    "scenario": null
-  },
-  {
-    "title": "AFT survival: users by method and cause",
-    "kind": "cause",
-    "approach": 3,
-    "scenario": null
-  },
-  {
-    "title": "AFT survival: mCPR growth scenarios",
-    "kind": "baseline",
-    "approach": 3,
-    "scenario": 3
-  },
-  {
-    "title": "AFT survival: mCPR if actionable losses are avoided",
-    "kind": "scenario",
-    "approach": 3,
-    "scenario": 3
-  },
-  {
-    "title": "AFT survival: 6-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 3,
-    "scenario": 1
-  },
-  {
-    "title": "AFT survival: 11-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 3,
-    "scenario": 2
-  },
-  {
-    "title": "AFT survival: FPET-informed growth by method",
-    "kind": "method_scenario",
-    "approach": 3,
-    "scenario": 3
-  },
-  {
-    "title": "AFT survival: mCPR equivalent by cause",
-    "kind": "cause_pp",
-    "approach": 3,
-    "scenario": null
-  },
-  {
-    "title": "Historical sensitivity: actionable discontinuation and mCPR",
-    "kind": "method",
-    "approach": 4,
-    "scenario": null
-  },
-  {
-    "title": "Historical sensitivity: users by method and cause",
-    "kind": "cause",
-    "approach": 4,
-    "scenario": null
-  },
-  {
-    "title": "Historical sensitivity: mCPR growth scenarios",
-    "kind": "baseline",
-    "approach": 4,
-    "scenario": 3
-  },
-  {
-    "title": "Historical sensitivity: mCPR if actionable losses are avoided",
-    "kind": "scenario",
-    "approach": 4,
-    "scenario": 3
-  },
-  {
-    "title": "Historical sensitivity: 6-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 4,
-    "scenario": 1
-  },
-  {
-    "title": "Historical sensitivity: 11-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 4,
-    "scenario": 2
-  },
-  {
-    "title": "Historical sensitivity: FPET-informed growth by method",
-    "kind": "method_scenario",
-    "approach": 4,
-    "scenario": 3
-  },
-  {
-    "title": "Historical sensitivity: mCPR equivalent by cause",
-    "kind": "cause_pp",
-    "approach": 4,
-    "scenario": null
-  },
-  {
-    "title": "AFT sensitivity: actionable discontinuation and mCPR",
-    "kind": "method",
-    "approach": 5,
-    "scenario": null
-  },
-  {
-    "title": "AFT sensitivity: users by method and cause",
-    "kind": "cause",
-    "approach": 5,
-    "scenario": null
-  },
-  {
-    "title": "AFT sensitivity: mCPR growth scenarios",
-    "kind": "baseline",
-    "approach": 5,
-    "scenario": 3
-  },
-  {
-    "title": "AFT sensitivity: mCPR if actionable losses are avoided",
-    "kind": "scenario",
-    "approach": 5,
-    "scenario": 3
-  },
-  {
-    "title": "AFT sensitivity: 6-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 5,
-    "scenario": 1
-  },
-  {
-    "title": "AFT sensitivity: 11-year DHS trend by method",
-    "kind": "method_scenario",
-    "approach": 5,
-    "scenario": 2
-  },
-  {
-    "title": "AFT sensitivity: FPET-informed growth by method",
-    "kind": "method_scenario",
-    "approach": 5,
-    "scenario": 3
-  },
-  {
-    "title": "AFT sensitivity: mCPR equivalent by cause",
-    "kind": "cause_pp",
-    "approach": 5,
-    "scenario": null
-  }
-])--------"
-REVISION_HELPERS <- list(
-  "300_revised_planning.R" = r"--------(# DHS complex survey design for this module.
-.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
-if (!nzchar(.dhs_root)) {
- .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
- .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
-}
-source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
-dhs_set_context(country='Nigeria',root=.dhs_root)
-#!/usr/bin/env Rscript
+MODULES[["300_revised_planning.R"]] <- list(language="R", packaged_sha256="c877b5a3a87c7646cb162992c9000c5c0bb4e58a1193ae998b81252daf19f847", args=character(0), code=r"----------------------(#!/usr/bin/env Rscript
 # Usage: compute_2025.R SAVED_STATS_DIR VERIFIED_GROWTH_JSON OUTPUT_DIR
 # Reuses saved point estimates and 500 survey bootstrap draws. Models are not refitted.
 a<-commandArgs(TRUE);stopifnot(length(a)==3)
@@ -5956,334 +5756,22 @@ point<-readRDS(file.path(a[1],'planning_point.rds'));reps<-readRDS(file.path(a[1
 outdir<-a[3];dir.create(outdir,recursive=TRUE,showWarnings=FALSE)
 verified<-fromJSON(a[2]);rates<-verified$scenarios$annual_change_pp
 labels<-verified$scenarios$scenario
-meta$epsilon<-0
-metrics<-function(x){
- counts<-x$risk
- for(m in meta$methods)counts[,m,]<-x$risk[,m,]*x$users2024[m]
- counts<-abind::abind(counts,counts[1,,,drop=FALSE]-counts[6,,,drop=FALSE],counts[2,,,drop=FALSE]-counts[4,,,drop=FALSE],counts[3,,,drop=FALSE]-counts[5,,,drop=FALSE],along=1)
- y<-c(stock_no_ec=sum(x$users2024[meta$methods]),mcpr2024=x$mcpr,users2024=sum(x$users2024))
- for(m in c(meta$methods,'EC'))y[paste('stock',m,sep='|')]<-x$users2024[m]
- for(i in 1:11)for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
-  mi<-if(m=='Total')1:5 else match(m,meta$methods);ci<-if(ca=='Total')1:5 else match(ca,meta$causes)
-  v<-sum(counts[i,mi,ci]);stock<-if(m=='Total')sum(x$users2024[meta$methods])else x$users2024[m];key<-paste(i,m,ca,sep='|')
-  y[paste0('count|',key)]<-v;y[paste0('pp|',key)]<-100*v/meta$wra2025;y[paste0('risk|',key)]<-100*v/stock
- }
- for(j in 1:3){base<-x$mcpr+rates[j];y[paste0('base|',j)]<-base;y[paste0('baseusers|',j)]<-base/100*meta$wra2025
-  for(i in 1:5)for(m in c(meta$methods,'EC','Total')){
-   share<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(counts[i,,])else if(m=='EC')0 else sum(counts[i,m,]);usual<-base*share
-   key<-paste(j,i,m,sep='|');y[paste0('usualusers|',key)]<-usual/100*meta$wra2025;y[paste0('retainedusers|',key)]<-usual/100*meta$wra2025+add
-   y[paste0('usualmcpr|',key)]<-usual;y[paste0('retainedmcpr|',key)]<-usual+100*add/meta$wra2025
-  }
- }
- for(i in 1:5)for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
-  base<-if(i==4)2 else if(i==5)3 else i;key<-paste(i,m,ca,sep='|');den<-y[paste0('count|',base,'|',m,'|',ca)]
-  y[paste0('fraction|',key)]<-if(den>0)100*y[paste0('count|',key)]/den else 0
- }
- copykeys<-names(y)[grepl('^(count|pp|stock|base|usualusers|retainedusers|usualmcpr|retainedmcpr)[|]',names(y))]
- for(k in copykeys)y[paste0('legacy_',k)]<-y[k]
- y['legacy_stock|Total']<-sum(x$users2024)
- y
-}
-pt<-metrics(point);ds<-vapply(reps,metrics,pt);ds<-pt+(ds-pt)/(1-meta$epsilon)
-lo<-apply(ds,1,quantile,.025);hi<-apply(ds,1,quantile,.975);lo<-pmax(0,pmin(lo,pt));hi<-pmax(hi,pt)
-pct<-grepl('^(risk|usualmcpr|retainedmcpr)[|]',names(pt));hi[pct]<-pmin(100,hi[pct])
-write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(outdir,'revised_planning_intervals.csv'),row.names=FALSE)
-write.csv(data.frame(key=names(pt),estimate=unname(pt),lower=unname(lo),upper=unname(hi)),file.path(outdir,'planning_intervals.csv'),row.names=FALSE)
-meta$reference_year<-2024;meta$outcome_year<-2025;meta$definitions[4]<-'Observed 2024 current-user cohort; 2025 mCPR under recent DHS, longer-term DHS, or FPET-informed annual change. Growth and population assumptions are fixed.'
-write_json(meta,file.path(outdir,'metadata.json'),auto_unbox=TRUE,pretty=TRUE)
-summary<-data.frame(scenario=labels,annual_change_pp=rates,mcpr2024=point$mcpr,mcpr2025=point$mcpr+rates,users2024=sum(point$users2024),users2025=(point$mcpr+rates)/100*meta$wra2025)
-write.csv(summary,file.path(outdir,'scenario_summary.csv'),row.names=FALSE)
-jsonlite::write_json(list(scenarios=summary,reference_year=2024,outcome_year=2025,wra2024=meta$wra2024,wra2025=meta$wra2025,methods=meta$methods,causes=meta$causes,replicates=length(reps),rates_from=verified$rates_from,reference_stock=as.list(point$users2024),ending_totals=sapply(1:5,function(i)pt[paste0('count|',i,'|Total|Total')]),pp_totals=sapply(1:5,function(i)pt[paste0('pp|',i,'|Total|Total')])),file.path(outdir,'revision_inputs.json'),auto_unbox=TRUE,pretty=TRUE,digits=15)
-stopifnot(!anyNA(pt),all(pt[grepl('^(count|pp)[|]',names(pt))]>=-1e-6))
-cat('2025 mCPR gains (gross first-year / historical / AFT; switching historical / AFT):\n');print(sapply(1:5,function(i)pt[paste0('pp|',i,'|Total|Total')]))
-print(summary)
-)--------",
-  "301_revised_tables.py" = r"--------(#!/usr/bin/env python3
-"""Usage: build_tables.py REVISED_STATS_DIR ORIGINAL_SPECS_JSON OUTPUT_DIR"""
-from pathlib import Path
-import sys,csv,json,copy
-stats,oldfile,out=map(Path,sys.argv[1:]);out.mkdir(exist_ok=True,parents=True)
-meta=json.loads((stats/'revision_inputs.json').read_text());D={r['key']:{k:float(r[k]) for k in ['estimate','lower','upper']} for r in csv.DictReader((stats/'revised_planning_intervals.csv').open())}
-methods=meta['methods'];causes=meta['causes'];old=json.loads(oldfile.read_text())
-labels=[f'6-year DHS trend\n({meta["scenarios"][0]["annual_change_pp"]:+.2f} pp/year)',f'11-year DHS trend\n({meta["scenarios"][1]["annual_change_pp"]:+.2f} pp/year)',f'FPET-informed growth\n({meta["scenarios"][2]["annual_change_pp"]:+.2f} pp/year)']
-short=['6-year DHS trend','11-year DHS trend','FPET-informed growth']
-def val(key,kind='num',deck=False):
- x=D[key];scale=1000 if deck and kind=='num' else 1;digits=(1 if deck else 0) if kind=='num' else 1 if kind=='risk' else 2
- def f(y):return '<0.01' if kind=='pp' and 0<y<.005 else '<0.1' if kind=='num' and deck and 0<y/scale<.05 else f'{y/scale:,.{digits}f}'
- suffix=' pp' if kind=='pp' else '%' if kind in ['risk','pct'] else ''
- v=f(x['estimate'])+suffix
- if x['estimate']==x['lower']==x['upper']==0:return v+'\n(CI unavailable†)'
- if not deck and abs(x['upper']-x['lower'])>1e-10:v+='\n('+f(x['lower'])+'–'+f(x['upper'])+')'
- return v
-def make(sp,deck):
- s=copy.deepcopy(sp);a=s['approach'];kind=s['kind'];base=2 if a==4 else 3 if a==5 else a;label=s['title'].split(':')[0]
- s['subtitle']='Users in thousands; point estimates' if deck else 'Numbers of women; estimates (95% survey intervals)'
- c=lambda m,ca:val(f'count|{a}|{m}|{ca}',deck=deck)
- pp=lambda m,ca:val(f'pp|{a}|{m}|{ca}','pp',deck)
- stock=lambda m:val('users2024' if m=='Total' else 'stock|'+m,deck=deck)
- name=lambda m:m
- heads=['Method / measure','Method\nfailure','Want more\neffective','Bleeding\nchanges','Other side\neffects/health','Access/cost/\nconvenience','All actionable\ncauses']
- if kind=='method':
-  s['table']=[['Method','2024 survey\ncurrent users','Original-method ending\nprobability' if a>3 else 'Actionable ending\nprobability','Year-end losses\nafter switching' if a>3 else 'Users ending\noriginal method','mCPR equivalent']]
-  for m in methods:s['table'].append([name(m),stock(m),val(f'risk|{base}|{m}|Total','risk',deck),c(m,'Total'),pp(m,'Total')])
-  s['table'].append(['EC',stock('EC'),'Not applied','Not estimated','Not estimated'])
-  s['table'].append(['Current-user mix\nexcluding EC',val('stock_no_ec',deck=deck),val(f'risk|{base}|Total|Total','risk',deck),c('Total','Total'),pp('Total','Total')])
- elif kind in ['cause','cause_pp']:
-  s['table']=[heads]+[[name(m),*[c(m,ca) for ca in causes],c(m,'Total')] for m in methods]
-  s['table'].append(['Year-end losses' if a>3 else 'Users ending method',*[c('Total',ca) for ca in causes],c('Total','Total')])
-  if kind=='cause_pp':
-   pop=meta['wra2025']/1000 if deck else meta['wra2025']
-   s['table'].append(['2025 women aged\n15–49 (fixed)',*[f'{pop:,.1f}']*6]);s['table'].append(['mCPR increase (pp)',*[pp('Total',ca) for ca in causes],pp('Total','Total')])
- elif kind=='baseline':
-  s['title']=label+': mCPR growth scenarios';s['subtitle']='2024 survey baseline and projected 2025 mCPR under three annual-change assumptions'
-  s['table']=[['Different mCPR\ngrowth scenarios','Annual change\n(pp/year)','2024 survey\nmCPR','Projected 2025\nmCPR']]+[[labels[j-1],f'{meta["scenarios"][j-1]["annual_change_pp"]:+.2f}',val('mcpr2024','pct',deck),val(f'base|{j}','pct',deck)] for j in range(1,4)]
- elif kind=='scenario':
-  s['table']=[['Different mCPR\ngrowth scenarios','2025 users\nusual scenario','2025\nmCPR','2025 users\nif retained','mCPR\nif retained','Increase\n(pp)']]
-  for j in range(1,4):
-   k=f'{j}|{a}|Total';s['table'].append([labels[j-1],val('usualusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedusers|'+k,deck=deck),val('retainedmcpr|'+k,'pct',deck),pp('Total','Total')])
- elif kind=='method_scenario':
-  j=s['scenario'];s['title']=label+': '+short[j-1]+' by method'
-  s['table']=[['Method','2024 survey\nusers','2025 users\nusual scenario','Losses\navoided','2025 users\nif retained','2025\nmCPR','mCPR\nif retained']]
-  for m in methods+['EC','Total']:
-   k=f'{j}|{a}|{m}';s['table'].append(['All modern' if m=='Total' else name(m),stock(m),val('usualusers|'+k,deck=deck),'Not estimated' if m=='EC' else c(m,'Total'),val('retainedusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedmcpr|'+k,'pct',deck)])
- else:raise ValueError(kind)
- definitions={1:'First-year: weighted actionable cumulative incidence in months 1–12 after initiation, applied to observed 2024 current users. Elapsed use is not incorporated.',2:'Historical: observed next-12-month actionable ending probability at current elapsed duration. The 61+ month group uses 37–60-month experience.',3:'AFT: seven weighted models predict next-12-month actionable endings conditional on elapsed use. Actionable and other endings compete, and five cause models allocate actionable endings.'}
- s['note']=definitions[base]
- s['note']+=(' Sensitivity: year-end losses deduct modern-to-modern switches and later restarters; EC counts as modern at year end.' if a>3 else ' Every actionable original-method ending is treated as a lost user. Switching/restarting is not deducted.')
- s['note']+=' Partner/spousal disapproval is excluded. The observed 2024 cohort is fixed across scenarios. Population and growth assumptions are fixed.'
- if not deck:s['note']+=' 95% intervals use 500 stratified PSU bootstrap draws; AFT families are fixed. CI bounds are not additive.'
- if base==3:s['note']+=' Sparse IUD causes have only 1–11 observed training events.'
- if a>3:s['note']+=' Sparse pathway cells use documented pooling.'
- if kind=='method':s['note']+=' Total ending probability averages method-specific risks using the 2024 current-user mix, excluding EC.'
- if kind=='baseline':s['note']=f'Recent annual change = (2024 DHS {meta["rates_from"]["dhs2024"]:.4f}% − 2018 DHS {meta["rates_from"]["dhs2018"]:.4f}%)/6. Longer-term change = (2024 DHS − 2013 DHS {meta["rates_from"]["dhs2013"]:.4f}%)/11. FPET-informed change = {meta["rates_from"]["fpet2025"]:.1f}% − {meta["rates_from"]["fpet2024"]:.1f}%. Each is added once to the 2024 DHS baseline. Growth assumptions are fixed.'
-
- return s
-for deck in [True,False]:(out/('planning_slides.json' if deck else 'planning_html.json')).write_text(json.dumps([make(s,deck) for s in old],indent=2))
-print('Built 40 Nigeria tables for 2024-to-2025, including both switching sensitivity sets.')
-)--------",
-  "302_revised_html.py" = r"--------("""Update Nigeria planning chapters from an observed 2024 cohort to 2025.
-
-Usage: update_html.py SOURCE_HTML STATS_DIR HTML_SPECS OUTPUT_HTML
-"""
-from pathlib import Path
-from lxml import html
-from html import escape
-import json,csv,re,copy,sys
-source,stats,specfile,target=map(Path,sys.argv[1:]);doc=html.parse(str(source))
-meta=json.loads((stats/'revision_inputs.json').read_text());spec=json.loads(specfile.read_text())
-D={r['key']:{k:float(r[k])for k in ['estimate','lower','upper']}for r in csv.DictReader((stats/'planning_intervals.csv').open())}
-methods=meta['methods'];causes=meta['causes'];oldids=set(doc.xpath('//section/@id'))
-def sec(sid):return doc.xpath(f'//section[@id="{sid}"]')[0]
-def table(rows):
- return '<div class="tablewrap"><table class="survey-table"><thead><tr>'+''.join('<th>'+escape(str(v)).replace('\n','<br>')+'</th>'for v in rows[0])+'</tr></thead><tbody>'+''.join('<tr>'+''.join(('<th scope="row">'if j==0 else'<td>')+escape(str(v)).replace('\n','<br>')+('</th>'if j==0 else'</td>')for j,v in enumerate(row))+'</tr>'for row in rows[1:])+'</tbody></table></div>'
-def article(s,ci=True):
- s=copy.deepcopy(s)
- if not ci:
-  s['table']=[[re.sub(r'\n\([^\n]*[–−][^\n]*\)|\n\(CI unavailable†\)','',v)for v in row]for row in s['table']]
-  s['subtitle']=s['subtitle'].replace('estimates (95% survey intervals)','point estimates')
-  s['note']=re.sub(r' 95% intervals use.*?CI bounds are not additive\.','',s['note'])
- return '<article class="duration-slide"><h3>'+escape(s['title'])+'</h3><p>'+escape(s['subtitle'])+'</p>'+table(s['table'])+'<p class="note">'+escape(s['note'])+'</p></article>'
-def reset(sid,title,markup):
- s=sec(sid);s.clear();s.set('id',sid);s.set('class','analysis-section duration-block');h=html.Element('h2');h.text=title;s.append(h)
- for x in html.fragments_fromstring(markup):
-  if isinstance(x,str):s.text=(s.text or'')+x
-  else:s.append(x)
- return s
-def val(key,kind='num'):
- x=D[key];digits=0 if kind=='num'else 1 if kind=='risk'else 2
- f=lambda v:f'{v:,.{digits}f}'
- suffix=' pp'if kind=='pp'else'%'if kind in ['risk','pct']else''
- return f(x['estimate'])+suffix+'\n('+f(x['lower'])+'–'+f(x['upper'])+')'
-count=lambda a,m='Total',c='Total':val(f'count|{a}|{m}|{c}')
-pp=lambda a,m='Total',c='Total':val(f'pp|{a}|{m}|{c}','pp')
-def matrix(a,as_pp=False):return table([['Method / measure',*causes,'All actionable causes']]+[[m,*[(pp(a,m,c)if as_pp else count(a,m,c))for c in causes],pp(a,m)if as_pp else count(a,m)]for m in methods+['Total']])
-reset('user-projections','First-year actionable discontinuation: 2024 users followed to 2025',article(spec[0])+article(spec[1]))
-reset('mcpr-scenarios','First-year approach: 2025 mCPR under three growth scenarios',article(spec[2])+article(spec[3])+article(spec[7]))
-reset('method-level-mcpr-scenarios','First-year approach: 2025 mCPR scenarios by method',''.join(article(s)for s in spec[4:7]))
-rows=[['Approach (no switching adjustment)','Actionable original-method endings (95% CI)','2025 mCPR increase (95% CI)']]
-for a,name in [(1,'First-year probability'),(2,'Historical duration-aware'),(3,'AFT survival')]:rows.append([name,count(a),pp(a)])
-reset('three-approach-planning','Three approaches: observed 2024 users followed to 2025',
- '<p>All three main calculations concern potentially actionable endings of original modern methods, excluding EC and partner/spousal disapproval. The reference stock is the observed 2024 DHS all-women prevalence and method distribution multiplied by 2024 UN women aged 15–49. The historical and AFT probabilities use the observed 2024 elapsed-duration distribution. Each scenario projects usual-condition 2025 mCPR by adding one annual growth increment to the 2024 DHS baseline. Additional retained users are added to that usual-condition 2025 stock. The same observed 2024 cohort is fixed across scenarios. Every pp contribution divides the retained count by 57,393,553 projected women ages 15–49 in 2025, multiplied by 100. Main tables treat every actionable ending as a user lost and do not deduct switching or restarting. EC remains in baseline mCPR and contributes no retention increment.</p>'+table(rows)+
- '<p class="note">Intervals use the existing 500 full-frame stratified PSU bootstrap replicates. They propagate survey sampling, prevalence, method mix, duration, historical risks, fitted AFT curves and observed pathways. Population, secular-growth assumptions and selected AFT families remain fixed. These are conditional scenarios, not estimates of intervention effectiveness.</p>')
-for sid,title,part,a in [('historical-duration-aware-planning','Historical duration-aware approach: 2025 mCPR without switching deduction',spec[8:16],2),('aft-duration-aware-planning','AFT survival approach: 2025 mCPR without switching deduction',spec[16:24],3)]:
- reset(sid,title,''.join(article(s,False)for s in part)+'<h3>Additional detail: 2025 mCPR percentage-point equivalent by method and cause (95% CI)</h3>'+matrix(a,True))
-for sid,title,part in [('historical-switching-sensitivity','Historical switching sensitivity: 2024 users followed to 2025',spec[24:32]),('aft-switching-sensitivity','AFT switching sensitivity: 2024 users followed to 2025',spec[32:40])]:reset(sid,title,''.join(article(s)for s in part))
-# Keep the complementary pathway diagnostics, with the same rebased counts.
-rows=[['Method','Observed 2024 users','Gross actionable endings','Direct modern switches','Without direct switch']]
-for m in methods+['Total']:rows.append([m,val('stock_no_ec'if m=='Total'else'stock|'+m),count(1,m),count(6,m),count(9,m)])
-reset('switch-bridge','Sensitivity: direct switching only, 2024 to 2025','<p>Direct switching means modern use in the next recorded month. Later restarting is not deducted here. EC counts as modern at destination.</p>'+table(rows)+'<h3>Direct switches by cause (95% CI)</h3>'+matrix(6)+'<h3>2025 mCPR equivalent if endings without a direct switch were losses (95% CI)</h3>'+matrix(9,True))
-rows=[['Current method','Gross actionable endings','Direct switches','Modern at year end after ending','Outside modern use at year end']]
-for m in methods+['Total']:rows.append([m,count(2,m),count(7,m),count(10,m),count(4,m)])
-reset('duration-bridge','Sensitivity: historical duration and modern use in 2025',table(rows)+'<h3>Outside modern use at year end by cause (95% CI)</h3>'+matrix(4)+article(spec[27]))
-reset('duration-aware-cause-pp-matrices','Sensitivity: historical year-end loss by method and cause, 2025',matrix(4)+'<h3>2025 percentage-point equivalents (95% CI)</h3>'+matrix(4,True))
-rows=[['Current method','AFT actionable endings','Direct switches','Modern at year end after ending','Outside modern use at year end']]
-for m in methods+['Total']:rows.append([m,count(3,m),count(8,m),count(11,m),count(5,m)])
-reset('duration-planning-appendix','Sensitivity: AFT pathway diagnostics, 2024 to 2025','<p>Original-method ending probabilities are unchanged. Year-end modern-use status comes from observed calendar pathways, including EC. User counts now start from observed 2024 users.</p>'+table(rows)+'<h3>AFT original-method endings by cause (95% CI)</h3>'+matrix(3)+'<h3>Direct switches by cause (95% CI)</h3>'+matrix(8)+'<h3>Outside modern use at year end by cause (95% CI)</h3>'+matrix(5))
-for sid in ['switch-bridge','duration-bridge','duration-aware-cause-pp-matrices','duration-planning-appendix']:
- sec(sid).append(html.fragment_fromstring('<p class="note">Counts use the observed 2024 current-user cohort. All 2025 pp equivalents divide by 57,393,553 projected women ages 15–49. Intervals use 500 stratified PSU bootstrap draws, conditional on fixed population and growth assumptions.</p>'))
-# Two-year reference table is replaced by a single one-year projection.
-rows=[['Year','Women aged 15–49'],['2024',f'{meta["wra2024"]:,.0f}'],['2025',f'{meta["wra2025"]:,.0f}']]
-growth=[['Year','Growth scenario','All-women mCPR (95% survey CI)','Women ages 15–49','Modern users (95% survey CI)'],['2024','Observed DHS baseline',val('mcpr2024','pct'),f'{meta["wra2024"]:,.0f}',val('users2024')]]
-for j,s in enumerate(meta['scenarios'],1):growth.append(['2025',s['scenario']+f' ({s["annual_change_pp"]:+.2f} pp/year)',val(f'base|{j}','pct'),f'{meta["wra2025"]:,.0f}',val(f'baseusers|{j}')])
-reset('population','Nigeria population and 2025 mCPR inputs','<p>All scenarios start from the 2024 DHS all-women mCPR of 13.104165%. Recent growth annualizes the 2018–2024 difference over six years. Longer-term growth annualizes the 2013–2024 difference over eleven years. FPET-informed growth applies the modeled 2024–2025 change of +0.40 pp. Each adds one annual increment to the 2024 DHS baseline. UN populations supply the 2024 current-user scale and the 2025 outcome denominator.</p>'+table(rows)+'<h3>Observed 2024 baseline and usual-condition 2025 scenarios</h3>'+table(growth)+'<p class="note">The retention calculation uses observed 2024 users, not projected 2025 users. Current method and elapsed-duration profiles remain those observed in the 2024 DHS. Those probabilities and the 2024 cohort remain fixed across scenarios. Survey intervals condition on fixed growth and population assumptions.</p>')
-# A historical illustrative pathway is not a forecast of a particular cohort.
-for p in sec('action-pathways').xpath('.//p'):
- if '2025–26' in p.text_content():p.text=p.text_content().replace('2025–26','2024–25')
-# Complete left navigation, retaining section anchors.
-aside=doc.find('.//aside');aside.clear();strong=html.Element('strong');strong.text='Nigeria discontinuation';aside.append(strong)
-for s in doc.xpath('//main/section[@id]'):
- h=s.find('.//h2')
- if h is not None:
-  a=html.Element('a',href='#'+s.get('id'));a.text=h.text_content();aside.append(a)
-assert oldids==set(doc.xpath('//section/@id'))
-text=html.tostring(doc,encoding='unicode',doctype='<!doctype html>')
-visible=' '.join(doc.xpath('//body//text()[not(ancestor::script) and not(ancestor::style)]'))
-stale=re.search(r'2026|2025–26',visible)
-assert not stale,visible[max(0,stale.start()-160):stale.start()+220]if stale else''
-target.write_text(text);print('Updated all main and sensitivity planning sets; preserved',len(oldids),'sections.')
-)--------",
-  "303_validate_revised.py" = r"--------("""Validate the incremental report build; do not claim a fresh full rebuild."""
-from pathlib import Path
-from lxml import html,etree
-import sys,json,csv,hashlib,re
-country,base,target,stats,out=sys.argv[1:]
-base,target,stats,out=map(Path,[base,target,stats,out]);a=html.parse(str(base));b=html.parse(str(target))
-ids=lambda d:set(d.xpath('//section/@id'))
-assert ids(a)==ids(b),'Section coverage changed'
-assert a.xpath('//img/@src')==b.xpath('//img/@src'),'Unrequested figure changes'
-assert len(b.xpath('//img'))==len(a.xpath('//img'))
-assert b.xpath('//*[@id="four-reason-groups"]'),'Partner/spousal classification block missing'
-groups=b.xpath('//*[@id="four-reason-groups"]//tr')
-assert any('Partner/spousal' in r.text_content()for r in groups)
-scan=re.sub(r'data:[^;]+;base64,[A-Za-z0-9+/=]+','[embedded figure]',target.read_text())
-assert not re.search(r'/(?:Users|Volumes)/|file:/{2,}|[A-Z]:\\',scan,re.I),'Personal path in report'
-md=json.loads((stats/'revision_inputs.json').read_text())
-assert len(md['scenarios'])==3
-D={r['key']:float(r['estimate'])for r in csv.DictReader((stats/'revised_planning_intervals.csv').open())}
-methods=md['methods'];causes=md['causes'];year=2026 if country=='Ethiopia' else 2025
-for ap in range(1,6):
-    total=D[f'count|{ap}|Total|Total']
-    assert abs(total-sum(D[f'count|{ap}|{m}|{c}']for m in methods for c in causes))<1e-5
-    assert abs(D[f'pp|{ap}|Total|Total']-100*total/md['wra'+str(year)])<1e-8
-    for j in range(1,4):
-        k=f'{j}|{ap}|Total'
-        assert abs(D['retainedmcpr|'+k]-D['usualmcpr|'+k]-D[f'pp|{ap}|Total|Total'])<1e-8
-def tables(d):
-    return [[[re.sub(r'\s+','',c.text_content())for c in r.xpath('./th|./td')]for r in t.xpath('.//tr')]for t in d.xpath('//table')]
-old,new=tables(a),tables(b)
-same=sum(x==y for x,y in zip(old,new))
-warnings=[]
-def first_number(s):
-    m=re.search(r'[-−]?\d[\d,]*(?:\.\d+)?',s)
-    return float(m[0].replace(',','').replace('−','-'))if m else None
-for article in b.xpath('//article[contains(@class,"duration-slide")]'):
-    heading=article.find('h3');title=heading.text_content()if heading is not None else''
-    if not title.endswith('by method'):continue
-    for tr in article.xpath('.//table//tbody/tr'):
-        cells=[c.text_content()for c in tr]
-        if len(cells)!=7:continue
-        usual,retained,loss=[first_number(cells[i])for i in [2,4,3]]
-        if None in [usual,retained,loss]:continue
-        delta=retained-usual-loss
-        if abs(delta)>2:
-            warnings.append(dict(table=title,row=cells[0],projected_users=usual,displayed_retained_users=loss,
-                                 displayed_total=retained,displayed_count_discrepancy=delta,
-                                 action='Preserved from the input report; reconcile fitted-output versions before treating the full report as mathematically reconciled.'))
-result=dict(status='pass_with_existing_report_warnings'if warnings else'pass',country=country,reference_year=2025 if country=='Ethiopia' else 2024,outcome_year=year,
- sections=len(ids(b)),tables=len(new),base_tables=len(old),tables_matching_input_report=same,
- figures_preserved=len(b.xpath('//img')),incremental_build=True,full_raw_ir_to_all_chapters_verified=False,
- planning_arithmetic_input_vectors='pass',existing_report_arithmetic_warnings=warnings,
- base_report_sha256=hashlib.sha256(base.read_bytes()).hexdigest(),
- output_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
- scope='Planning arithmetic is rebuilt from supplied fitted estimates and bootstrap draws. Unchanged chapters and figures are preserved from the supplied validated HTML layout; they are not freshly recomputed by this command.')
-(out/'revised_build_validation.json').write_text(json.dumps(result,indent=2))
-print(json.dumps({k:v for k,v in result.items()if k not in ['scope','base_report_sha256','output_sha256']}))
-)--------"
-)
-# Incremental report build: recalculates revised planning from fitted numerical
-# outputs and applies the revision to an existing validated report layout.
-# Unchanged analytical chapters and figures come from that report. This is not
-# a fresh raw-IR rebuild of every chapter or an embedded snapshot replay.
-run_revised_report <- function(opt) {
-  if (!requireNamespace("jsonlite",quietly=TRUE) || !requireNamespace("digest",quietly=TRUE))
-    stop("Install jsonlite and digest.")
-  root <- opt[["project-root"]]
-  if (is.null(root)) root <- file.path("analysis_output",tolower(COUNTRY),"revised")
-  dir.create(root,recursive=TRUE,showWarnings=FALSE);root<-normalizePath(root,mustWork=TRUE)
-  script_arg<-grep("^--file=",commandArgs(),value=TRUE)
-  script_folder<-if(length(script_arg))dirname(sub("^--file=","",script_arg[1]))else"."
-  stats <- opt[["statistics-dir"]]
-  if(is.null(stats))stats<-file.path(script_folder,"revision_inputs")
-  if (is.null(stats)||!dir.exists(stats)) stop("Supply --statistics-dir with fitted point estimates and survey bootstrap draws.")
-  stats<-normalizePath(stats,mustWork=TRUE)
-  required<-c("planning_point.rds","planning_replicates.rds",if(COUNTRY=="Ethiopia")"metadata.json"else"planning_metadata.rds")
-  if(COUNTRY=="Ethiopia")required<-c(required,"planning_intervals.csv")
-  if(!all(file.exists(file.path(stats,required))))stop("The numerical input directory is incomplete.")
-  if(length(readRDS(file.path(stats,"planning_replicates.rds")))!=500L)
-    stop("The saved-report revision requires the validated 500-replicate numerical output.")
-  build<-file.path(root,"build");result<-file.path(root,"output");code<-file.path(root,"Code")
-  for(d in c(build,result,code))dir.create(d,recursive=TRUE,showWarnings=FALSE)
-  for(n in names(REVISION_HELPERS))writeLines(REVISION_HELPERS[[n]],file.path(code,n),useBytes=TRUE)
-  assumptions<-opt[["revision-inputs"]]
-  if(is.null(assumptions)) {assumptions<-file.path(build,"growth_assumptions.json");writeLines(REVISED_GROWTH_ASSUMPTIONS,assumptions,useBytes=TRUE)}
-  if(!file.exists(assumptions))stop("Revision assumptions file does not exist.")
-  schema<-file.path(build,"table_schema.json");writeLines(REVISED_TABLE_SCHEMA,schema,useBytes=TRUE)
-  python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
-  run<-function(exe,args) {
-    status<-system2(exe,shQuote(args))
-    if(!identical(status,0L))stop("Revised build failed; no checked report was overwritten.")
-  }
-  run(file.path(R.home("bin"),"Rscript"),c(file.path(code,"300_revised_planning.R"),stats,assumptions,build))
-  if(identical(opt$run,"revised-planning"))return(invisible(NULL))
-  template<-opt[["base-html"]]
-  if(is.null(template)) {
-    template<-file.path(script_folder,REPORT_BASENAME)
-  }
-  if(!file.exists(template))stop("Supply --base-html with the latest validated report layout.")
-  template<-normalizePath(template,mustWork=TRUE)
-  target<-file.path(result,REPORT_BASENAME)
-  if(identical(normalizePath(target,mustWork=FALSE),template))stop("Build output must differ from the input report.")
-  run(python,c(file.path(code,"301_revised_tables.py"),build,schema,build))
-  if(COUNTRY=="Ethiopia") {
-    run(python,c(file.path(code,"302_revised_html.py"),build,schema,template,target))
-  } else if(COUNTRY=="Nigeria") {
-    run(python,c(file.path(code,"302_revised_html.py"),template,build,file.path(build,"planning_html.json"),target))
-  } else {
-    run(python,c(file.path(code,"302_revised_html.py"),template,template,build,file.path(build,"planning_html.json"),target))
-  }
-  run(python,c(file.path(code,"303_validate_revised.py"),COUNTRY,template,target,build,result))
-  cat("Revised HTML build completed. Review output/revised_build_validation.json for its scope.\n")
-}
-
-REQUIRED_R_PACKAGES <- unique(c(REQUIRED_R_PACKAGES,"abind"))
-for (n in names(REVISION_HELPERS)) MODULES[[n]] <- list(language=if(grepl("[.]R$",n))"R"else"Python",args=character(),code=REVISION_HELPERS[[n]])
-
-
-REVISION_HELPERS[["300_revised_planning.R"]] <- r"------------(#!/usr/bin/env Rscript
-# Usage: compute_2025.R SAVED_STATS_DIR VERIFIED_GROWTH_JSON OUTPUT_DIR
-# Reuses saved point estimates and 500 survey bootstrap draws. Models are not refitted.
-a<-commandArgs(TRUE);stopifnot(length(a)==3)
-suppressPackageStartupMessages(library(jsonlite))
-point<-readRDS(file.path(a[1],'planning_point.rds'));reps<-readRDS(file.path(a[1],'planning_replicates.rds'));meta<-readRDS(file.path(a[1],'planning_metadata.rds'))
-outdir<-a[3];dir.create(outdir,recursive=TRUE,showWarnings=FALSE)
-verified<-fromJSON(a[2]);rates<-verified$scenarios$annual_change_pp
-labels<-verified$scenarios$scenario
-meta$epsilon<-0
+if(is.null(meta$epsilon))meta$epsilon<-0
 metrics<-function(x){
  counts<-x$risk[1:8,,,drop=FALSE]
  for(m in meta$methods)counts[,m,]<-x$risk[1:8,m,]*x$users2024[m]
  new_counts<-x$risk[9,,,drop=FALSE];for(m in meta$methods)new_counts[1,m,]<-x$risk[9,m,]*x$users2024[m]
  counts<-abind::abind(counts,counts[1,,,drop=FALSE]-counts[6,,,drop=FALSE],counts[2,,,drop=FALSE]-counts[4,,,drop=FALSE],counts[3,,,drop=FALSE]-counts[5,,,drop=FALSE],new_counts,counts[3,,,drop=FALSE]-new_counts,along=1)
  y<-c(stock_no_ec=sum(x$users2024[meta$methods]),mcpr2024=x$mcpr,users2024=sum(x$users2024))
- for(m in c(meta$methods,'EC'))y[paste('stock',m,sep='|')]<-x$users2024[m]
+ for(m in c(meta$methods,'EC','Permanent methods'))y[paste('stock',m,sep='|')]<-x$users2024[m]
  for(i in 1:13)for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
   mi<-if(m=='Total')1:5 else match(m,meta$methods);ci<-if(ca=='Total')1:5 else match(ca,meta$causes)
   v<-sum(counts[i,mi,ci]);stock<-if(m=='Total')sum(x$users2024[meta$methods])else x$users2024[m];key<-paste(i,m,ca,sep='|')
   y[paste0('count|',key)]<-v;y[paste0('pp|',key)]<-100*v/meta$wra2025;y[paste0('risk|',key)]<-100*v/stock
  }
  for(j in 1:3){base<-x$mcpr+rates[j];y[paste0('base|',j)]<-base;y[paste0('baseusers|',j)]<-base/100*meta$wra2025
-  for(i in 1:13)for(m in c(meta$methods,'EC','Total')){
-   share<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(counts[i,,])else if(m=='EC')0 else sum(counts[i,m,]);usual<-base*share
+  for(i in 1:13)for(m in c(meta$methods,'EC','Permanent methods','Total')){
+   share<-if(m=='Total')1 else x$mix[m];add<-if(m=='Total')sum(counts[i,,])else if(m%in%c('EC','Permanent methods'))0 else sum(counts[i,m,]);usual<-base*share
    key<-paste(j,i,m,sep='|');y[paste0('usualusers|',key)]<-usual/100*meta$wra2025;y[paste0('retainedusers|',key)]<-usual/100*meta$wra2025+add
    y[paste0('usualmcpr|',key)]<-usual;y[paste0('retainedmcpr|',key)]<-usual+100*add/meta$wra2025
   }
@@ -6310,9 +5798,9 @@ jsonlite::write_json(list(scenarios=summary,reference_year=2024,outcome_year=202
 stopifnot(!anyNA(pt),all(pt[grepl('^(count|pp)[|]',names(pt))]>=-1e-6))
 cat('2025 mCPR gains (gross first-year / historical / AFT; switching historical / AFT):\n');print(sapply(1:5,function(i)pt[paste0('pp|',i,'|Total|Total')]))
 print(summary)
-)------------"
+)----------------------")
 
-REVISION_HELPERS[["301_revised_tables.py"]] <- r"------------(#!/usr/bin/env python3
+MODULES[["301_revised_tables.py"]] <- list(language="Python", packaged_sha256="51246815163f03b8b9d24611ce540e7c15a754d063e1849e9ef6beddac8b7f46", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Usage: build_tables.py REVISED_STATS_DIR ORIGINAL_SPECS_JSON OUTPUT_DIR"""
 from pathlib import Path
 import sys,csv,json,copy
@@ -6341,7 +5829,8 @@ def make(sp,deck):
   s['table']=[['Method','2024 survey\ncurrent users','Original-method ending\nprobability' if a>3 else 'Actionable ending\nprobability','Year-end losses\nafter switching' if a>3 else 'Users ending\noriginal method','mCPR equivalent']]
   for m in methods:s['table'].append([name(m),stock(m),val(f'risk|{base}|{m}|Total','risk',deck),c(m,'Total'),pp(m,'Total')])
   s['table'].append(['EC',stock('EC'),'Not applied','Not estimated','Not estimated'])
-  s['table'].append(['Current-user mix\nexcluding EC',val('stock_no_ec',deck=deck),val(f'risk|{base}|Total|Total','risk',deck),c('Total','Total'),pp('Total','Total')])
+  s['table'].append(['Permanent methods',stock('Permanent methods'),'Not modeled','Not estimated','Not estimated'])
+  s['table'].append(['Reversible users\nexcluding EC',val('stock_no_ec',deck=deck),val(f'risk|{base}|Total|Total','risk',deck),c('Total','Total'),pp('Total','Total')])
  elif kind in ['cause','cause_pp']:
   s['table']=[heads]+[[name(m),*[c(m,ca) for ca in causes],c(m,'Total')] for m in methods]
   s['table'].append(['Year-end losses' if a>3 else 'Users ending method',*[c('Total',ca) for ca in causes],c('Total','Total')])
@@ -6358,8 +5847,8 @@ def make(sp,deck):
  elif kind=='method_scenario':
   j=s['scenario'];s['title']=label+': '+short[j-1]+' by method'
   s['table']=[['Method','2024 survey\nusers','2025 users\nusual scenario','Losses\navoided','2025 users\nif retained','2025\nmCPR','mCPR\nif retained']]
-  for m in methods+['EC','Total']:
-   k=f'{j}|{a}|{m}';s['table'].append(['All modern' if m=='Total' else name(m),stock(m),val('usualusers|'+k,deck=deck),'Not estimated' if m=='EC' else c(m,'Total'),val('retainedusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedmcpr|'+k,'pct',deck)])
+  for m in methods+['EC','Permanent methods','Total']:
+   k=f'{j}|{a}|{m}';s['table'].append(['All modern' if m=='Total' else name(m),stock(m),val('usualusers|'+k,deck=deck),'Not estimated' if m in ['EC','Permanent methods'] else c(m,'Total'),val('retainedusers|'+k,deck=deck),val('usualmcpr|'+k,'pct',deck),val('retainedmcpr|'+k,'pct',deck)])
  else:raise ValueError(kind)
  definitions={1:'First-year: weighted actionable cumulative incidence in months 1–12 after initiation, applied to observed 2024 current users. Elapsed use is not incorporated.',2:'Historical: observed next-12-month actionable ending probability at current elapsed duration. The 61+ month group uses 37–60-month experience.',3:'AFT: seven weighted models predict next-12-month actionable endings conditional on elapsed use. Actionable and other endings compete, and five cause models allocate actionable endings.'}
  s['note']=definitions[base]
@@ -6375,9 +5864,9 @@ def make(sp,deck):
 from wording import revise
 for deck in [True,False]:(out/('planning_slides.json' if deck else 'planning_html.json')).write_text(json.dumps([revise(make(s,deck),deck) for s in old],indent=2))
 print('Built 48 Nigeria tables for 2024-to-2025, including all three switching sensitivity sets.')
-)------------"
+)----------------------")
 
-REVISION_HELPERS[["302_revised_html.py"]] <- r"------------("""Update Nigeria planning chapters from an observed 2024 cohort to 2025.
+MODULES[["302_revised_html.py"]] <- list(language="Python", packaged_sha256="62a72a5babfa7974d5fbd704d153586e193f3960bca06efc722d3be42f09cbec", args=character(0), code=r"----------------------("""Update Nigeria planning chapters from an observed 2024 cohort to 2025.
 
 Usage: update_html.py SOURCE_HTML STATS_DIR HTML_SPECS OUTPUT_HTML
 """
@@ -6454,7 +5943,7 @@ else:
  newsec=html.Element('section',id='aft-modeled-transition-sensitivity');sec('aft-switching-sensitivity').addnext(newsec)
 newsec.clear();newsec.set('id','aft-modeled-transition-sensitivity');newsec.set('class','analysis-section duration-block')
 h=html.Element('h2');h.text='AFT sensitivity using modeled switching and restarting';newsec.append(h)
-p=html.Element('p');p.text='This sensitivity keeps the original AFT discontinuation probabilities. A separate model estimates immediate modern switching, while AFT-based transitions track later use or non-use, including restarting and stopping again. The tables count women outside modern use at the common endpoint, 12 months after the prediction starts. Modern use at that endpoint includes EC.';newsec.append(p)
+p=html.Element('p');p.text='This sensitivity keeps the original AFT discontinuation probabilities. A separate model estimates immediate modern switching, while AFT-based transitions track later use or non-use, including restarting and stopping again. The tables count women outside modern use at the common endpoint, 12 months after the prediction starts. Modern use at that endpoint includes EC. Permanent-method destinations are absorbing; sparse uptake uses pooled observed probabilities.';newsec.append(p)
 for item in spec[40:48]:newsec.append(html.fragment_fromstring(article(item)))
 checkfile=stats/'transition_validation.json'
 if checkfile.exists():
@@ -6483,9 +5972,9 @@ visible=' '.join(doc.xpath('//body//text()[not(ancestor::script) and not(ancesto
 stale=re.search(r'2026|2025–26',visible)
 assert not stale,visible[max(0,stale.start()-160):stale.start()+220]if stale else''
 target.write_text(text);print('Updated all main and sensitivity planning sets; preserved',len(oldids),'sections.')
-)------------"
+)----------------------")
 
-REVISION_HELPERS[["303_validate_revised.py"]] <- r"------------("""Validate the incremental report build; do not claim a fresh full rebuild."""
+MODULES[["303_validate_revised.py"]] <- list(language="Python", packaged_sha256="f400146ca7e3244cd807100d28207859e24e62860315e100913b497417ace7d7", args=character(0), code=r"----------------------("""Validate the incremental report build; do not claim a fresh full rebuild."""
 from pathlib import Path
 from lxml import html,etree
 import sys,json,csv,hashlib,re
@@ -6541,47 +6030,9 @@ result=dict(status='pass_with_existing_report_warnings'if warnings else'pass',co
  scope='Planning arithmetic is rebuilt from supplied fitted estimates and bootstrap draws. Unchanged chapters and figures are preserved from the supplied validated HTML layout; they are not freshly recomputed by this command.')
 (out/'revised_build_validation.json').write_text(json.dumps(result,indent=2))
 print(json.dumps({k:v for k,v in result.items()if k not in ['scope','base_report_sha256','output_sha256']}))
-)------------"
+)----------------------")
 
-REVISION_HELPERS[["wording.py"]] <- r"------------("""Plain-language explanations for Nigeria's 2024-to-2025 planning tables."""
-import copy
-LABELS={1:'Exploratory',2:'Historical',3:'AFT',4:'Historical switching',5:'AFT observed switching',12:'AFT modeled switching'}
-PROB={
-1:'Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded.',
-2:'Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience.',
-3:'Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded.',
-4:'Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience.',
-5:'AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. The calculation subtracts women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled.',
-12:'AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months.'}
-DENOM='mCPR contribution (pp) = users retained ÷ 57,393,553 women aged 15–49 in 2025 × 100.'
-GROWTH='Starts from the 2024 DHS all-women mCPR. Annual changes are (2024−2018)/6 for the recent DHS trend and (2024−2013)/11 for the longer trend. The FPET-informed scenario adds 0.40 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2025. The same observed 2024 user cohort applies across scenarios.'
-SCEN=['6-year DHS trend','11-year DHS trend','FPET-informed growth']
-def revise(old,deck=True):
- s=copy.deepcopy(old);a=s['approach'];kind=s['kind'];label=LABELS[a];sens=a in [4,5,12]
- if kind=='method':title=f'{label}: '+('users outside modern use at 12 months'if sens else'users who may discontinue for actionable reasons')
- elif kind=='cause':title=f'{label}: '+('year-end losses by method and cause'if sens else'actionable discontinuation by method and cause')
- elif kind=='cause_pp':title=f'{label}: mCPR contribution by actionable cause'
- elif kind=='baseline':title=f'{label}: assumptions for 2025 mCPR'
- elif kind=='scenario':title=f'{label}: 2025 mCPR if '+('year-end losses are avoided'if sens else'actionable discontinuation is averted')
- elif kind=='method_scenario':title=f'{label}: users and mCPR under '+SCEN[s['scenario']-1]
- else:raise ValueError(kind)
- s['title']=title;units='Users in thousands'if deck else'Number of users (95% CI)'
- if kind=='baseline':s['subtitle']='2024 survey baseline and a one-year projection to 2025'
- elif a==1:s['subtitle']='Exploratory estimate. Ignores time already using the method. '+units
- elif sens:s['subtitle']='Deducts women using any modern method at the 12-month endpoint. '+units
- else:s['subtitle']='Next 12 months, accounting for time already using the method. '+units
- note=GROWTH if kind=='baseline'else PROB[a]
- if a==1 and kind=='method':note+=' The total uses the current-user method mix. The pooled episode estimate is 21.4%.'
- if sens and kind=='method':note+=' The probability column describes the original method ending. The loss count also deducts modern use at the endpoint.'
- if kind in ['method','scenario','method_scenario','cause_pp']:note+=' '+DENOM
- if kind=='method_scenario':note+=' The usual scenario keeps the current method mix.'
- note+=' Partner/spousal disapproval is excluded.'
- note+=(' Estimates use DHS survey weights. Population and growth assumptions stay fixed.'if deck else' 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI.')
- if a in [3,5,12]:note+=(' Fits use the selected survival distributions.'if deck else' AFT intervals hold the selected curve families fixed.')+' Some method/cause estimates rely on very few events.'
- s['note']=note;return s
-)------------"
-
-MODULES[["310_nigeria_planning_audit.R"]] <- list(language="R",args=character(),code=r"------------(# DHS complex survey design for this module.
+MODULES[["310_nigeria_planning_audit.R"]] <- list(language="R", packaged_sha256="b64e48a331227d0b24611f98fb1cd2f89c83e98c80421822b64e4870e9a542f7", args=character(0), code=r"----------------------(# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -6602,6 +6053,7 @@ cores<-if(length(args)>=4)as.integer(args[4])else 4L
 suppressPackageStartupMessages(library(survival))
 ir<-readRDS(file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'))
 e<-readRDS(file.path(root,'Data/Derived/nigeria_2024_modern_episodes.rds'))
+e<-e[!e$method_code %in% c(6L,7L),]
 cal<-readRDS(file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'))
 sup<-file.path(root,'output/Supporting_data')
 script_file<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -6619,7 +6071,8 @@ methods<-c('Injectables','Implants','Pill','IUD','Other modern')
 causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
 codes<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L)); action<-unlist(codes)
 modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
-endpoint_modern<-c(modern,16L)
+modern<-setdiff(modern,c(6L,7L))
+endpoint_modern<-c(modern,6L,7L,16L)
 method_group<-function(x)ifelse(x==3,'Injectables',ifelse(x==11,'Implants',ifelse(x==1,'Pill',ifelse(x==2,'IUD','Other modern'))))
 cause_group<-function(x){z<-rep(NA_integer_,length(x));for(j in 1:5)z[x %in% codes[[j]]]<-j;z}
 wt<-as.numeric(ir$v005)/1e6;psu<-as.numeric(ir$v021);stratum<-as.numeric(ir$v022)
@@ -6627,6 +6080,7 @@ frame<-unique(data.frame(psu,stratum)); stopifnot(!anyDuplicated(frame$psu))
 strata<-split(seq_len(nrow(frame)),frame$stratum);stopifnot(all(lengths(strata)>1))
 psu_index<-match(psu,frame$psu)
 u<-as.numeric(ir$v313)==3;umethod<-method_group(as.numeric(ir$v312));umethod[as.numeric(ir$v312)==16]<-'EC'
+umethod[as.numeric(ir$v312) %in% c(6L,7L)]<-'Permanent methods'
 uindex<-which(u & as.numeric(ir$v312) %in% modern)
 current<-data.frame(woman=uindex,method=umethod[uindex],elapsed=dhs_current_duration(ir,uindex),wt=wt[uindex])
 stopifnot(all(is.finite(current$elapsed)),all(current$elapsed>=0))
@@ -6677,13 +6131,14 @@ write.csv(do.call(rbind,support),file.path(out,'switching_support.csv'),row.name
 source(file.path(dirname(script_file),'transition_model.R'))
 point_transitions<-fit_models(initial,follow,'selected',.1)
 selected_transition_families<-vapply(point_transitions$transitions,`[[`,'','family')
+write.csv(data.frame(initial_permanent_probability=attr(point_transitions$initial,'permanent_probability'),monthly_permanent_probability=point_transitions$permanent_monthly_probability,initial_permanent_histories=sum(as.character(initial$next_state)=='Permanent'),later_permanent_entries=sum(follow$permanent_entry),rule='Pooled weighted entry; permanent state absorbing through endpoint'),file.path(out,'permanent_transition_assumptions.csv'),row.names=FALSE)
 jsonlite::write_json(list(selected_families=selected_transition_families,episodes=nrow(initial),women=length(unique(initial$woman)),transitions=nrow(follow)),file.path(out,'transition_fit_metadata.json'),auto_unbox=TRUE,pretty=TRUE)
 pred_grid<-unique(data.frame(method=rep(methods,each=60*5),cause=rep(rep(causes,each=60),5),end_duration=rep(1:60,25)))
 pred_grid<-normalize_features(pred_grid);pred_grid$gid<-seq_len(nrow(pred_grid))
 measure<-function(mult,replicate=0L){
  old_dhs<-options(dhs.replication=replicate>0L);on.exit(options(old_dhs),add=TRUE)
  iw<-wt*mult[psu_index];ew<-e$wt*mult[psu_index[e$woman_row]];lw<-land$wt*mult[psu_index[land$woman]];cw<-current$wt*mult[psu_index[current$woman]]
- mcpr<-100*sum(iw[u])/sum(iw);mix<-vapply(c(methods,'EC'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0)
+ mcpr<-100*sum(iw[u])/sum(iw);mix<-vapply(c(methods,'EC','Permanent methods'),function(m)sum(iw[u & umethod==m])/sum(iw[u]),0.0)
  stock<-w24*mcpr/100*mix
  # Main gross estimates, year-end switching sensitivities, and direct-switch diagnostics.
  result<-array(0,c(9,5,5),dimnames=list(c('First-year gross','Historical gross','AFT gross','Historical switching','AFT switching','First-year direct switches','Historical direct switches','AFT direct switches','AFT modeled transitions'),methods,causes))
@@ -6694,9 +6149,8 @@ measure<-function(mult,replicate=0L){
    v<-v+surv*h;surv<-surv*(1-sum(ew[end])/den)}
   risk[1,m,]<-v
   ends<-d[e$discontinued[d] & e$exposure[d]<=12 & e$reason_code[d] %in% action]
-  denend<-sum(ew[ends]);target<-if(denend>0)sum(v)*sum(ew[ends][e$next_code[ends] %in% endpoint_modern])/denend else 0
   raw<-vapply(1:5,function(j){ii<-ends[e$reason_code[ends] %in% codes[[j]]];den<-sum(ew[ii]);if(den>0)v[j]*sum(ew[ii][e$next_code[ii] %in% endpoint_modern])/den else 0},0)
-  risk[6,m,]<-if(sum(raw)>0)raw*target/sum(raw) else raw
+  risk[6,m,]<-raw
   ix<-ci_index[[m]];cwtotal<-sum(cw[ix]);for(b in 1:8){share<-sum(cw[ix[current$bin[ix]==b]])/cwtotal;if(share==0)next
    z<-land_index[[m]][[b]];den<-sum(lw[z]);if(den<=0)stop('Empty landmark cell')
    for(j in 1:5){risk[2,m,j]<-risk[2,m,j]+share*sum(lw[z][!is.na(land$cause[z]) & land$cause[z]==j])/den
@@ -6707,7 +6161,7 @@ measure<-function(mult,replicate=0L){
  fits<-lapply(seq_along(events),function(j){ad<-af[aw>0,];ad$fw<-aw[aw>0];active<-methods[vapply(methods,function(m)sum(ad[[events[j]]][ad$method==m]),0)>0];ad<-ad[ad$method %in% active,];ad$method<-droplevels(ad$method);fit<-suppressWarnings(dhs_aft_fit(as.formula(paste0('Surv(exposure,',events[j],')~method')),data=ad,weights=fw,dist=dists[j],control=survreg.control(maxiter=500)));if(fit$iter>=500||any(!is.finite(coef(fit))))stop(paste('AFT convergence failure',events[j],dists[j]));attr(fit,'active_methods')<-active;fit})
  new_initial<-data.table::copy(initial);new_follow<-data.table::copy(follow)
  new_initial$wt<-new_initial$wt*mult[match(new_initial$psu,frame$psu)];new_follow$wt<-new_follow$wt*mult[match(new_follow$psu,frame$psu)]
- tm<-if(replicate==0L)point_transitions else list(initial=fit_initial(new_initial),transitions=setNames(lapply(states,function(s)fit_transition(new_follow[new_follow$current_state==s,],s,selected_transition_families[s],.1,start=point_transitions$transitions[[s]]$par)),states))
+ tm<-if(replicate==0L)point_transitions else list(initial=fit_initial(new_initial),permanent_monthly_probability=permanent_rate(new_follow),transitions=setNames(lapply(states,function(s)fit_transition(new_follow[new_follow$current_state==s,],s,selected_transition_families[s],.1,start=point_transitions$transitions[[s]]$par)),states))
  epred<-as.data.frame(endpoint_prob(tm,pred_grid,12L))
  lookup<-merge(as.data.frame(pred_grid)[,c('gid','method','cause','end_duration')],epred,by='gid')
  lookup$key<-paste(lookup$method,lookup$cause,lookup$end_duration,lookup$horizon,sep='|')
@@ -6723,12 +6177,12 @@ measure<-function(mult,replicate=0L){
  stopifnot(all(is.finite(result)),all(result>=0),all(apply(risk,c(1,2),sum)<=1+1e-8))
  list(counts=result,risk=risk,mcpr=mcpr,mix=mix,stock=stock,users2024=w24*mcpr/100*mix)
 }
+write.csv(data.frame(firstyear_reversible_episodes=nrow(e),aft_known_start_reversible_episodes=nrow(af),current_reversible_users=nrow(current),historical_landmarks=nrow(land)),file.path(out,'planning_sample_support.csv'),row.names=FALSE)
 point<-measure(rep(1,nrow(frame)));saveRDS(point,file.path(out,'planning_point.rds'))
-# Verify risks against earlier reference counts, which used a projected stock.
-reference_scale<-w25*(point$mcpr+.4)/(w24*point$mcpr)
-href<-read.csv(file.path(sup,'nigeria_duration_aware_current_user_bridge.csv'));aref<-read.csv(file.path(sup,'nigeria_aft_switching_by_method.csv'))
-stopifnot(max(abs(rowSums(point$counts[2,,])*reference_scale-href$projected_actionable_original_method_endings[match(methods,href$method)]))<.1,
- max(abs(rowSums(point$counts[3,,])*reference_scale-aref$model_original_method_endings[match(methods,aref$method)]))<.1)
+write.csv(data.frame(method='Permanent methods',current_users=sum(wt[u & as.numeric(ir$v312) %in% c(6L,7L)])/sum(wt)*w24,probability='Not modeled: permanent method',potentially_actionable_users_retained=0),file.path(out,'permanent_method_stock.csv'),row.names=FALSE)
+
+# Reversible-risk stock is a domain of all modern users, not a renormalized mix.
+stopifnot(!any(current$woman %in% which(as.numeric(ir$v312) %in% c(6L,7L))))
 saveRDS(point_transitions,file.path(out,'transition_point_fits.rds'))
 cat('Point totals:',apply(point$counts,1,sum),'\n');flush.console()
 checkpoint<-file.path(out,'replicates');dir.create(checkpoint,showWarnings=FALSE)
@@ -6737,10 +6191,10 @@ one<-function(b){dest<-file.path(checkpoint,sprintf('rep_%04d.rds',b));if(file.e
  v<-tryCatch(measure(mult,b),error=function(e)list(error=conditionMessage(e)));saveRDS(v,dest);v}
 if(B>0){draws<-parallel::mclapply(seq_len(B),one,mc.cores=cores,mc.preschedule=FALSE);valid<-!vapply(draws,function(x)!is.null(x$error),FALSE)
  cat('Valid',sum(valid),'of',B,'\n');stopifnot(mean(valid)>=.95);saveRDS(draws,file.path(out,'planning_replicates.rds'))}
-saveRDS(list(reference_year=2024,outcome_year=2025,wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(strata),replicates=B,methods=methods,causes=causes,definitions=c('Gross: every actionable original-method ending treated as year-end loss','Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes','AFT uncertainty conditional on selected distribution families','Population and growth scenarios fixed')),file.path(out,'planning_metadata.rds'))
-)------------")
+saveRDS(list(country='Nigeria',reference_year=2024,outcome_year=2025,wra2024=w24,wra2025=w25,wra2026=w26,psus=nrow(frame),strata=length(strata),replicates=B,methods=methods,causes=causes,definitions=c('Gross: every actionable original-method ending treated as year-end loss','Switching sensitivity: EC included in modern use at year end; support assessed on unique episodes','AFT uncertainty conditional on selected distribution families','Population and growth scenarios fixed')),file.path(out,'planning_metadata.rds'))
+)----------------------")
 
-MODULES[["transition_model.R"]] <- list(language="R",args=character(),code=r"------------(# DHS complex survey design for this module.
+MODULES[["transition_model.R"]] <- list(language="R", packaged_sha256="2c24064909a2a85cfcbc4b610f173d90530a572bff2ff5f3c94f8e7bbbcf2a67", args=character(0), code=r"----------------------(# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
  .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
@@ -6751,7 +6205,7 @@ dhs_set_context(country='Nigeria',root=.dhs_root)
 suppressPackageStartupMessages({library(data.table);library(nnet);library(splines)})
 setDTthreads(1)
 states <- c('Modern','Nonmodern','Pregnancy-related')
-state <- function(z) ifelse(z %in% endpoint_modern,states[1],ifelse(z %in% 81:83,states[3],states[2]))
+state <- function(z) ifelse(z %in% c(6L,7L),'Permanent',ifelse(z %in% endpoint_modern,states[1],ifelse(z %in% 81:83,states[3],states[2])))
 normalize_features <- function(d) {
  d$method <- factor(d$method,levels=methods);d$cause <- factor(d$cause,levels=causes)
  d$end_duration <- pmin(60,pmax(1,d$end_duration));d$duration_log <- log1p(d$end_duration)
@@ -6773,23 +6227,44 @@ for(i in seq_len(nrow(endings))) {
                     method=method_group(ev$method_code),cause=causes[cause_group(ev$reason_code)],end_duration=ev$duration,wt=ev$wt)
  initial[[i]] <- cbind(base,data.table(next_state=st[1]))
  histories[[i]] <- cbind(base,data.table(horizon=seq_len(h),observed_state=st))
- if(h>1)follow[[i]] <- cbind(base,data.table(current_state=st[-h],state_duration=run[-h],post_month=seq_len(h-1L),next_state=st[-1]))
+ if(h>1) {
+  first_permanent<-match('Permanent',st,nomatch=h+1L)
+  risk_months<-seq_len(h-1L);risk_months<-risk_months[risk_months<first_permanent]
+  if(length(risk_months))follow[[i]] <- cbind(base,data.table(current_state=st[risk_months],
+    state_duration=run[risk_months],post_month=risk_months,next_state=st[risk_months+1L],
+    permanent_entry=st[risk_months+1L]=='Permanent'))
+ }
 }
 initial <- normalize_features(rbindlist(initial));follow <- normalize_features(rbindlist(follow));histories <- normalize_features(rbindlist(histories))
-initial$next_state <- factor(initial$next_state,levels=states);follow$next_state <- factor(follow$next_state,levels=states)
+initial$next_state <- factor(initial$next_state,levels=c(states,'Permanent'));follow$next_state <- factor(follow$next_state,levels=c(states,'Permanent'))
 cat('SUPPORT',nrow(initial),'original endings;',uniqueN(initial$woman),'women;',nrow(follow),'post-ending transitions\n');flush.console()
 write.csv(initial[,.(episodes=.N,women=uniqueN(woman)),by=.(method,cause)],file.path(out,'support_by_method_cause.csv'),row.names=FALSE)
 write.csv(follow[,.(transitions=.N,episodes=uniqueN(episode)),by=.(current_state,next_state)],file.path(out,'transition_support.csv'),row.names=FALSE)
-write.csv(histories[,.(episodes=.N,women=uniqueN(woman),weighted_modern=sum(wt*(observed_state=='Modern'))/sum(wt)),by=horizon],file.path(out,'observed_post_ending_status.csv'),row.names=FALSE)
+write.csv(histories[,.(episodes=.N,women=uniqueN(woman),weighted_modern=sum(wt*(observed_state%in%c('Modern','Permanent')))/sum(wt)),by=horizon],file.path(out,'observed_post_ending_status.csv'),row.names=FALSE)
 
 # Positive waiting times use AFT-derived, clock-reset competing hazards.
 # Immediate post-ending status has a separate categorical distribution because
 # direct switches have no non-use waiting time.
+# These pooled entries avoid fitting method/cause-specific sterilization effects
+# from only a few observations. Post-entry use is absorbing in predictions.
+pooled_permanent_probability <- function(d,indicator) {
+ frame<-dhs_context()$frame
+ records<-data.frame(wt=d$wt,cluster=d$psu,stratum=d$stratum)
+ design<-dhs_design(records,frame)
+ unname(dhs_percentage(design,as.numeric(indicator))['percent']/100)
+}
+permanent_rate <- function(d) {
+ stopifnot(nrow(d)>0L,sum(d$wt)>0)
+ pooled_permanent_probability(d,d$permanent_entry)
+}
 fit_initial <- function(d,decay=.1) {
+ permanent_probability<-pooled_permanent_probability(d,as.character(d$next_state)=='Permanent')
+ d<-data.table::copy(d[as.character(d$next_state)!='Permanent',])
+ d$next_state<-factor(d$next_state,levels=states)
  d$fw<-d$wt/mean(d$wt)
  f<-dhs_multinom_fit(next_state~method+cause+ns(duration_log,df=2),data=d,weights=fw,
              decay=decay,maxit=1000,MaxNWts=5000,trace=FALSE,abstol=1e-8,reltol=1e-9)
- stopifnot(f$convergence==0);f
+ stopifnot(f$convergence==0);attr(f,'permanent_probability')<-permanent_probability;f
 }
 initial_probs <- function(f,d) {
  p<-predict(f,newdata=d,type='probs');if(is.null(dim(p)))p<-matrix(p,nrow=nrow(d),byrow=TRUE)
@@ -6822,6 +6297,9 @@ increment <- function(t,mu,ls,family) {
  list(h=pmax(hi$H-lo$H,1e-14),mu=hi$mu-lo$mu,scale=hi$scale-lo$scale)
 }
 fit_transition <- function(d,from,family='lognormal',ridge=.1,start=NULL,check_gradient=FALSE) {
+ # Conditional transient-state model; permanent entries use the pooled branch.
+ d<-d[!d$permanent_entry,]
+ d$next_state<-factor(d$next_state,levels=states)
  X<-design(d);p<-ncol(X);dest<-setdiff(states,from)
  y<-match(as.character(d$next_state),dest);y[is.na(y)]<-0L
  w<-d$wt/mean(d$wt);duration<-as.numeric(d$state_duration)
@@ -6876,7 +6354,7 @@ fit_models <- function(init,trans,family='lognormal',ridge=.1) {
   ff<-lapply(families,function(f)fit_transition(trans[trans$current_state==s,],s,f,ridge))
   ff[[which.min(vapply(ff,`[[`,0.0,'pseudo_aic'))]]
  }),states)
- list(initial=fit_initial(init),transitions=transitions,family=family,ridge=ridge)
+ list(initial=fit_initial(init),transitions=transitions,family=family,ridge=ridge,permanent_monthly_probability=permanent_rate(trans))
 }
 transition_probs <- function(fit,d) {
  X<-design(d);stopifnot(identical(colnames(X),fit$columns));p<-fit$p;par<-fit$par
@@ -6886,58 +6364,89 @@ transition_probs <- function(fit,d) {
  ans[,fit$from]<-exp(-total);ans[,fit$dest[1]]<- -expm1(-total)*h1/total;ans[,fit$dest[2]]<- -expm1(-total)*h2/total
  stopifnot(all(is.finite(ans)),max(abs(rowSums(ans)-1))<1e-8);ans
 }
+# Integrate transient AFT transitions and a separate absorbing permanent state.
+# Sparse permanent uptake uses pooled weighted one-month entry probabilities.
 endpoint_prob <- function(models,gr,max_horizon=13L) {
- p0<-initial_probs(models$initial,gr)
- nodes<-rbindlist(lapply(seq_along(states),function(s)data.table(gid=gr$gid,current_state=states[s],state_duration=1L,prob=p0[,s])))
- outputs<-list(data.table(gid=gr$gid,horizon=1L,p_modern=p0[,'Modern']))
- for(k in 2:max_horizon) {
-  chunks<-vector('list',length(states))
-  for(s in seq_along(states)) {
-   x<-nodes[current_state==states[s]];if(!nrow(x))next
-   nd<-as.data.frame(cbind(gr[x$gid,,drop=FALSE],state_duration=x$state_duration,post_month=k-1L))
-   pp<-transition_probs(models$transitions[[s]],nd)
-   chunks[[s]]<-rbindlist(lapply(seq_along(states),function(z)data.table(gid=x$gid,current_state=states[z],state_duration=if(z==s)x$state_duration+1L else 1L,prob=x$prob*pp[,z])))
+ stopifnot(max_horizon>=1L,nrow(gr)>0L)
+ n<-nrow(gr);K<-length(states);p0<-initial_probs(models$initial,gr)
+ q0<-attr(models$initial,'permanent_probability');if(is.null(q0))stop('Missing permanent-entry probability.')
+ q<-models$permanent_monthly_probability;if(is.null(q))stop('Missing permanent monthly-entry probability.')
+ stopifnot(length(q0)==1L,length(q)==1L,is.finite(q0),is.finite(q),q0>=0,q0<=1,q>=0,q<=1)
+ permanent<-rep(q0,n);nodes<-array(0,c(n,K,max_horizon));nodes[,,1L]<-(1-q0)*p0
+ outputs<-list(data.table(gid=gr$gid,horizon=1L,p_modern=permanent+nodes[,match('Modern',states),1L],p_permanent=permanent))
+ if(max_horizon==1L)return(outputs[[1L]])
+ tmp<-as.data.frame(gr);tmp$state_duration<-1;tmp$post_month<-1
+ cache<-lapply(states,function(s){
+  f<-models$transitions[[s]]
+  X<-if('from'%in%names(formals(design)))design(tmp,from=s)else design(tmp)
+  stopifnot(identical(colnames(X),f$columns));entry<-match('entry_log',colnames(X))
+  b1<-f$par[seq_len(f$p)];b2<-f$par[f$p+1L+seq_len(f$p)]
+  e1<-e2<-0;if(!is.na(entry)){e1<-b1[entry];e2<-b2[entry];X[,entry]<-0}
+  list(mu1=as.numeric(X%*%b1),mu2=as.numeric(X%*%b2),e1=e1,e2=e2,
+       scale1=f$par[f$p+1L],scale2=f$par[2L*(f$p+1L)],family=f$family,dest=match(f$dest,states))
+ })
+ for(k in 2:max_horizon){
+  permanent_before<-permanent;permanent<-permanent+q*rowSums(nodes,dims=1)
+  nextnodes<-array(0,c(n,K,max_horizon))
+  for(s in seq_len(K))for(d in seq_len(k-1L)){
+   mass<-(1-q)*nodes[,s,d];if(!any(mass>0))next
+   f<-cache[[s]];entrylog<-log1p(k-d)
+   h1<-increment(rep(d,n),f$mu1+f$e1*entrylog,f$scale1,f$family)$h
+   h2<-increment(rep(d,n),f$mu2+f$e2*entrylog,f$scale2,f$family)$h
+   total<-h1+h2;exit<- -expm1(-total)
+   nextnodes[,s,d+1L]<-nextnodes[,s,d+1L]+mass*exp(-total)
+   nextnodes[,f$dest[1],1L]<-nextnodes[,f$dest[1],1L]+mass*exit*h1/total
+   nextnodes[,f$dest[2],1L]<-nextnodes[,f$dest[2],1L]+mass*exit*h2/total
   }
-  nodes<-rbindlist(chunks)[,.(prob=sum(prob)),by=.(gid,current_state,state_duration)]
-  stopifnot(max(abs(nodes[,.(prob=sum(prob)),by=gid]$prob-1))<1e-8)
-  outputs[[k]]<-nodes[current_state=='Modern',.(p_modern=sum(prob)),by=gid][,horizon:=k]
+  nodes<-nextnodes
+  stopifnot(all(is.finite(nodes)),max(abs(rowSums(nodes,dims=1)+permanent-1))<1e-8,
+            all(permanent>=permanent_before-1e-12))
+  outputs[[k]]<-data.table(gid=gr$gid,horizon=k,p_modern=permanent+rowSums(nodes[,match('Modern',states),,drop=FALSE],dims=1),p_permanent=permanent)
  }
  rbindlist(outputs,use.names=TRUE)
 }
-)------------")
+)----------------------")
 
-# Build all planning tables from the reconciled aggregate inputs.
-run_revised_report <- function(opt) {
- if(!requireNamespace("jsonlite",quietly=TRUE)||!requireNamespace("digest",quietly=TRUE))stop("Install jsonlite and digest.")
- root<-if(!is.null(opt[["project-root"]]))opt[["project-root"]]else file.path("analysis_output","nigeria","updated")
- for(n in c("build","output","Code"))dir.create(file.path(root,n),recursive=TRUE,showWarnings=FALSE)
- script_arg<-grep("^--file=",commandArgs(),value=TRUE);folder<-if(length(script_arg))dirname(sub("^--file=","",script_arg[1]))else"."
- stats<-if(!is.null(opt[["statistics-dir"]]))opt[["statistics-dir"]]else file.path(folder,"revision_inputs")
- need<-c("planning_point.rds","planning_replicates.rds","planning_metadata.rds","transition_validation.json")
- if(!all(file.exists(file.path(stats,need))))stop("Supply the fitted numerical inputs, including the new transition sensitivity.")
- if(dim(readRDS(file.path(stats,"planning_point.rds"))$risk)[1]!=9L)stop("Expected nine risk components, including modeled transitions.")
- if(length(readRDS(file.path(stats,"planning_replicates.rds")))!=500L)stop("The report requires all 500 valid joint survey replicates.")
- code<-file.path(root,"Code");build<-file.path(root,"build");result<-file.path(root,"output")
- for(n in names(REVISION_HELPERS))writeLines(REVISION_HELPERS[[n]],file.path(code,n),useBytes=TRUE)
- file.copy(file.path(stats,"transition_validation.json"),file.path(build,"transition_validation.json"),overwrite=TRUE)
- assumptions<-opt[["revision-inputs"]];if(is.null(assumptions)){assumptions<-file.path(build,"growth_assumptions.json");writeLines(REVISED_GROWTH_ASSUMPTIONS,assumptions,useBytes=TRUE)}
- schema<-file.path(build,"original_table_schema.json");writeLines(REVISED_TABLE_SCHEMA,schema,useBytes=TRUE)
- python<-if(!is.null(opt$python))opt$python else Sys.getenv("PYTHON",unset="python3")
- run<-function(exe,a){status<-system2(exe,shQuote(a));if(status!=0L)stop("Report build failed.")}
- run(file.path(R.home("bin"),"Rscript"),c(file.path(code,"300_revised_planning.R"),stats,assumptions,build))
- run(python,c(file.path(code,"301_revised_tables.py"),build,schema,build))
- if(identical(opt$run,"revised-planning"))return(invisible(NULL))
- base<-if(!is.null(opt[["base-html"]]))opt[["base-html"]]else file.path(folder,REPORT_BASENAME)
- target<-file.path(result,REPORT_BASENAME)
- if(!file.exists(base))stop("Supply the validated HTML layout.")
- if(identical(normalizePath(base),normalizePath(target,mustWork=FALSE)))stop("Output must differ from the input report.")
- run(python,c(file.path(code,"302_revised_html.py"),base,build,file.path(build,"planning_html.json"),target))
- run(python,c(file.path(code,"303_validate_revised.py"),COUNTRY,base,target,build,result))
- cat("Rebuilt 48 planning tables and updated the companion diagnostics. Other chapters and figures retained.\n")
-}
-for(n in names(REVISION_HELPERS))MODULES[[n]]<-list(language=if(grepl("[.]R$",n))"R"else"Python",args=character(),code=REVISION_HELPERS[[n]])
-# Portable national report renderers.
-MODULES[["05_render_nigeria_html.py"]] <- list(language="Python", packaged_sha256="4201bbe7a80ec0bf59f834f41306ce5bedf4ee5de514a7aa785dcd1d2b483496",args=character(),code=r"------------------(#!/usr/bin/env python3
+MODULES[["wording.py"]] <- list(language="Python", packaged_sha256="9bf8827d0ccd8c561ffa452558899149068b69611eda7c94c6e4b059abf326a8", args=character(0), code=r"----------------------("""Plain-language explanations for Nigeria's 2024-to-2025 planning tables."""
+import copy
+LABELS={1:'Exploratory',2:'Historical',3:'AFT',4:'Historical switching',5:'AFT observed switching',12:'AFT modeled switching'}
+PROB={
+1:'Applies each method’s probability of an actionable ending in months 1–12 after starting to all current users of that method. It ignores how long they have already used it. Counts assume every actionable ending leaves the woman outside modern use at the 12-month endpoint. Switching and restarting are excluded.',
+2:'Uses observed calendar histories to estimate an actionable ending over the next 12 months for users of the same method and a similar time already used. Counts assume every ending is a loss from modern use. Switching and restarting are excluded. Users already at 61+ months use the observed 37–60-month experience.',
+3:'Uses fitted survival curves to estimate an actionable ending over the next 12 months, given the current method and months already used. Other reasons for ending the method remain competing events. Counts assume every actionable ending is a loss from modern use. Switching and restarting are excluded.',
+4:'Uses observed calendar histories matched to the current method and time already used. Counts include women who end for an actionable reason and are outside modern use at the end of the next 12 months. Women using any modern method at that endpoint are deducted, including switchers and restarters. Users at 61+ months use 37–60-month experience.',
+5:'AFT survival curves estimate the actionable ending of the original method. Observed calendar histories estimate how many would be outside modern use at the end of the next 12 months. The calculation subtracts women using any modern method at that endpoint, including switchers and restarters. Sparse history groups are pooled.',
+12:'AFT survival curves estimate the actionable ending of the original method. A separate model estimates immediate switching. AFT-based transitions then track later use or non-use, including restarting and stopping again. Counts include only women outside modern use at the end of the next 12 months. Permanent methods are an absorbing destination; sparse uptake uses pooled observed probabilities.'}
+DENOM='mCPR contribution (pp) = users retained ÷ 57,393,553 women aged 15–49 in 2025 × 100.'
+GROWTH='Starts from the 2024 DHS all-women mCPR. Annual changes are (2024−2018)/6 for the recent DHS trend and (2024−2013)/11 for the longer trend. The FPET-informed scenario adds 0.40 pp to the DHS baseline. It is an assumed increment, not an official FPET forecast for 2025. The same observed 2024 user cohort applies across scenarios.'
+SCEN=['6-year DHS trend','11-year DHS trend','FPET-informed growth']
+def revise(old,deck=True):
+ s=copy.deepcopy(old);a=s['approach'];kind=s['kind'];label=LABELS[a];sens=a in [4,5,12]
+ if kind=='method':title=f'{label}: '+('users outside modern use at 12 months'if sens else'users who may discontinue for actionable reasons')
+ elif kind=='cause':title=f'{label}: '+('year-end losses by method and cause'if sens else'actionable discontinuation by method and cause')
+ elif kind=='cause_pp':title=f'{label}: mCPR contribution by actionable cause'
+ elif kind=='baseline':title=f'{label}: assumptions for 2025 mCPR'
+ elif kind=='scenario':title=f'{label}: 2025 mCPR if '+('year-end losses are avoided'if sens else'actionable discontinuation is averted')
+ elif kind=='method_scenario':title=f'{label}: users and mCPR under '+SCEN[s['scenario']-1]
+ else:raise ValueError(kind)
+ s['title']=title;units='Users in thousands'if deck else'Number of users (95% CI)'
+ if kind=='baseline':s['subtitle']='2024 survey baseline and a one-year projection to 2025'
+ elif a==1:s['subtitle']='Exploratory estimate. Ignores time already using the method. '+units
+ elif sens:s['subtitle']='Deducts women using any modern method at the 12-month endpoint. '+units
+ else:s['subtitle']='Next 12 months, accounting for time already using the method. '+units
+ note=GROWTH if kind=='baseline'else PROB[a]
+ if a==1 and kind=='method':note+=' The total uses the current-user method mix. The pooled episode estimate is 21.4%.'
+ if sens and kind=='method':note+=' The probability column describes the original method ending. The loss count also deducts modern use at the endpoint.'
+ if kind in ['method','scenario','method_scenario','cause_pp']:note+=' '+DENOM
+ if kind=='method_scenario':note+=' The usual scenario keeps the current method mix.'
+ note+=' Partner/spousal disapproval is excluded.'
+ note+=(' Estimates use DHS survey weights. Population and growth assumptions stay fixed.'if deck else' 95% CIs use 500 survey bootstrap samples. Population and growth assumptions stay fixed. Confidence limits do not add across cells. † No events observed, so no reliable CI.')
+ if a in [3,5,12]:note+=(' Fits use the selected survival distributions.'if deck else' AFT intervals hold the selected curve families fixed.')+' Some method/cause estimates rely on very few events.'
+ note+=' Permanent current users remain in mCPR. They receive no modeled stopping probability or retention gain; Other modern contains reversible methods only.'
+ s['note']=note;return s
+)----------------------")
+
+MODULES[["05_render_nigeria_html.py"]] <- list(language="Python", packaged_sha256="4201bbe7a80ec0bf59f834f41306ce5bedf4ee5de514a7aa785dcd1d2b483496", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Render the Nigeria working HTML from the complete saved analysis tables.
 
 Run after the R pipeline. This file contains only layout and wording. All
@@ -7510,8 +7019,9 @@ begin=document[:matches[0].start()]
 end=document[matches[-1].end():]
 document=begin+''.join(blocks[k] for k in story_order if k!='overview')+end
 OUT.write_text(document,encoding='utf-8')
-print(OUT.name))------------------")
-MODULES[["19_add_cause_mcpr_ceiling_html.py"]] <- list(language="Python", packaged_sha256="01d0f078b42ff958cdf791ff23e6f2efcf62169c23867fe668779a07c865d8b1",args=character(),code=r"------------------("""Append the cause-specific gross mCPR ceiling table to a country HTML report.
+print(OUT.name))----------------------")
+
+MODULES[["19_add_cause_mcpr_ceiling_html.py"]] <- list(language="Python", packaged_sha256="8fba6ca3a8f97e5013e871e42b112b852ddb7ed2fb0c467a8d53a24e8761ce4b", args=character(0), code=r"----------------------("""Append the cause-specific gross mCPR ceiling table to a country HTML report.
 
 The user counts come from the existing method-by-cause projection. The same
 projected 2026 women 15–49 denominator is used in every reason column.
@@ -7545,7 +7055,12 @@ def build(country: str, root: Path) -> None:
     data = output / "Supporting_data" / (
         "nigeria_current_users_actionable_by_cause.csv" if nigeria else "current_users_actionable_by_cause.csv"
     )
-    wra = 59_000_784.5 if nigeria else 35_016_171
+    outcome_year = 2025 if nigeria else 2026
+    if nigeria:
+        with (output/'Supporting_data/nigeria_wpp2024_wra_2024_2026.csv').open() as stream:
+            wra = next(float(r['women_15_49']) for r in csv.DictReader(stream) if int(r['year'])==outcome_year)
+    else:
+        wra = 35_016_171
     country_name = "Nigeria" if nigeria else "Ethiopia"
     with data.open(newline="") as f:
         source = list(csv.DictReader(f))
@@ -7564,8 +7079,10 @@ def build(country: str, root: Path) -> None:
     fmt = lambda x: f"{round(x):,}"
     totals = [sum(values[(method, reason)] for method in METHODS) for reason, _ in REASONS]
     grand_total = sum(totals)
-    expected = 1_486_395 if nigeria else 1_241_693
-    assert round(grand_total) == expected
+    projection = output/'Supporting_data'/('nigeria_current_users_by_method_and_actionable_projection.csv' if nigeria else 'current_users_actionable_12_month_projection.csv')
+    with projection.open() as stream:
+        expected = sum(float(r['illustrative_original_method_endings' if nigeria else 'illustrative_actionable_method_endings']) for r in csv.DictReader(stream) if r['method'].replace('Other modern methods','Other modern') in METHODS)
+    assert abs(grand_total-expected)<1e-4
 
     def tr(label: str, cells: list[str], css: str = "") -> str:
         return f'<tr class="{css}"><th scope="row">{html.escape(label)}</th>' + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
@@ -7575,7 +7092,7 @@ def build(country: str, root: Path) -> None:
         nums = [values[(method, reason)] for reason, _ in REASONS]
         body_rows.append(tr(method, [fmt(x) for x in nums] + [f"<strong>{fmt(sum(nums))}</strong>"]))
     body_rows.append(tr("Estimated original-method endings", [f"<strong>{fmt(x)}</strong>" for x in totals] + [f"<strong>{fmt(grand_total)}</strong>"], "cause-total"))
-    body_rows.append(tr("2026 women aged 15–49", [fmt(wra)] * 6, "cause-wra"))
+    body_rows.append(tr(f"{outcome_year} women aged 15–49", [fmt(wra)] * 6, "cause-wra"))
     body_rows.append(tr("Maximum illustrative mCPR increase", [f"<strong>{x / wra * 100:.2f} pp</strong>" for x in totals] + [f"<strong>{grand_total / wra * 100:.2f} pp</strong>"], "cause-pp"))
     headers = "".join(f'<th scope="col">{label}</th>' for _, label in REASONS)
     section = f"""{MARKER_START}
@@ -7594,8 +7111,8 @@ def build(country: str, root: Path) -> None:
 </style>
 <div class="eyebrow">Planning illustration</div>
 <h2>Potential mCPR gain by actionable discontinuation cause</h2>
-<p class="intro">The table apportions the existing estimated original-method endings among 2025 current users across five potentially actionable causes. Each column's final row divides its estimated endings by {fmt(wra)} projected women aged 15–49 in {country_name} in 2026. The all-causes column adds the five mutually exclusive causes.</p>
-<div class="cause-table-wrap" role="region" aria-label="Potential 2026 mCPR gain by method and actionable cause" tabindex="0"><table>
+<p class="intro">The table apportions the existing estimated original-method endings among 2025 current users across five potentially actionable causes. Each column's final row divides its estimated endings by {fmt(wra)} projected women aged 15–49 in {country_name} in {outcome_year}. The all-causes column adds the five mutually exclusive causes.</p>
+<div class="cause-table-wrap" role="region" aria-label="Potential {outcome_year} mCPR gain by method and actionable cause" tabindex="0"><table>
 <thead><tr><th scope="col">Method / measure</th>{headers}<th scope="col">All actionable<br>causes</th></tr></thead>
 <tbody>{''.join(body_rows)}</tbody></table></div>
 <p class="note"><strong>Interpretation:</strong> These percentage-point values are gross upper bounds, not expected program effects. An ending of the original method does not necessarily reduce modern contraceptive prevalence: a woman may switch to another modern method or restart before year-end. The cause-specific counts apply first-year, 12-month life-table probabilities to current users without adjusting for how long they have already used the method. Emergency contraception has current users in mCPR but no ongoing-use discontinuation estimate and is not included in the table's endings.</p>
@@ -7623,8 +7140,9 @@ if __name__ == "__main__":
     parser.add_argument("root", nargs="?", type=Path, default=Path(os.environ["NIGERIA_PROJECT_ROOT"]))
     args = parser.parse_args()
     build(args.country, args.root)
-)------------------")
-MODULES[["27_add_method_zone_models_to_html.py"]] <- list(language="Python", packaged_sha256="8190d5cf309ce2243fbb49c83aaaf188e9b9cfe1f2c4a2520f150c89d17a81c6",args=character(),code=r"------------------(#!/usr/bin/env python3
+)----------------------")
+
+MODULES[["27_add_method_zone_models_to_html.py"]] <- list(language="Python", packaged_sha256="8190d5cf309ce2243fbb49c83aaaf188e9b9cfe1f2c4a2520f150c89d17a81c6", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Add reproducible injectable/implant zone model results to Nigeria HTML.
 
 The estimates are read from script 26 CSVs. Existing sections and numerical
@@ -7795,8 +7313,9 @@ if nav not in page:
     assert page.count(anchor)==1
     page=page.replace(anchor,nav+anchor,1)
 PAGE.write_text(page,encoding='utf-8')
-print(PAGE))------------------")
-MODULES[["28_add_method_scenario_tables.py"]] <- list(language="Python", packaged_sha256="5849747d957208cc53186a922a68489863738018e817b107659708e5ef9ce775",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(PAGE))----------------------")
+
+MODULES[["28_add_method_scenario_tables.py"]] <- list(language="Python", packaged_sha256="587c58f0a931e193027bb832ef365d477062e22589e8c353cb87a08bd64c4d18", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Reproduce Ethiopia-style method-level 2026 mCPR scenarios for Nigeria.
 
 Current-method shares come from Nigeria DHS 2024 IR data. The three 2026
@@ -7819,7 +7338,7 @@ def read(name):
 
 scenarios = read('nigeria_2026_mcpr_scenarios.csv')
 methods = read('nigeria_current_users_by_method_and_actionable_projection.csv')
-assert len(scenarios) == 3 and len(methods) == 6
+assert len(scenarios) == 3 and len(methods) == 7
 assert abs(sum(float(m['share_current_modern_pct']) for m in methods)-100) < 1e-8
 gross = sum(float(m['illustrative_original_method_endings']) for m in methods)
 assert all(abs(float(s['illustrative_gross_endings'])-gross) < .01 for s in scenarios)
@@ -7892,8 +7411,9 @@ if toc not in source:
     assert old in source
     source=source.replace(old,toc+old,1)
 PAGE.write_text(source)
-print(PAGE))------------------")
-MODULES[["30_add_zone_method_mix_decomposition_html.py"]] <- list(language="Python", packaged_sha256="5a10586ee5f0d84998a2110bd1692a8ed22f1dd06e5e51ff5dac0152c4977c1d",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(PAGE))----------------------")
+
+MODULES[["30_add_zone_method_mix_decomposition_html.py"]] <- list(language="Python", packaged_sha256="5a10586ee5f0d84998a2110bd1692a8ed22f1dd06e5e51ff5dac0152c4977c1d", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Add the reproducible six-zone method-mix diagnostic to Nigeria HTML."""
 import csv
 import html
@@ -7941,8 +7461,9 @@ if toc not in source:
     assert old in source
     source=source.replace(old,toc+old,1)
 page.write_text(source)
-print(page))------------------")
-MODULES[["36_add_alluvial_pathways_html.py"]] <- list(language="Python", packaged_sha256="97b072b1862d13ead1b1ac792fbcf845934bbb0c05fd89f24d4afc8e44589d5c",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(page))----------------------")
+
+MODULES[["36_add_alluvial_pathways_html.py"]] <- list(language="Python", packaged_sha256="97b072b1862d13ead1b1ac792fbcf845934bbb0c05fd89f24d4afc8e44589d5c", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Insert Nigeria episode and current-user pathway sections into working HTML."""
 import csv
 import html
@@ -8014,8 +7535,9 @@ for id,label in [('action-pathways','Actionable pathways'),
         assert old in source
         source=source.replace(old,toc+old,1)
 page.write_text(source)
-print(page))------------------")
-MODULES[["39_add_selected_exploratory_html.py"]] <- list(language="Python", packaged_sha256="5bb8b8693e5c5b06e41bd3b6937ba2122a523ae94b881509e4638b79d26c6e96",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(page))----------------------")
+
+MODULES[["39_add_selected_exploratory_html.py"]] <- list(language="Python", packaged_sha256="5bb8b8693e5c5b06e41bd3b6937ba2122a523ae94b881509e4638b79d26c6e96", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Add Nigeria counterparts of Ethiopia's selected-reason exploratory tables."""
 import csv
 import html
@@ -8218,8 +7740,9 @@ for id in ids:
   old='<a href="#national">';assert old in source
   source=source.replace(old,toc+old,1)
 page.write_text(source)
-print(page,len(ids),'sections'))------------------")
-MODULES[["41_add_selected_current_user_planning_html.py"]] <- list(language="Python", packaged_sha256="79e4678d247c92c113a75642ac4138f8bd971a861cf332c690295dcb73efddd3",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(page,len(ids),'sections'))----------------------")
+
+MODULES[["41_add_selected_current_user_planning_html.py"]] <- list(language="Python", packaged_sha256="79e4678d247c92c113a75642ac4138f8bd971a861cf332c690295dcb73efddd3", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Add Ethiopia-style selected-reason current-user planning tables to Nigeria."""
 import csv,html
 from pathlib import Path
@@ -8289,8 +7812,9 @@ for id,label in [('current-user-reason-planning','Selected-reason current users'
   old='<a href="#mcpr-scenarios">';assert old in source
   source=source.replace(old,toc+old,1)
 page.write_text(source)
-print(page))------------------")
-MODULES[["43_add_selected_risk_strata_html.py"]] <- list(language="Python", packaged_sha256="37613d20530fabb3df9268c324836880a449f23fc9e5f18f5d105766dd129b55",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(page))----------------------")
+
+MODULES[["43_add_selected_risk_strata_html.py"]] <- list(language="Python", packaged_sha256="37613d20530fabb3df9268c324836880a449f23fc9e5f18f5d105766dd129b55", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Present the Nigeria out-of-fold selected-reason risk strata and profiles."""
 import csv,html
 from pathlib import Path
@@ -8333,8 +7857,9 @@ source=source.replace(anchor,section+anchor,1)
 if 'href="#selected-reason-risk-strata"' not in source:
  old='<a href="#method-duration-class-discontinuation">';assert old in source
  source=source.replace(old,'<a href="#selected-reason-risk-strata">Selected-reason risk bands</a>'+old,1)
-page.write_text(source);print(page))------------------")
-MODULES[["45_add_replication_figures_html.py"]] <- list(language="Python", packaged_sha256="c5abb0c1147e2b510f59e04787c7ddab0c274872a16e1a22d6be633c1401fa6e",args=character(),code=r"------------------(#!/usr/bin/env python3
+page.write_text(source);print(page))----------------------")
+
+MODULES[["45_add_replication_figures_html.py"]] <- list(language="Python", packaged_sha256="c5abb0c1147e2b510f59e04787c7ddab0c274872a16e1a22d6be633c1401fa6e", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Place Nigeria-specific figures within corresponding working-HTML analyses."""
 from pathlib import Path
 import os
@@ -8372,8 +7897,9 @@ for section,name,caption in items:
 style='<style>.replication-figure{margin:1.1rem 0 1.8rem;padding:0}.replication-figure img{width:100%;height:auto;display:block}.replication-figure figcaption{font-size:.82rem;color:#506879;margin-top:.35rem}</style>'
 if 'replication-figure{margin:' not in source:source=source.replace('</head>',style+'</head>',1)
 page.write_text(source)
-print(page))------------------")
-MODULES[["46_add_three_definition_comparison_html.py"]] <- list(language="Python", packaged_sha256="e432bb47f1d9571b36ee13fe59fa5b54a0c5d2de42c72b64690d27a3bdf5385f",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(page))----------------------")
+
+MODULES[["46_add_three_definition_comparison_html.py"]] <- list(language="Python", packaged_sha256="e432bb47f1d9571b36ee13fe59fa5b54a0c5d2de42c72b64690d27a3bdf5385f", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Add the direct all/selected/actionable comparison in the Ethiopia structure."""
 from pathlib import Path
 import os
@@ -8394,8 +7920,9 @@ anchor='<section id="selected-reasons"';assert anchor in s;s=s.replace(anchor,bl
 if 'href="#twelve-month-three-column-comparison"' not in s:
  target='<a href="#selected-reasons"';assert target in s
  s=s.replace(target,'<a href="#twelve-month-three-column-comparison">Three reason definitions</a>'+target,1)
-page.write_text(s);print(page))------------------")
-MODULES[["47_add_method_followup_alluvials_html.py"]] <- list(language="Python", packaged_sha256="4fed23aac4595ade0b4cf3da01c893c74a699954614c6fb6ecebe8e931bd88a0",args=character(),code=r"------------------(#!/usr/bin/env python3
+page.write_text(s);print(page))----------------------")
+
+MODULES[["47_add_method_followup_alluvials_html.py"]] <- list(language="Python", packaged_sha256="4fed23aac4595ade0b4cf3da01c893c74a699954614c6fb6ecebe8e931bd88a0", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Insert the four Nigeria method-to-follow-up alluvials in narrative order."""
 from pathlib import Path
 import os
@@ -8413,8 +7940,9 @@ anchor='<section id="selected-followup"';assert anchor in s;s=s.replace(anchor,s
 for id,label,before in [('all-reason-transitions','After all-reason endings','selected-reasons'),('selected-reason-transitions','After selected-reason endings','selected-followup')]:
  if f'href="#{id}"' not in s:
   target=f'<a href="#{before}"';assert target in s;s=s.replace(target,f'<a href="#{id}">{label}</a>'+target,1)
-p.write_text(s);print(p.name))------------------")
-MODULES[["48_add_selected_regional_adjustment_html.py"]] <- list(language="Python", packaged_sha256="538606cdb32497f6a16f9f5c37f5d68d84bc8264efb95b67f70b952de362f38f",args=character(),code=r"------------------(#!/usr/bin/env python3
+p.write_text(s);print(p.name))----------------------")
+
+MODULES[["48_add_selected_regional_adjustment_html.py"]] <- list(language="Python", packaged_sha256="538606cdb32497f6a16f9f5c37f5d68d84bc8264efb95b67f70b952de362f38f", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Complete the selected-reason regional sequence with adjusted probabilities."""
 from pathlib import Path
 import os
@@ -8439,8 +7967,9 @@ anchor='<section id="selected-reason-regional-reason-heatmap"';assert anchor in 
 if 'href="#selected-reason-regional-adjusted"' not in s:
  target='<a href="#selected-reason-regional-reason-heatmap"';assert target in s
  s=s.replace(target,'<a href="#selected-reason-regional-adjusted">Adjusted selected-reason rates</a>'+target,1)
-page.write_text(s);print(page))------------------")
-MODULES[["50_add_all_reason_regional_paired_bars.py"]] <- list(language="Python", packaged_sha256="1d64e4055831a0d3eb9d4773fb249ee6ec46371a82ca666415d6026a8e6fc3aa",args=character(),code=r"------------------(#!/usr/bin/env python3
+page.write_text(s);print(page))----------------------")
+
+MODULES[["50_add_all_reason_regional_paired_bars.py"]] <- list(language="Python", packaged_sha256="1d64e4055831a0d3eb9d4773fb249ee6ec46371a82ca666415d6026a8e6fc3aa", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Mirror the Ethiopia by-method regional paired bars for all-reason risk."""
 from pathlib import Path
 import os
@@ -8470,8 +7999,9 @@ block=''.join(parts)
 s=p.read_text();s=re.sub(r'<!-- all-reason-paired-bars-start -->.*?<!-- all-reason-paired-bars-end -->','',s,flags=re.S)
 a=s.index('<section id="regional-method-paired-bars"');h=re.search(r'</p>',s[a:]);assert h
 at=a+h.end();s=s[:at]+block+s[at:]
-p.write_text(s);print(p.name))------------------")
-MODULES[["57_align_working_html_sequence.py"]] <- list(language="Python", packaged_sha256="3b640d018846dff6c988560d0ceddc5fabd27ae92127798e82ca2ceea9d08868",args=character(),code=r"------------------(#!/usr/bin/env python3
+p.write_text(s);print(p.name))----------------------")
+
+MODULES[["57_align_working_html_sequence.py"]] <- list(language="Python", packaged_sha256="3b640d018846dff6c988560d0ceddc5fabd27ae92127798e82ca2ceea9d08868", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Place Nigeria sections in the Ethiopia analytical sequence and group the TOC."""
 from pathlib import Path
 import os
@@ -8554,8 +8084,9 @@ head.append(style)
 for a in aside.xpath('./a'):
     assert doc.getroot().get_element_by_id(a.get('href')[1:]) is not None
 source.write_bytes(html.tostring(doc,encoding='utf-8',method='html',doctype='<!DOCTYPE html>'))
-print('Aligned',len(seen),'Nigeria sections, pathways, planning and grouped navigation'))------------------")
-MODULES[["59_align_html_visual_style.py"]] <- list(language="Python", packaged_sha256="7134b7332317a0089c8249e769111b4b7ade48e3025ebac842a77392a6b63c4e",args=character(),code=r"------------------(from pathlib import Path
+print('Aligned',len(seen),'Nigeria sections, pathways, planning and grouped navigation'))----------------------")
+
+MODULES[["59_align_html_visual_style.py"]] <- list(language="Python", packaged_sha256="7134b7332317a0089c8249e769111b4b7ade48e3025ebac842a77392a6b63c4e", args=character(0), code=r"----------------------(from pathlib import Path
 import os
 import re
 
@@ -8594,8 +8125,9 @@ tbody tr.total{background:#ecf3f5;font-weight:700}
 '''
 html=html.replace('</head>', '<style id="ethiopia-visual-alignment">'+css+'</style></head>',1)
 p.write_text(html)
-print(p.name))------------------")
-MODULES[["72_correct_modern_reason_html.py"]] <- list(language="Python", packaged_sha256="7b0b04a66a6f3160decc5fe30d92d879445294b79ac685f5b390160d11160c0f",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(p.name))----------------------")
+
+MODULES[["72_correct_modern_reason_html.py"]] <- list(language="Python", packaged_sha256="7b0b04a66a6f3160decc5fe30d92d879445294b79ac685f5b390160d11160c0f", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Correct the existing working HTML without discarding later added sections."""
 import csv
 from html import escape
@@ -8634,8 +8166,9 @@ method_table+='</tbody></table></div><p class="small">Rows sum to 100% before ro
 published='<h3>Published DHS Table 7.13: all-method validation comparison</h3><p class="small">The official table below includes traditional methods and EC. Its all-method column is a validation control and is not the denominator for the presentation reasons chart.</p>'+published
 s=s[:start]+intro+seven_table+method_table+published+'</section>'+s[end:]
 path.write_text(s)
-print(path))------------------")
-MODULES[["99_sync_duration_planning_html.py"]] <- list(language="Python", packaged_sha256="0e8329eabb09699476c39592be81886f1567d72b5acd3284f23219f8ef0eac11",args=character(),code=r"------------------(#!/usr/bin/env python3
+print(path))----------------------")
+
+MODULES[["99_sync_duration_planning_html.py"]] <- list(language="Python", packaged_sha256="0e8329eabb09699476c39592be81886f1567d72b5acd3284f23219f8ef0eac11", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Mirror Nigeria's 16 historical/AFT planning slides in the working HTML."""
 from html import escape
 from pathlib import Path
@@ -8765,10 +8298,379 @@ source = source.replace('Nigeria_discontinuation_2024_UPDATED_full_replication.p
 target.write_text(source)
 print(target)
 print('Mirrored tables:', sum(source.count(f'data-pptx-slide="{n}"') for n in [*range(56,72),*range(81,86)]))
-)------------------")
+)----------------------")
 
+MODULES[["dhs_survey_tools.R"]] <- list(language="R", packaged_sha256="a6ee764ece430cf7c842c9dbdc01bd94a32820a0d4f0162e410f0e9104b7f003", args=character(0), code=r"----------------------(# DHS design utilities. Inputs are supplied by the calling analysis.
+# No finite population correction: use the with-replacement PSU approximation.
+dhs_require_survey <- function() {
+  if (!requireNamespace('survey', quietly=TRUE)) stop('Install the survey package before estimation.')
+}
 
-# Plain source resources, expanded only into a private runtime directory.
+dhs_frame <- function(ir) {
+  required <- c('v005','v021','v022')
+  if (!all(required %in% names(ir))) stop('IR data require v005, v021 and v022.')
+  w <- as.numeric(ir$v005)/1e6
+  if (anyNA(w) || any(!is.finite(w)) || any(w<=0)) stop('Invalid DHS sampling weights.')
+  f <- unique(data.frame(cluster=as.character(ir$v021), stratum=as.character(ir$v022)))
+  if (anyNA(f) || any(f$cluster=='') || any(f$stratum=='')) stop('Missing survey identifiers.')
+  f[order(f$stratum,f$cluster),,drop=FALSE]
+}
+
+dhs_design <- function(data, frame, weight='wt', cluster='cluster', stratum='stratum') {
+  dhs_require_survey()
+  data <- as.data.frame(data)
+  if (!all(c(weight,cluster,stratum)%in%names(data))) stop('Analysis records lack survey design variables.')
+  f <- unique(data.frame(.dhs_psu=as.character(frame$cluster),.dhs_stratum=as.character(frame$stratum)))
+  if (anyNA(f) || anyDuplicated(paste(f$.dhs_stratum,f$.dhs_psu,sep=':'))) stop('Invalid full survey frame.')
+  data$.dhs_w <- as.numeric(data[[weight]])
+  data$.dhs_psu <- as.character(data[[cluster]])
+  data$.dhs_stratum <- as.character(data[[stratum]])
+  if (anyNA(data[,c('.dhs_w','.dhs_psu','.dhs_stratum')]) || any(!is.finite(data$.dhs_w)) || any(data$.dhs_w<0)) stop('Invalid analysis design values.')
+  key <- function(s,p) paste(s,p,sep=':')
+  fk <- key(f$.dhs_stratum,f$.dhs_psu); dk <- key(data$.dhs_stratum,data$.dhs_psu)
+  if (any(!dk%in%fk)) stop('Analysis PSU is absent from the supplied full frame.')
+  data$.dhs_record <- TRUE
+  absent <- which(!fk%in%dk)
+  if (length(absent)) {
+    if (!nrow(data)) stop('An empty domain cannot be estimated.')
+    pad <- data[rep(1L,length(absent)),,drop=FALSE]
+    pad$.dhs_w <- 0; pad$.dhs_record <- FALSE
+    pad$.dhs_psu <- f$.dhs_psu[absent]; pad$.dhs_stratum <- f$.dhs_stratum[absent]
+    data <- rbind(data,pad)
+  }
+  # Explicit policy: singleton strata are an error, never silently dropped or
+  # treated as certainty PSUs. Resolve any such survey-specific case explicitly.
+  if (any(table(f$.dhs_stratum)<2L)) stop('Singleton survey stratum: specify a documented survey-specific treatment.')
+  design <- survey::svydesign(ids=~.dhs_psu,strata=~.dhs_stratum,weights=~.dhs_w,
+                    data=data,nest=TRUE)
+  # degf() excludes zero-weight placeholder PSUs. Retain the documented
+  # full-frame degrees of freedom for domain intervals and model tests.
+  attr(design,'dhs_design_df') <- nrow(f)-length(unique(f$.dhs_stratum))
+  design
+}
+
+dhs_percentage <- function(design, indicator, domain=NULL) {
+  n <- sum(design$variables$.dhs_record)
+  if (length(indicator)!=n) stop('Indicator length does not match the analysis records.')
+  if (is.null(domain)) domain <- rep(TRUE,n)
+  if (length(domain)!=n || anyNA(domain)) stop('Invalid descriptive domain.')
+  domain <- as.logical(domain)
+  raw_w <- weights(design)[design$variables$.dhs_record]
+  valid <- domain & !is.na(indicator)
+  if (any(!as.numeric(indicator[valid])%in%c(0,1))) stop('Percentage indicators must be binary.')
+  if (!any(valid) || sum(raw_w[valid])<=0) return(c(percent=NA_real_,se_pct=NA_real_,ci_low_pct=NA_real_,ci_high_pct=NA_real_,unweighted_n=sum(valid),weighted_n=sum(raw_w[valid]),design_df=attr(design,'dhs_design_df')))
+  design$variables$.dhs_indicator <- 0
+  design$variables$.dhs_domain <- FALSE
+  at <- which(design$variables$.dhs_record)
+  design$variables$.dhs_indicator[at] <- as.numeric(indicator)
+  design$variables$.dhs_domain[at] <- valid
+  # svyratio keeps the full survey frame for domain inference. Its point
+  # estimate is the same weighted proportion as svymean on the domain.
+  design$variables$.dhs_num <- ifelse(design$variables$.dhs_domain,design$variables$.dhs_indicator,0)
+  fit <- survey::svyratio(~.dhs_num,~.dhs_domain,design,na.rm=TRUE)
+  p <- as.numeric(coef(fit)); se <- as.numeric(survey::SE(fit)); df <- attr(design,'dhs_design_df')
+  critical <- qt(.975,df)
+  interval <- p+c(-1,1)*critical*se
+  # With no observed variation, a zero-width Wald interval is misleading.
+  # Preserve the point/SE but leave uncertainty bounds unreported.
+  if (p<=0 || p>=1) interval <- c(NA_real_,NA_real_)
+  c(percent=100*p,se_pct=100*se,ci_low_pct=100*max(0,interval[1]),
+    ci_high_pct=100*min(1,interval[2]),unweighted_n=sum(valid),
+    weighted_n=sum(raw_w[valid]),design_df=df)
+}
+
+dhs_psu_variance <- function(influence, frame) {
+  # influence contains already-weighted sums, one row per original-frame PSU.
+  # survey::svyrecvar supplies the stratified design covariance, not a naive
+  # model Hessian or an independent-record variance.
+  f <- data.frame(wt=1,cluster=as.character(frame$cluster),stratum=as.character(frame$stratum))
+  if (nrow(as.matrix(influence))!=nrow(f)) stop('Influence rows do not match the full PSU frame.')
+  d <- dhs_design(f,f)
+  survey::svyrecvar(as.matrix(influence),d$cluster,d$strata,d$fpc,lonely.psu='fail')
+}
+
+dhs_binary_fit <- function(formula, data, frame, weight='wt') {
+  # Padding has zero weight but retains full-frame design degrees of freedom.
+  # Keep actual analysis rows for downstream prediction/score calculations.
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  frame <- dhs_context()$frame
+  design <- dhs_design(data,frame,weight=weight)
+  fit <- survey::svyglm(formula,design=design,subset=.dhs_record,
+                         family=quasibinomial(),rescale=FALSE,
+                         control=glm.control(maxit=100L,epsilon=1e-10))
+  fit$df.residual <- attr(design,'dhs_design_df')-fit$rank+1L
+  fit
+}
+
+dhs_current_duration <- function(ir, rows) {
+  elapsed <- as.numeric(ir$v337[rows])
+  special <- elapsed==95L
+  if (any(special,na.rm=TRUE)) {
+    if (!'v317'%in%names(ir)) stop('v317 is needed to resolve all-calendar current use.')
+    elapsed[special] <- as.numeric(ir$v008[rows[special]])-as.numeric(ir$v317[rows[special]])
+  }
+  if (anyNA(elapsed) || any(!is.finite(elapsed)) || any(elapsed<0) || any(as.numeric(ir$v337[rows])%in%c(96L,997L,998L,999L))) stop('Unresolved current-use duration: do not treat special DHS codes as exact months.')
+  elapsed
+}
+
+# One context per analysis subprocess; restricted records stay in memory.
+.dhs_context <- new.env(parent=emptyenv())
+dhs_set_context <- function(country=NULL, root=NULL, ir=NULL) {
+  if (!is.null(country)) .dhs_context$country <- country
+  if (!is.null(root)) .dhs_context$root <- root
+  if (!is.null(ir)) {
+    stopifnot(all(c('v005','v021','v022') %in% names(ir)))
+    .dhs_context$ir <- as.data.frame(ir[,intersect(c('caseid','v005','v021','v022','v008','v317','v337'),names(ir)),drop=FALSE])
+    .dhs_context$frame <- dhs_frame(ir)
+    .dhs_context$woman_design <- dhs_design(data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),stratum=as.character(ir$v022)),.dhs_context$frame)
+  }
+  invisible(NULL)
+}
+dhs_context <- function() {
+  if (!exists('ir',.dhs_context,inherits=FALSE)) {
+    if (!exists('root',.dhs_context,inherits=FALSE)) stop('Initialize the DHS analysis context.')
+    raw <- switch(.dhs_context$country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
+                  Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
+    staged <- file.path(.dhs_context$root,raw)
+    if(file.exists(staged)) {
+      ir <- readRDS(staged)
+    } else if(identical(.dhs_context$country,'DRC')) {
+      # DRC's preparation stage creates its lossless RDS after expanding the
+      # calendar. Its supplied/staged IR is already available at that point.
+      input <- Sys.getenv('DRC_IR_FILE',unset=file.path(.dhs_context$root,'Data/CDIR81FL.dta'))
+      if(!file.exists(input)||!requireNamespace('haven',quietly=TRUE))
+        stop('Supply the authorized DRC IR input before calendar preparation.')
+      ir <- as.data.frame(haven::read_dta(input))
+    } else stop('The prepared IR input is missing; run input preparation first.')
+    dhs_set_context(ir=ir)
+  }
+  .dhs_context
+}
+# Calendar records inherit their woman's original design identifiers.
+# A supplied estimation weight may be a resampling weight and is preserved.
+dhs_attach_design <- function(data, ir=NULL, check_weights=TRUE) {
+  data <- as.data.frame(data)
+  if (is.null(ir)) ir <- dhs_context()$ir
+  id <- if ('woman_row'%in%names(data)) data$woman_row else if ('woman'%in%names(data)) data$woman else NULL
+  if (is.null(id) && 'caseid'%in%names(data) && 'caseid'%in%names(ir)) id <- match(data$caseid,ir$caseid)
+  if (!is.null(id)) {
+    if(anyNA(id)||any(id<1L|id>nrow(ir))||any(id!=as.integer(id)))stop('Invalid woman-to-calendar linkage.')
+    data$cluster <- as.character(ir$v021[id]);data$stratum <- as.character(ir$v022[id])
+    base_weight <- as.numeric(ir$v005[id])/1e6
+    if (check_weights && 'wt'%in%names(data) && any(abs(as.numeric(data$wt)-base_weight)>1e-10))
+      stop('Calendar base weights differ from the linked woman weights.')
+    if(!'wt'%in%names(data))data$wt <- base_weight
+    data$dhs_base_weight <- base_weight
+    data$woman_id <- if('caseid'%in%names(ir))as.character(ir$caseid[id])else as.character(id)
+  } else {
+    if(!'cluster'%in%names(data))stop('Calendar records require woman linkage or PSU/stratum identifiers.')
+    # Older modules store the nested PSU key instead of the original numeric ID.
+    nested <- paste(as.character(ir$v022),as.character(ir$v021),sep=':')
+    if(any(grepl(':',as.character(data$cluster),fixed=TRUE))) {
+      at<-match(as.character(data$cluster),nested)
+      if(anyNA(at))stop('Unrecognized nested PSU key.')
+      data$cluster<-as.character(ir$v021[at])
+      if('stratum'%in%names(data)&&any(as.character(data$stratum)!=as.character(ir$v022[at])))
+        stop('Nested PSU key and stratum disagree.')
+      data$stratum<-as.character(ir$v022[at])
+    }
+    if(!'stratum'%in%names(data))stop('Unlinked calendar records require explicit strata or a verified nested PSU key.')
+  }
+  data
+}
+
+# Point AFT fits use survey linearization; bootstrap refits can use the weighted
+# likelihood because joint uncertainty is taken from the stratified PSU replicates.
+dhs_aft_fit <- function(formula, data, weights, dist, control, ...) {
+  supplied <- as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
+  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid AFT estimation weights.')
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  data$.aft_weight <- supplied
+  data <- data[supplied>0,,drop=FALSE]
+  if(isTRUE(getOption('dhs.replication',FALSE))) {
+    return(survival::survreg(formula,data=data,weights=.aft_weight,dist=dist,control=control,...))
+  }
+  design <- dhs_design(data,dhs_context()$frame,weight='.aft_weight')
+  fit <- do.call(survey::svysurvreg,list(formula=formula,design=design,
+       subset=quote(.dhs_record),dist=dist,control=control,...))
+  # svysurvreg deliberately removes its likelihood. Preserve the previous
+  # weighted pseudo-AIC only for the separate, conditional family comparison;
+  # do not restore it as a survey-model likelihood or use it for uncertainty.
+  likelihood_fit <- survival::survreg(formula,data=data,weights=.aft_weight,
+                                      dist=dist,control=control,...)
+  if(max(abs(coef(fit)-coef(likelihood_fit)))>1e-6 ||
+       abs(fit$scale-likelihood_fit$scale)>1e-6)
+    stop('Survey and weighted AFT point fits do not agree.')
+  fit$dhs_weighted_aic <- stats::AIC(likelihood_fit)
+  fit$call$design <- quote(design)
+  attr(fit,'dhs_design_df') <- attr(design,'dhs_design_df')
+  fit
+}
+dhs_aft_aic <- function(fit) {
+  if(inherits(fit,'svysurvreg')) {
+    if(is.null(fit$dhs_weighted_aic))stop('Weighted family-comparison score is absent.')
+    return(fit$dhs_weighted_aic)
+  }
+  stats::AIC(fit)
+}
+
+# Weighted multinomial coefficients with full-frame stratified PSU covariance.
+# Retains the likelihood Hessian as the derivative; never reports it as survey variance.
+dhs_multinom_summary <- function(fit, data, frame=NULL) {
+  data <- dhs_attach_design(data,check_weights=FALSE)
+  if(is.null(frame))frame<-dhs_context()$frame
+  X<-model.matrix(delete.response(terms(fit)),data,contrasts.arg=fit$contrasts)
+  p<-predict(fit,newdata=data,type='probs')
+  if(is.null(dim(p)))stop('Use svyglm for binary models.')
+  lev<-fit$lev[-1L];y<-model.response(model.frame(terms(fit),data))
+  w<-if('fit_weight'%in%names(data))data$fit_weight else data$wt
+  score<-do.call(cbind,lapply(lev,function(k)X*(w*(as.numeric(y==k)-p[,k]))))
+  H<-fit$Hessian
+  if(is.null(H))H<-getFromNamespace('multinomHess','nnet')(fit,Z=X,probs=p)
+  expected<-unlist(lapply(lev,function(k)paste(k,colnames(X),sep=':')))
+  if(!is.null(colnames(H))&&!identical(colnames(H),expected))stop('Multinomial score ordering differs from the Hessian.')
+  key<-function(s,p)paste(s,p,sep=':')
+  keys<-key(frame$stratum,frame$cluster);at<-match(key(data$stratum,data$cluster),keys)
+  if(anyNA(at))stop('Model records do not match the original survey frame.')
+  U<-matrix(0,nrow(frame),ncol(score));z<-rowsum(score,at,reorder=FALSE);U[as.integer(rownames(z)),]<-z
+  bread<-MASS::ginv(H);V<-bread%*%dhs_psu_variance(U,frame)%*%bread
+  co<-coef(fit);se<-matrix(sqrt(pmax(diag(V),0)),nrow=nrow(co),byrow=TRUE,dimnames=dimnames(co))
+  list(coefficients=co,standard.errors=se,covariance=V,
+       design_df=nrow(frame)-length(unique(frame$stratum)),inference='Full-frame stratified PSU sandwich')
+}
+
+dhs_calendar_records <- function(data, ir) {
+  if(!'woman_row'%in%names(data))stop('Calendar records require woman_row.')
+  id<-data$woman_row
+  if(anyNA(id)||any(id<1L|id>nrow(ir)))stop('Invalid calendar woman indices.')
+  w<-as.numeric(ir$v005[id])/1e6
+  if('wt'%in%names(data)&&any(abs(as.numeric(data$wt)-w)>1e-10))stop('Calendar weight inheritance failed.')
+  data$wt<-w;data$v021<-as.numeric(ir$v021[id]);data$v022<-as.numeric(ir$v022[id])
+  data$woman_id<-as.character(ir$caseid[id])
+  attr(data,'dhs_ir_design')<-as.data.frame(ir[,intersect(c('caseid','v005','v021','v022'),names(ir)),drop=FALSE])
+  data
+}
+
+# Preserve survey covariance on fitted multinomial objects so subsequent
+# summary()/vcov() calls cannot silently fall back to independent-record errors.
+dhs_multinom_fit <- function(formula, data, weights, ...) {
+  supplied<-as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
+  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid multinomial estimation weights.')
+  data<-dhs_attach_design(data,check_weights=FALSE);data$.dhs_fit_weight<-supplied
+  fit<-nnet::multinom(formula,data=data,weights=.dhs_fit_weight,...)
+  if(!is.null(fit$Hessian)&&!isTRUE(getOption('dhs.replication',FALSE))) {
+    data$fit_weight<-supplied
+    z<-dhs_multinom_summary(fit,data)
+    fit$dhs_survey_vcov<-z$covariance;fit$dhs_design_df<-z$design_df
+  }
+  fit$dhs_inference<-if(is.null(fit$dhs_survey_vcov))'Stratified PSU refits required; ordinary Hessian inference disabled'else'Full-frame stratified PSU sandwich'
+  class(fit)<-c('dhs_multinom',class(fit));fit
+}
+vcov.dhs_multinom <- function(object, ...) {
+  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model has no point survey covariance. Use its stratified-PSU replicate inference.')
+  object$dhs_survey_vcov
+}
+summary.dhs_multinom <- function(object, ...) {
+  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model requires its stratified-PSU replicate inference.')
+  getS3method('summary','multinom',envir=asNamespace('nnet'))(object,...)
+}
+)----------------------")
+
+MODULES[["dhs_survey_descriptives.R"]] <- list(language="R", packaged_sha256="8ea87334fad4a5e2414113503a825c5d1ea8867ee162d7e2377020a31cfebbc9", args=character(0), code=r"----------------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
+# National and subnational descriptive percentages. Supply the prepared project
+# root through the country entry point; no existing report is an input.
+country <- Sys.getenv('ANALYSIS_COUNTRY')
+if (!country%in%c('Ethiopia','Nigeria','DRC')) stop('Set ANALYSIS_COUNTRY through the country entry point.')
+root <- Sys.getenv(paste0(toupper(country),'_PROJECT_ROOT'))
+if (!nzchar(root)) stop('A prepared project root is required.')
+source(file.path(root,'Code','dhs_survey_tools.R'),local=TRUE)
+raw <- switch(country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
+ Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
+episodes <- switch(country,Ethiopia='ethiopia_2024_table_7_11_episodes.rds',
+ Nigeria='nigeria_2024_table_7_12_episodes.rds',DRC='drc_2023_24_table_7_13_episodes.rds')
+ir <- readRDS(file.path(root,raw)); e <- readRDS(file.path(root,'Data/Derived',episodes))
+frame <- dhs_frame(ir)
+modern_codes <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
+actionable <- c(1L,4L,5L,6L,7L,8L,10L,15L)
+reason_groups <- list('Method failure'=1L,'Wanted pregnancy'=2L,
+ 'Other fertility'=c(9L,12L,13L),'Bleeding changes'=15L,
+ 'Other side effects/health'=c(4L,5L),'Wanted more effective method'=7L,
+ 'Access/cost/convenience'=c(6L,8L,10L),'Partner/spousal disapproval'=3L,
+ 'Other/unspecified'=c(11L,14L,96L,98L,99L,0L))
+method_group <- function(code) {
+ x <- rep('Other modern',length(code));x[code==1L]<-'Pill';x[code==2L]<-'IUD'
+ x[code==3L]<-'Injectables';x[code==11L]<-'Implants';x[code==16L]<-'EC'
+ x[!code%in%c(modern_codes,16L)]<-'Non-modern/no method';x
+}
+women <- data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),
+ stratum=as.character(ir$v022),region=as.character(ir$v024),
+ modern=as.numeric(ir$v313)==3L,method=method_group(as.numeric(ir$v312)))
+e$cluster <- as.character(ir$v021[e$woman_row]);e$stratum <- as.character(ir$v022[e$woman_row])
+e$region <- as.character(ir$v024[e$woman_row]);e$group <- method_group(e$method_code)
+dw <- dhs_design(women,frame);de <- dhs_design(e,frame)
+scopes <- c('National',sort(unique(women$region)))
+results <- list();check <- 0
+add <- function(design,data,indicator,domain,analysis,scope,category,method='All') {
+ z <- dhs_percentage(design,indicator,domain)
+ valid <- domain & !is.na(indicator)
+ plain <- if(any(valid))100*sum(data$wt[valid]*as.numeric(indicator[valid]))/sum(data$wt[valid])else NA_real_
+ if(is.finite(plain)) {
+   if(abs(z['percent']-plain)>1e-9) stop('Survey and weighted descriptive point estimates disagree.')
+   check <<- check+1L
+ }
+ results[[length(results)+1L]] <<- data.frame(country=country,analysis=analysis,
+  scope=scope,method=method,category=category,as.list(z),row.names=NULL,
+  observed_events=sum(as.logical(indicator[valid])),
+  limited_sample=sum(valid)<25L || sum(as.logical(indicator[valid]))<10L,
+  uncertainty='survey Taylor linearization; full PSU frame; 95% t interval',
+  stringsAsFactors=FALSE)
+}
+for(scope in scopes) {
+ wdomain <- if(scope=='National')rep(TRUE,nrow(women))else women$region==scope
+ edomain <- if(scope=='National')rep(TRUE,nrow(e))else e$region==scope
+ add(dw,women,women$modern,wdomain,'All-women mCPR',scope,'Modern use including EC')
+ for(m in c('Injectables','Implants','Pill','IUD','Other modern','EC')) {
+  add(dw,women,women$method==m,wdomain & women$modern,'Current modern-method mix',scope,m)
+  add(dw,women,women$modern & women$method==m,wdomain,'Method-specific prevalence among all women',scope,m)
+ }
+ start_domain <- edomain & e$entry==0L
+ for(m in sort(unique(e$group))) add(de,e,e$group==m,start_domain,'Observed starts: all methods',scope,m)
+ for(m in c('Injectables','Implants','Pill','IUD','Other modern'))
+  add(de,e,e$group==m,start_domain & e$method_code%in%modern_codes,'Observed starts: modern excluding EC',scope,m)
+ for(m in c('All','Injectables','Implants','Pill','IUD','Other modern')) {
+  mdomain <- edomain & e$method_code%in%modern_codes & (m=='All' | e$group==m)
+  for(window in c('All eligible endings','First-12-month endings')) {
+   ended <- mdomain & e$discontinued
+   if(window=='First-12-month endings')ended<-ended & e$exposure<=12 & e$entry<e$exposure
+   # These are shares AMONG observed endings, not life-table discontinuation risks.
+   for(reason in names(reason_groups))add(de,e,e$reason_code%in%reason_groups[[reason]],ended,
+    paste('Recorded reason shares:',window),scope,reason,m)
+   for(reason in c('Method failure','Bleeding changes','Other side effects/health',
+                    'Wanted more effective method','Access/cost/convenience'))
+    add(de,e,e$reason_code%in%reason_groups[[reason]],ended & e$reason_code%in%actionable,
+     paste('Shares within potentially actionable endings:',window),scope,reason,m)
+  }
+ }
+}
+out <- file.path(root,'output/Supporting_data');dir.create(out,recursive=TRUE,showWarnings=FALSE)
+write.csv(do.call(rbind,results),file.path(out,'dhs_survey_descriptive_percentages.csv'),row.names=FALSE,na='')
+metadata <- data.frame(country=country,weight='v005 / 1000000',PSU='v021',stratum='v022',
+ PSUs=nrow(frame),strata=length(unique(frame$stratum)),
+ design_df=survey::degf(dw),point_comparisons=check,
+ all_point_comparisons_passed=TRUE,full_frame_including_zero_domain_PSUs=TRUE,
+ repeated_episodes_kept_within_PSU=TRUE,survey_version=as.character(packageVersion('survey')))
+write.csv(metadata,file.path(out,'dhs_survey_design_checks.csv'),row.names=FALSE)
+cat('Survey descriptives complete:',country,';',check,'weighted point comparisons passed.\n')
+)----------------------")
+
 REPORT_FILES <- list()
 REPORT_FILES[["src/report/05_render_nigeria_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Render the Nigeria working HTML from the complete saved analysis tables.
@@ -9345,6 +9247,7 @@ document=begin+''.join(blocks[k] for k in story_order if k!='overview')+end
 OUT.write_text(document,encoding='utf-8')
 print(OUT.name)
 )----------------------"
+
 REPORT_FILES[["src/report/19_add_cause_mcpr_ceiling_html.py"]] <- r"----------------------("""Append the cause-specific gross mCPR ceiling table to a country HTML report.
 
 The user counts come from the existing method-by-cause projection. The same
@@ -9379,7 +9282,12 @@ def build(country: str, root: Path) -> None:
     data = output / "Supporting_data" / (
         "nigeria_current_users_actionable_by_cause.csv" if nigeria else "current_users_actionable_by_cause.csv"
     )
-    wra = 59_000_784.5 if nigeria else 35_016_171
+    outcome_year = 2025 if nigeria else 2026
+    if nigeria:
+        with (output/'Supporting_data/nigeria_wpp2024_wra_2024_2026.csv').open() as stream:
+            wra = next(float(r['women_15_49']) for r in csv.DictReader(stream) if int(r['year'])==outcome_year)
+    else:
+        wra = 35_016_171
     country_name = "Nigeria" if nigeria else "Ethiopia"
     with data.open(newline="") as f:
         source = list(csv.DictReader(f))
@@ -9398,8 +9306,10 @@ def build(country: str, root: Path) -> None:
     fmt = lambda x: f"{round(x):,}"
     totals = [sum(values[(method, reason)] for method in METHODS) for reason, _ in REASONS]
     grand_total = sum(totals)
-    expected = 1_486_395 if nigeria else 1_241_693
-    assert round(grand_total) == expected
+    projection = output/'Supporting_data'/('nigeria_current_users_by_method_and_actionable_projection.csv' if nigeria else 'current_users_actionable_12_month_projection.csv')
+    with projection.open() as stream:
+        expected = sum(float(r['illustrative_original_method_endings' if nigeria else 'illustrative_actionable_method_endings']) for r in csv.DictReader(stream) if r['method'].replace('Other modern methods','Other modern') in METHODS)
+    assert abs(grand_total-expected)<1e-4
 
     def tr(label: str, cells: list[str], css: str = "") -> str:
         return f'<tr class="{css}"><th scope="row">{html.escape(label)}</th>' + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
@@ -9409,7 +9319,7 @@ def build(country: str, root: Path) -> None:
         nums = [values[(method, reason)] for reason, _ in REASONS]
         body_rows.append(tr(method, [fmt(x) for x in nums] + [f"<strong>{fmt(sum(nums))}</strong>"]))
     body_rows.append(tr("Estimated original-method endings", [f"<strong>{fmt(x)}</strong>" for x in totals] + [f"<strong>{fmt(grand_total)}</strong>"], "cause-total"))
-    body_rows.append(tr("2026 women aged 15–49", [fmt(wra)] * 6, "cause-wra"))
+    body_rows.append(tr(f"{outcome_year} women aged 15–49", [fmt(wra)] * 6, "cause-wra"))
     body_rows.append(tr("Maximum illustrative mCPR increase", [f"<strong>{x / wra * 100:.2f} pp</strong>" for x in totals] + [f"<strong>{grand_total / wra * 100:.2f} pp</strong>"], "cause-pp"))
     headers = "".join(f'<th scope="col">{label}</th>' for _, label in REASONS)
     section = f"""{MARKER_START}
@@ -9428,8 +9338,8 @@ def build(country: str, root: Path) -> None:
 </style>
 <div class="eyebrow">Planning illustration</div>
 <h2>Potential mCPR gain by actionable discontinuation cause</h2>
-<p class="intro">The table apportions the existing estimated original-method endings among 2025 current users across five potentially actionable causes. Each column's final row divides its estimated endings by {fmt(wra)} projected women aged 15–49 in {country_name} in 2026. The all-causes column adds the five mutually exclusive causes.</p>
-<div class="cause-table-wrap" role="region" aria-label="Potential 2026 mCPR gain by method and actionable cause" tabindex="0"><table>
+<p class="intro">The table apportions the existing estimated original-method endings among 2025 current users across five potentially actionable causes. Each column's final row divides its estimated endings by {fmt(wra)} projected women aged 15–49 in {country_name} in {outcome_year}. The all-causes column adds the five mutually exclusive causes.</p>
+<div class="cause-table-wrap" role="region" aria-label="Potential {outcome_year} mCPR gain by method and actionable cause" tabindex="0"><table>
 <thead><tr><th scope="col">Method / measure</th>{headers}<th scope="col">All actionable<br>causes</th></tr></thead>
 <tbody>{''.join(body_rows)}</tbody></table></div>
 <p class="note"><strong>Interpretation:</strong> These percentage-point values are gross upper bounds, not expected program effects. An ending of the original method does not necessarily reduce modern contraceptive prevalence: a woman may switch to another modern method or restart before year-end. The cause-specific counts apply first-year, 12-month life-table probabilities to current users without adjusting for how long they have already used the method. Emergency contraception has current users in mCPR but no ongoing-use discontinuation estimate and is not included in the table's endings.</p>
@@ -9458,6 +9368,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     build(args.country, args.root)
 )----------------------"
+
 REPORT_FILES[["src/report/27_add_method_zone_models_to_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Add reproducible injectable/implant zone model results to Nigeria HTML.
 
@@ -9631,6 +9542,7 @@ if nav not in page:
 PAGE.write_text(page,encoding='utf-8')
 print(PAGE)
 )----------------------"
+
 REPORT_FILES[["src/report/28_add_method_scenario_tables.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Reproduce Ethiopia-style method-level 2026 mCPR scenarios for Nigeria.
 
@@ -9654,7 +9566,7 @@ def read(name):
 
 scenarios = read('nigeria_2026_mcpr_scenarios.csv')
 methods = read('nigeria_current_users_by_method_and_actionable_projection.csv')
-assert len(scenarios) == 3 and len(methods) == 6
+assert len(scenarios) == 3 and len(methods) == 7
 assert abs(sum(float(m['share_current_modern_pct']) for m in methods)-100) < 1e-8
 gross = sum(float(m['illustrative_original_method_endings']) for m in methods)
 assert all(abs(float(s['illustrative_gross_endings'])-gross) < .01 for s in scenarios)
@@ -9729,6 +9641,7 @@ if toc not in source:
 PAGE.write_text(source)
 print(PAGE)
 )----------------------"
+
 REPORT_FILES[["src/report/30_add_zone_method_mix_decomposition_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Add the reproducible six-zone method-mix diagnostic to Nigeria HTML."""
 import csv
@@ -9779,6 +9692,7 @@ if toc not in source:
 page.write_text(source)
 print(page)
 )----------------------"
+
 REPORT_FILES[["src/report/36_add_alluvial_pathways_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Insert Nigeria episode and current-user pathway sections into working HTML."""
 import csv
@@ -9853,6 +9767,7 @@ for id,label in [('action-pathways','Actionable pathways'),
 page.write_text(source)
 print(page)
 )----------------------"
+
 REPORT_FILES[["src/report/39_add_selected_exploratory_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Add Nigeria counterparts of Ethiopia's selected-reason exploratory tables."""
 import csv
@@ -10058,6 +9973,7 @@ for id in ids:
 page.write_text(source)
 print(page,len(ids),'sections')
 )----------------------"
+
 REPORT_FILES[["src/report/41_add_selected_current_user_planning_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Add Ethiopia-style selected-reason current-user planning tables to Nigeria."""
 import csv,html
@@ -10130,6 +10046,7 @@ for id,label in [('current-user-reason-planning','Selected-reason current users'
 page.write_text(source)
 print(page)
 )----------------------"
+
 REPORT_FILES[["src/report/43_add_selected_risk_strata_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Present the Nigeria out-of-fold selected-reason risk strata and profiles."""
 import csv,html
@@ -10175,6 +10092,7 @@ if 'href="#selected-reason-risk-strata"' not in source:
  source=source.replace(old,'<a href="#selected-reason-risk-strata">Selected-reason risk bands</a>'+old,1)
 page.write_text(source);print(page)
 )----------------------"
+
 REPORT_FILES[["src/report/45_add_replication_figures_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Place Nigeria-specific figures within corresponding working-HTML analyses."""
 from pathlib import Path
@@ -10215,6 +10133,7 @@ if 'replication-figure{margin:' not in source:source=source.replace('</head>',st
 page.write_text(source)
 print(page)
 )----------------------"
+
 REPORT_FILES[["src/report/46_add_three_definition_comparison_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Add the direct all/selected/actionable comparison in the Ethiopia structure."""
 from pathlib import Path
@@ -10238,6 +10157,7 @@ if 'href="#twelve-month-three-column-comparison"' not in s:
  s=s.replace(target,'<a href="#twelve-month-three-column-comparison">Three reason definitions</a>'+target,1)
 page.write_text(s);print(page)
 )----------------------"
+
 REPORT_FILES[["src/report/47_add_method_followup_alluvials_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Insert the four Nigeria method-to-follow-up alluvials in narrative order."""
 from pathlib import Path
@@ -10258,6 +10178,7 @@ for id,label,before in [('all-reason-transitions','After all-reason endings','se
   target=f'<a href="#{before}"';assert target in s;s=s.replace(target,f'<a href="#{id}">{label}</a>'+target,1)
 p.write_text(s);print(p.name)
 )----------------------"
+
 REPORT_FILES[["src/report/48_add_selected_regional_adjustment_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Complete the selected-reason regional sequence with adjusted probabilities."""
 from pathlib import Path
@@ -10285,6 +10206,7 @@ if 'href="#selected-reason-regional-adjusted"' not in s:
  s=s.replace(target,'<a href="#selected-reason-regional-adjusted">Adjusted selected-reason rates</a>'+target,1)
 page.write_text(s);print(page)
 )----------------------"
+
 REPORT_FILES[["src/report/50_add_all_reason_regional_paired_bars.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Mirror the Ethiopia by-method regional paired bars for all-reason risk."""
 from pathlib import Path
@@ -10317,6 +10239,7 @@ a=s.index('<section id="regional-method-paired-bars"');h=re.search(r'</p>',s[a:]
 at=a+h.end();s=s[:at]+block+s[at:]
 p.write_text(s);print(p.name)
 )----------------------"
+
 REPORT_FILES[["src/report/59_align_html_visual_style.py"]] <- r"----------------------(from pathlib import Path
 import os
 import re
@@ -10358,6 +10281,7 @@ html=html.replace('</head>', '<style id="ethiopia-visual-alignment">'+css+'</sty
 p.write_text(html)
 print(p.name)
 )----------------------"
+
 REPORT_FILES[["src/report/72_correct_modern_reason_html.py"]] <- r"----------------------(#!/usr/bin/env python3
 """Correct the existing working HTML without discarding later added sections."""
 import csv
@@ -10399,6 +10323,7 @@ s=s[:start]+intro+seven_table+method_table+published+'</section>'+s[end:]
 path.write_text(s)
 print(path)
 )----------------------"
+
 REPORT_FILES[["src/validate_aft_transitions.R"]] <- r"----------------------(# DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
@@ -10413,14 +10338,14 @@ a<-commandArgs(TRUE);stopifnot(length(a)==3);root<-a[1];fitdir<-a[2];out<-a[3];d
 suppressPackageStartupMessages({library(data.table);library(jsonlite)})
 ir<-readRDS(file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'));cal<-readRDS(file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'))
 methods<-c('Injectables','Implants','Pill','IUD','Other modern');causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience');codes<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L));action<-unlist(codes)
-modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L);endpoint_modern<-c(modern,16L)
+modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L);modern<-setdiff(modern,c(6L,7L));endpoint_modern<-c(modern,6L,7L,16L)
 method_group<-function(x)ifelse(x==3,'Injectables',ifelse(x==11,'Implants',ifelse(x==1,'Pill',ifelse(x==2,'IUD','Other modern'))));cause_group<-function(x){z<-rep(NA_integer_,length(x));for(j in 1:5)z[x%in%codes[[j]]]<-j;z}
 source(file.path(root,'Code/transition_model.R'))
 point<-readRDS(file.path(fitdir,'transition_point_fits.rds'))
 diagnostics<-rbindlist(lapply(states,function(s){f<-point$transitions[[s]];check<-fit_transition(follow[follow$current_state==s,],s,f$family,.1,start=f$par,check_gradient=TRUE);data.table(state=s,family=f$family,boundary=f$boundary,convergence=f$convergence,max_gradient_error=check$max_gradient_error)}));write.csv(diagnostics,file.path(out,'transition_fit_diagnostics.csv'),row.names=FALSE)
 set.seed(20261110);frame<-unique(data.table(psu=as.integer(ir$v021),stratum=as.integer(ir$v022)));frame[,fold:=sample(rep(1:5,length.out=.N)),by=stratum]
 initial<-merge(initial,frame[,.(psu,fold)],by='psu');follow<-merge(follow,frame[,.(psu,fold)],by='psu');histories<-merge(histories,frame[,.(psu,fold)],by='psu');validation<-list()
-for(k in 1:5){cat('Held-out fold',k,'\n');flush.console();fit<-fit_models(initial[initial$fold!=k,],follow[follow$fold!=k,],'selected',.1);test<-histories[histories$fold==k & histories$horizon%in%c(1L,3L,6L,12L),];gr<-unique(test[,.(method,cause,end_duration,duration_log)]);gr$gid<-seq_len(nrow(gr));pred<-merge(gr,endpoint_prob(fit,gr,12L),by='gid');v<-merge(test,pred,by=c('method','cause','end_duration','duration_log','horizon'));v[,observed:=as.numeric(observed_state=='Modern')];validation[[k]]<-v[,.(horizon,wt,observed,p_modern,fold)]}
+for(k in 1:5){cat('Held-out fold',k,'\n');flush.console();fit<-fit_models(initial[initial$fold!=k,],follow[follow$fold!=k,],'selected',.1);test<-histories[histories$fold==k & histories$horizon%in%c(1L,3L,6L,12L),];gr<-unique(test[,.(method,cause,end_duration,duration_log)]);gr$gid<-seq_len(nrow(gr));pred<-merge(gr,endpoint_prob(fit,gr,12L),by='gid');v<-merge(test,pred,by=c('method','cause','end_duration','duration_log','horizon'));v[,observed:=as.numeric(observed_state%in%c('Modern','Permanent'))];validation[[k]]<-v[,.(horizon,wt,observed,p_modern,fold)]}
 v<-rbindlist(validation);c<-v[,.(observations=.N,observed_modern=sum(wt*observed)/sum(wt),predicted_modern=sum(wt*p_modern)/sum(wt),brier=sum(wt*(observed-p_modern)^2)/sum(wt)),by=horizon];c[,difference_pp:=100*(predicted_modern-observed_modern)];write.csv(c,file.path(out,'held_out_calibration.csv'),row.names=FALSE);print(c)
 
 checks<-jsonlite::fromJSON(file.path(fitdir,'transition_fit_metadata.json'),simplifyVector=FALSE)
@@ -10429,375 +10354,125 @@ checks$fit_diagnostics<-lapply(seq_len(nrow(diagnostics)),function(i)as.list(dia
 jsonlite::write_json(checks,file.path(fitdir,'transition_validation.json'),auto_unbox=TRUE,pretty=TRUE)
 )----------------------"
 
-
-MODULES[["dhs_survey_tools.R"]] <- list(language="R",args=character(),packaged_sha256="a6ee764ece430cf7c842c9dbdc01bd94a32820a0d4f0162e410f0e9104b7f003",code=r"----------------------(# DHS design utilities. Inputs are supplied by the calling analysis.
-# No finite population correction: use the with-replacement PSU approximation.
-dhs_require_survey <- function() {
-  if (!requireNamespace('survey', quietly=TRUE)) stop('Install the survey package before estimation.')
+# Additional national method-group checks, executed after primary planning.
+MODULES[["999_method_group_sensitivity.R"]] <- list(language="R", packaged_sha256="b45a765ee0059c0d50e9b04882af65473970f43fa789664a798ede59489d1c31", args=character(0), code=r"----------------------(#!/usr/bin/env Rscript
+# Overall actionable-ending sensitivity; inputs are supplied at runtime.
+args<-commandArgs(TRUE)
+if(!length(args)){root<-Sys.getenv('NIGERIA_PROJECT_ROOT');stopifnot(nzchar(root));args<-c('Nigeria',root,file.path(root,'output/method_group_sensitivity'))}
+stopifnot(length(args)==3L)
+country<-args[1];root<-normalizePath(args[2]);out<-args[3]
+stopifnot(country%in%c('Nigeria','DRC'));dir.create(out,recursive=TRUE,showWarnings=FALSE)
+suppressPackageStartupMessages({library(survey);library(survival);library(jsonlite)})
+source(file.path(root,'Code','dhs_survey_tools.R'))
+irfile<-if(country=='Nigeria')'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'else'Data/ir.rds'
+prefix<-if(country=='Nigeria')'nigeria_2024'else'drc_2023_24'
+ir<-readRDS(file.path(root,irfile));dhs_set_context(country=country,root=root,ir=ir)
+e<-readRDS(file.path(root,'Data/Derived',paste0(prefix,'_modern_episodes.rds')))
+cal<-readRDS(file.path(root,'Data/Derived',paste0(prefix,'_calendar_events.rds')))
+pop<-read.csv(file.path(root,'output/Supporting_data',if(country=='Nigeria')'nigeria_wpp2024_wra_2024_2026.csv'else'drc_wpp2024_wra_2024_2026.csv'))
+w24<-pop$women_15_49[pop$year==2024];w25<-pop$women_15_49[pop$year==2025]
+modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
+reversible<-setdiff(modern,c(6L,7L));endpoint_modern<-c(modern,16L)
+action<-c(1L,4L,5L,6L,7L,8L,10L,15L)
+e<-e[e$method_code%in%reversible,]
+mg<-function(x,split=FALSE){z<-ifelse(x==3L,'Injectables',ifelse(x==11L,'Implants',ifelse(x==1L,'Pill',ifelse(x==2L,'IUD','Other modern'))));if(split){z[x==5L]<-'Male condoms';z[x==13L]<-'LAM'};z}
+base_methods<-c('Injectables','Implants','Pill','IUD','Other modern')
+bins<-c(-1,3,6,12,24,36,48,60,Inf)
+wt<-as.numeric(ir$v005)/1e6
+current_ix<-which(as.numeric(ir$v313)==3&as.numeric(ir$v312)%in%reversible)
+current<-data.frame(woman_row=current_ix,method_code=as.numeric(ir$v312[current_ix]),elapsed=dhs_current_duration(ir,current_ix),wt=wt[current_ix])
+current$bin<-as.integer(cut(current$elapsed,bins));stopifnot(!anyNA(current$bin))
+# Keep original permanent and EC classifications for observed endpoint use.
+bywoman<-split(seq_len(nrow(cal)),cal$woman_row)
+spells<-cal[cal$method_code%in%reversible&cal$start>cal$calendar_start,]
+records<-vector('list',nrow(spells))
+for(i in seq_len(nrow(spells))){a<-spells[i,];last<-min(a$end,a$interview-15L);if(last<a$start)next
+ t<-seq.int(a$start,last);timeline<-cal[bywoman[[as.character(a$woman_row)]],];j<-findInterval(t+12L,timeline$start)
+ stopifnot(all(j>0),all(timeline$end[j]>=t+12L));ending<-a$end<t+12L&a$reason_code%in%action
+ records[[i]]<-data.frame(woman_row=a$woman_row,episode=i,method_code=a$method_code,elapsed=t-a$start,wt=a$wt,gross=as.numeric(ending),net=as.numeric(ending&!timeline$method_code[j]%in%endpoint_modern))
 }
-
-dhs_frame <- function(ir) {
-  required <- c('v005','v021','v022')
-  if (!all(required %in% names(ir))) stop('IR data require v005, v021 and v022.')
-  w <- as.numeric(ir$v005)/1e6
-  if (anyNA(w) || any(!is.finite(w)) || any(w<=0)) stop('Invalid DHS sampling weights.')
-  f <- unique(data.frame(cluster=as.character(ir$v021), stratum=as.character(ir$v022)))
-  if (anyNA(f) || any(f$cluster=='') || any(f$stratum=='')) stop('Missing survey identifiers.')
-  f[order(f$stratum,f$cluster),,drop=FALSE]
+land<-do.call(rbind,records);land$bin<-as.integer(cut(land$elapsed,bins))
+frame<-dhs_context()$frame
+mean_design<-function(data,vars){d<-dhs_design(dhs_attach_design(data),frame);unname(coef(svymean(as.formula(paste('~',paste(vars,collapse='+'))),subset(d,.dhs_record))))}
+ir_design<-dhs_context()$woman_design
+stock<-function(m,split)w24*unname(dhs_percentage(ir_design,as.numeric(ir$v313)==3&mg(as.numeric(ir$v312),split)==m&as.numeric(ir$v312)%in%reversible)['percent'])/100
+H<-function(t,mu,scale,dist){switch(dist,weibull=(t/exp(mu))^(1/scale),exponential=t/exp(mu),loglogistic=log1p(exp((log(t)-mu)/scale)),lognormal=-pnorm((log(t)-mu)/scale,lower.tail=FALSE,log.p=TRUE))}
+fit_one<-function(data,event,dist){data$event<-data[[event]];f<-dhs_aft_fit(Surv(exposure,event)~method,data=data,weights=wt,dist=dist,control=survreg.control(maxiter=500));stopifnot(f$iter<500,all(is.finite(coef(f))),is.finite(f$scale));f}
+fit_data<-function(split){d<-e[e$entry==0&e$exposure>0,];d$method<-mg(d$method_code,split);mm<-c(base_methods,if(split)c('Male condoms','LAM'))
+ if(country=='DRC'){d$method[d$method=='IUD']<-'Other modern';mm<-setdiff(mm,'IUD')}
+ d$method<-factor(d$method,levels=mm);d$actionable<-as.integer(d$discontinued&d$reason_code%in%action);d$other<-as.integer(d$discontinued&!d$reason_code%in%action);d}
+pooldata<-fit_data(FALSE)
+if(country=='Nigeria'){
+ fam<-read.csv(file.path(root,'output/Supporting_data/nigeria_survival_model_duration_fit.csv'))
+ families<-c(actionable=fam$distribution[fam$selected_actionable],other=fam$distribution[fam$selected_other])
+ pooledfits<-setNames(lapply(names(families),function(v)fit_one(pooldata,v,families[[v]])),names(families))
+}else{
+ choice<-c('lognormal','weibull','loglogistic','exponential');families<-c(actionable='',other='');pooledfits<-list();aics<-list()
+ for(v in names(families)){
+  ff<-lapply(choice,function(dist)tryCatch(fit_one(pooldata,v,dist),error=function(e)NULL));ok<-which(!vapply(ff,is.null,FALSE));stopifnot(length(ok)>0)
+  aa<-vapply(ff[ok],dhs_aft_aic,0.0);best<-ok[which.min(aa)];families[v]<-choice[best];pooledfits[[v]]<-ff[[best]];aics[[v]]<-setNames(aa,choice[ok])
+ }
+ write_json(aics,file.path(out,'aggregate_aft_family_checks.json'),pretty=TRUE,auto_unbox=TRUE)
 }
-
-dhs_design <- function(data, frame, weight='wt', cluster='cluster', stratum='stratum') {
-  dhs_require_survey()
-  data <- as.data.frame(data)
-  if (!all(c(weight,cluster,stratum)%in%names(data))) stop('Analysis records lack survey design variables.')
-  f <- unique(data.frame(.dhs_psu=as.character(frame$cluster),.dhs_stratum=as.character(frame$stratum)))
-  if (anyNA(f) || anyDuplicated(paste(f$.dhs_stratum,f$.dhs_psu,sep=':'))) stop('Invalid full survey frame.')
-  data$.dhs_w <- as.numeric(data[[weight]])
-  data$.dhs_psu <- as.character(data[[cluster]])
-  data$.dhs_stratum <- as.character(data[[stratum]])
-  if (anyNA(data[,c('.dhs_w','.dhs_psu','.dhs_stratum')]) || any(!is.finite(data$.dhs_w)) || any(data$.dhs_w<0)) stop('Invalid analysis design values.')
-  key <- function(s,p) paste(s,p,sep=':')
-  fk <- key(f$.dhs_stratum,f$.dhs_psu); dk <- key(data$.dhs_stratum,data$.dhs_psu)
-  if (any(!dk%in%fk)) stop('Analysis PSU is absent from the supplied full frame.')
-  data$.dhs_record <- TRUE
-  absent <- which(!fk%in%dk)
-  if (length(absent)) {
-    if (!nrow(data)) stop('An empty domain cannot be estimated.')
-    pad <- data[rep(1L,length(absent)),,drop=FALSE]
-    pad$.dhs_w <- 0; pad$.dhs_record <- FALSE
-    pad$.dhs_psu <- f$.dhs_psu[absent]; pad$.dhs_stratum <- f$.dhs_stratum[absent]
-    data <- rbind(data,pad)
+next12<-function(age,method,fits,levels){nd<-data.frame(method=factor(method,levels=levels));hh<-sapply(names(fits),function(v){f<-fits[[v]];mu<-as.numeric(predict(f,nd,type='lp'));pmax(0,diff(H(age+0:12,mu,f$scale,families[[v]])))})
+ total<-rowSums(hh);s<-c(1,exp(-cumsum(total)))[1:12];sum(s*(-expm1(-total))*ifelse(total>0,hh[,'actionable']/total,0))}
+run<-function(split){
+ methods<-c(base_methods,if(split)c('Male condoms','LAM'));l<-land;l$method<-mg(l$method_code,split);cur<-current;cur$method<-mg(cur$method_code,split)
+ af<-fit_data(split);fits<-if(!split)pooledfits else setNames(lapply(names(families),function(v)fit_one(af,v,families[[v]])),names(families))
+ historical<-list();fractions<-list();support<-list()
+ for(m in methods)for(b in 1:8){
+  selected<-if(b==8)c(6L,7L)else b;z<-which(l$method==m&l$bin%in%selected)
+  while(length(unique(l$episode[z]))<25L&&length(selected)<7){selected<-sort(unique(pmax(1L,pmin(7L,c(selected,selected-1L,selected+1L)))));z<-which(l$method==m&l$bin%in%selected)}
+  stopifnot(length(z)>0)
+  # Adjacent duration pooling is a support guard, not a precision guarantee.
+  historical[[paste(m,b)]]<-mean_design(l[z,],c('gross','net'))
+  q<-which(l$method==m&l$bin%in%(if(b==8)c(6L,7L)else b)&l$gross==1)
+  n<-length(unique(l$episode[q]));level<-'method and duration'
+  if(n<10){q<-which(l$method==m&l$gross==1);n<-length(unique(l$episode[q]));level<-'method, durations pooled'}
+  if(n<10){q<-which(l$gross==1);n<-length(unique(l$episode[q]));level<-'all reversible methods pooled'}
+  stopifnot(length(q)>0);fractions[[paste(m,b)]]<-mean_design(l[q,],'net')
+  support[[paste(m,b)]]<-data.frame(method=m,bin=b,historical_episodes=length(unique(l$episode[z])),expanded_duration=!identical(selected,if(b==8)c(6L,7L)else b),switching_ending_episodes=n,switching_pool=level,minimum_duration_episodes=25L,meets_duration_guard=length(unique(l$episode[z]))>=25L)
+ }
+ cur$firstyear<-cur$historical_gross<-cur$historical_net<-cur$aft_gross<-cur$aft_net<-NA_real_
+ for(m in methods){
+  d<-e[mg(e$method_code,split)==m,];s<-1;p<-0
+  for(t in 1:12){at<-d$entry<t&d$exposure>=t;den<-sum(d$wt[at]);stopifnot(den>0);end<-at&d$discontinued&d$exposure==t;p<-p+s*sum(d$wt[end&d$reason_code%in%action])/den;s<-s*(1-sum(d$wt[end])/den)}
+  for(b in 1:8){ix<-which(cur$method==m&cur$bin==b);if(!length(ix))next;hp<-historical[[paste(m,b)]];cur$firstyear[ix]<-p;cur$historical_gross[ix]<-hp[1];cur$historical_net[ix]<-hp[2]
+   for(age in unique(cur$elapsed[ix])){
+    ii<-ix[cur$elapsed[ix]==age];proxy<-country=='DRC'&&m=='IUD';ff<-if(proxy)pooledfits else fits;ll<-levels(if(proxy)pooldata$method else af$method);mm<-if(proxy)'Other modern'else m
+    v<-next12(age,mm,ff,ll);cur$aft_gross[ii]<-v;cur$aft_net[ii]<-v*fractions[[paste(m,b)]]
+   }
   }
-  # Explicit policy: singleton strata are an error, never silently dropped or
-  # treated as certainty PSUs. Resolve any such survey-specific case explicitly.
-  if (any(table(f$.dhs_stratum)<2L)) stop('Singleton survey stratum: specify a documented survey-specific treatment.')
-  design <- survey::svydesign(ids=~.dhs_psu,strata=~.dhs_stratum,weights=~.dhs_w,
-                    data=data,nest=TRUE)
-  # degf() excludes zero-weight placeholder PSUs. Retain the documented
-  # full-frame degrees of freedom for domain intervals and model tests.
-  attr(design,'dhs_design_df') <- nrow(f)-length(unique(f$.dhs_stratum))
-  design
+ }
+ vars<-c('firstyear','historical_gross','aft_gross','historical_net','aft_net');stopifnot(!anyNA(cur[,vars]),all(as.matrix(cur[,vars])>=0),all(as.matrix(cur[,vars])<=1),all(cur$historical_net<=cur$historical_gross+1e-12),all(cur$aft_net<=cur$aft_gross+1e-12))
+ rows<-list()
+ for(m in methods){ii<-which(cur$method==m);p<-mean_design(cur[ii,],vars);n<-stock(m,split)
+  for(k in seq_along(vars))rows[[length(rows)+1L]]<-data.frame(country=country,grouping=if(split)'Condoms and LAM separate'else'Other reversible pooled',method=m,approach=vars[k],current_users=n,probability=p[k],users=n*p[k],pp=100*n*p[k]/w25)
+ }
+ rows<-do.call(rbind,rows);write.csv(rows,file.path(out,if(split)'separated_methods.csv'else'pooled_methods.csv'),row.names=FALSE)
+ support<-do.call(rbind,support);write.csv(support,file.path(out,if(split)'separated_support.csv'else'pooled_support.csv'),row.names=FALSE)
+ saveRDS(list(fits=fits,families=families,probabilities=cur,results=rows),file.path(out,if(split)'separated_point.rds'else'pooled_point.rds'))
+ totals<-aggregate(cbind(users,pp)~country+grouping+approach,rows,sum)
+ cat('\n',country,if(split)'SEPARATED'else'POOLED','families',paste(families,collapse=','),'\n');print(totals,row.names=FALSE)
+ totals
 }
+pooled<-run(FALSE);separate<-run(TRUE);all<-rbind(pooled,separate)
+write.csv(all,file.path(out,'overall_comparison.csv'),row.names=FALSE)
+# The comparison is restricted to aggregate actionable endings. It does not
+# disaggregate the five causes or refit the separate modeled-transition model.
+# Reported LAM durations are calendar reports, not verified clinical eligibility.
+lam <- data.frame(current_LAM_users=nrow(current[current$method_code==13L,]),
+ LAM_users_over_six_reported_months=sum(current$method_code==13L & current$elapsed>6L),
+ permanent_users=unname(dhs_percentage(ir_design,as.numeric(ir$v313)==3 & as.numeric(ir$v312)%in%c(6L,7L))['percent'])*w24/100,
+ outcome_WRA=w25,minimum_duration_episodes=25L)
+write.csv(lam,file.path(out,'method_sensitivity_context.csv'),row.names=FALSE)
 
-dhs_percentage <- function(design, indicator, domain=NULL) {
-  n <- sum(design$variables$.dhs_record)
-  if (length(indicator)!=n) stop('Indicator length does not match the analysis records.')
-  if (is.null(domain)) domain <- rep(TRUE,n)
-  if (length(domain)!=n || anyNA(domain)) stop('Invalid descriptive domain.')
-  domain <- as.logical(domain)
-  raw_w <- weights(design)[design$variables$.dhs_record]
-  valid <- domain & !is.na(indicator)
-  if (any(!as.numeric(indicator[valid])%in%c(0,1))) stop('Percentage indicators must be binary.')
-  if (!any(valid) || sum(raw_w[valid])<=0) return(c(percent=NA_real_,se_pct=NA_real_,ci_low_pct=NA_real_,ci_high_pct=NA_real_,unweighted_n=sum(valid),weighted_n=sum(raw_w[valid]),design_df=attr(design,'dhs_design_df')))
-  design$variables$.dhs_indicator <- 0
-  design$variables$.dhs_domain <- FALSE
-  at <- which(design$variables$.dhs_record)
-  design$variables$.dhs_indicator[at] <- as.numeric(indicator)
-  design$variables$.dhs_domain[at] <- valid
-  # svyratio keeps the full survey frame for domain inference. Its point
-  # estimate is the same weighted proportion as svymean on the domain.
-  design$variables$.dhs_num <- ifelse(design$variables$.dhs_domain,design$variables$.dhs_indicator,0)
-  fit <- survey::svyratio(~.dhs_num,~.dhs_domain,design,na.rm=TRUE)
-  p <- as.numeric(coef(fit)); se <- as.numeric(survey::SE(fit)); df <- attr(design,'dhs_design_df')
-  critical <- qt(.975,df)
-  interval <- p+c(-1,1)*critical*se
-  # With no observed variation, a zero-width Wald interval is misleading.
-  # Preserve the point/SE but leave uncertainty bounds unreported.
-  if (p<=0 || p>=1) interval <- c(NA_real_,NA_real_)
-  c(percent=100*p,se_pct=100*se,ci_low_pct=100*max(0,interval[1]),
-    ci_high_pct=100*min(1,interval[2]),unweighted_n=sum(valid),
-    weighted_n=sum(raw_w[valid]),design_df=df)
-}
-
-dhs_psu_variance <- function(influence, frame) {
-  # influence contains already-weighted sums, one row per original-frame PSU.
-  # survey::svyrecvar supplies the stratified design covariance, not a naive
-  # model Hessian or an independent-record variance.
-  f <- data.frame(wt=1,cluster=as.character(frame$cluster),stratum=as.character(frame$stratum))
-  if (nrow(as.matrix(influence))!=nrow(f)) stop('Influence rows do not match the full PSU frame.')
-  d <- dhs_design(f,f)
-  survey::svyrecvar(as.matrix(influence),d$cluster,d$strata,d$fpc,lonely.psu='fail')
-}
-
-dhs_binary_fit <- function(formula, data, frame, weight='wt') {
-  # Padding has zero weight but retains full-frame design degrees of freedom.
-  # Keep actual analysis rows for downstream prediction/score calculations.
-  data <- dhs_attach_design(data,check_weights=FALSE)
-  frame <- dhs_context()$frame
-  design <- dhs_design(data,frame,weight=weight)
-  fit <- survey::svyglm(formula,design=design,subset=.dhs_record,
-                         family=quasibinomial(),rescale=FALSE,
-                         control=glm.control(maxit=100L,epsilon=1e-10))
-  fit$df.residual <- attr(design,'dhs_design_df')-fit$rank+1L
-  fit
-}
-
-dhs_current_duration <- function(ir, rows) {
-  elapsed <- as.numeric(ir$v337[rows])
-  special <- elapsed==95L
-  if (any(special,na.rm=TRUE)) {
-    if (!'v317'%in%names(ir)) stop('v317 is needed to resolve all-calendar current use.')
-    elapsed[special] <- as.numeric(ir$v008[rows[special]])-as.numeric(ir$v317[rows[special]])
-  }
-  if (anyNA(elapsed) || any(!is.finite(elapsed)) || any(elapsed<0) || any(as.numeric(ir$v337[rows])%in%c(96L,997L,998L,999L))) stop('Unresolved current-use duration: do not treat special DHS codes as exact months.')
-  elapsed
-}
-
-# One context per analysis subprocess; restricted records stay in memory.
-.dhs_context <- new.env(parent=emptyenv())
-dhs_set_context <- function(country=NULL, root=NULL, ir=NULL) {
-  if (!is.null(country)) .dhs_context$country <- country
-  if (!is.null(root)) .dhs_context$root <- root
-  if (!is.null(ir)) {
-    stopifnot(all(c('v005','v021','v022') %in% names(ir)))
-    .dhs_context$ir <- as.data.frame(ir[,intersect(c('caseid','v005','v021','v022','v008','v317','v337'),names(ir)),drop=FALSE])
-    .dhs_context$frame <- dhs_frame(ir)
-    .dhs_context$woman_design <- dhs_design(data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),stratum=as.character(ir$v022)),.dhs_context$frame)
-  }
-  invisible(NULL)
-}
-dhs_context <- function() {
-  if (!exists('ir',.dhs_context,inherits=FALSE)) {
-    if (!exists('root',.dhs_context,inherits=FALSE)) stop('Initialize the DHS analysis context.')
-    raw <- switch(.dhs_context$country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
-                  Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
-    staged <- file.path(.dhs_context$root,raw)
-    if(file.exists(staged)) {
-      ir <- readRDS(staged)
-    } else if(identical(.dhs_context$country,'DRC')) {
-      # DRC's preparation stage creates its lossless RDS after expanding the
-      # calendar. Its supplied/staged IR is already available at that point.
-      input <- Sys.getenv('DRC_IR_FILE',unset=file.path(.dhs_context$root,'Data/CDIR81FL.dta'))
-      if(!file.exists(input)||!requireNamespace('haven',quietly=TRUE))
-        stop('Supply the authorized DRC IR input before calendar preparation.')
-      ir <- as.data.frame(haven::read_dta(input))
-    } else stop('The prepared IR input is missing; run input preparation first.')
-    dhs_set_context(ir=ir)
-  }
-  .dhs_context
-}
-# Calendar records inherit their woman's original design identifiers.
-# A supplied estimation weight may be a resampling weight and is preserved.
-dhs_attach_design <- function(data, ir=NULL, check_weights=TRUE) {
-  data <- as.data.frame(data)
-  if (is.null(ir)) ir <- dhs_context()$ir
-  id <- if ('woman_row'%in%names(data)) data$woman_row else if ('woman'%in%names(data)) data$woman else NULL
-  if (is.null(id) && 'caseid'%in%names(data) && 'caseid'%in%names(ir)) id <- match(data$caseid,ir$caseid)
-  if (!is.null(id)) {
-    if(anyNA(id)||any(id<1L|id>nrow(ir))||any(id!=as.integer(id)))stop('Invalid woman-to-calendar linkage.')
-    data$cluster <- as.character(ir$v021[id]);data$stratum <- as.character(ir$v022[id])
-    base_weight <- as.numeric(ir$v005[id])/1e6
-    if (check_weights && 'wt'%in%names(data) && any(abs(as.numeric(data$wt)-base_weight)>1e-10))
-      stop('Calendar base weights differ from the linked woman weights.')
-    if(!'wt'%in%names(data))data$wt <- base_weight
-    data$dhs_base_weight <- base_weight
-    data$woman_id <- if('caseid'%in%names(ir))as.character(ir$caseid[id])else as.character(id)
-  } else {
-    if(!'cluster'%in%names(data))stop('Calendar records require woman linkage or PSU/stratum identifiers.')
-    # Older modules store the nested PSU key instead of the original numeric ID.
-    nested <- paste(as.character(ir$v022),as.character(ir$v021),sep=':')
-    if(any(grepl(':',as.character(data$cluster),fixed=TRUE))) {
-      at<-match(as.character(data$cluster),nested)
-      if(anyNA(at))stop('Unrecognized nested PSU key.')
-      data$cluster<-as.character(ir$v021[at])
-      if('stratum'%in%names(data)&&any(as.character(data$stratum)!=as.character(ir$v022[at])))
-        stop('Nested PSU key and stratum disagree.')
-      data$stratum<-as.character(ir$v022[at])
-    }
-    if(!'stratum'%in%names(data))stop('Unlinked calendar records require explicit strata or a verified nested PSU key.')
-  }
-  data
-}
-
-# Point AFT fits use survey linearization; bootstrap refits can use the weighted
-# likelihood because joint uncertainty is taken from the stratified PSU replicates.
-dhs_aft_fit <- function(formula, data, weights, dist, control, ...) {
-  supplied <- as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
-  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid AFT estimation weights.')
-  data <- dhs_attach_design(data,check_weights=FALSE)
-  data$.aft_weight <- supplied
-  data <- data[supplied>0,,drop=FALSE]
-  if(isTRUE(getOption('dhs.replication',FALSE))) {
-    return(survival::survreg(formula,data=data,weights=.aft_weight,dist=dist,control=control,...))
-  }
-  design <- dhs_design(data,dhs_context()$frame,weight='.aft_weight')
-  fit <- do.call(survey::svysurvreg,list(formula=formula,design=design,
-       subset=quote(.dhs_record),dist=dist,control=control,...))
-  # svysurvreg deliberately removes its likelihood. Preserve the previous
-  # weighted pseudo-AIC only for the separate, conditional family comparison;
-  # do not restore it as a survey-model likelihood or use it for uncertainty.
-  likelihood_fit <- survival::survreg(formula,data=data,weights=.aft_weight,
-                                      dist=dist,control=control,...)
-  if(max(abs(coef(fit)-coef(likelihood_fit)))>1e-6 ||
-       abs(fit$scale-likelihood_fit$scale)>1e-6)
-    stop('Survey and weighted AFT point fits do not agree.')
-  fit$dhs_weighted_aic <- stats::AIC(likelihood_fit)
-  fit$call$design <- quote(design)
-  attr(fit,'dhs_design_df') <- attr(design,'dhs_design_df')
-  fit
-}
-dhs_aft_aic <- function(fit) {
-  if(inherits(fit,'svysurvreg')) {
-    if(is.null(fit$dhs_weighted_aic))stop('Weighted family-comparison score is absent.')
-    return(fit$dhs_weighted_aic)
-  }
-  stats::AIC(fit)
-}
-
-# Weighted multinomial coefficients with full-frame stratified PSU covariance.
-# Retains the likelihood Hessian as the derivative; never reports it as survey variance.
-dhs_multinom_summary <- function(fit, data, frame=NULL) {
-  data <- dhs_attach_design(data,check_weights=FALSE)
-  if(is.null(frame))frame<-dhs_context()$frame
-  X<-model.matrix(delete.response(terms(fit)),data,contrasts.arg=fit$contrasts)
-  p<-predict(fit,newdata=data,type='probs')
-  if(is.null(dim(p)))stop('Use svyglm for binary models.')
-  lev<-fit$lev[-1L];y<-model.response(model.frame(terms(fit),data))
-  w<-if('fit_weight'%in%names(data))data$fit_weight else data$wt
-  score<-do.call(cbind,lapply(lev,function(k)X*(w*(as.numeric(y==k)-p[,k]))))
-  H<-fit$Hessian
-  if(is.null(H))H<-getFromNamespace('multinomHess','nnet')(fit,Z=X,probs=p)
-  expected<-unlist(lapply(lev,function(k)paste(k,colnames(X),sep=':')))
-  if(!is.null(colnames(H))&&!identical(colnames(H),expected))stop('Multinomial score ordering differs from the Hessian.')
-  key<-function(s,p)paste(s,p,sep=':')
-  keys<-key(frame$stratum,frame$cluster);at<-match(key(data$stratum,data$cluster),keys)
-  if(anyNA(at))stop('Model records do not match the original survey frame.')
-  U<-matrix(0,nrow(frame),ncol(score));z<-rowsum(score,at,reorder=FALSE);U[as.integer(rownames(z)),]<-z
-  bread<-MASS::ginv(H);V<-bread%*%dhs_psu_variance(U,frame)%*%bread
-  co<-coef(fit);se<-matrix(sqrt(pmax(diag(V),0)),nrow=nrow(co),byrow=TRUE,dimnames=dimnames(co))
-  list(coefficients=co,standard.errors=se,covariance=V,
-       design_df=nrow(frame)-length(unique(frame$stratum)),inference='Full-frame stratified PSU sandwich')
-}
-
-dhs_calendar_records <- function(data, ir) {
-  if(!'woman_row'%in%names(data))stop('Calendar records require woman_row.')
-  id<-data$woman_row
-  if(anyNA(id)||any(id<1L|id>nrow(ir)))stop('Invalid calendar woman indices.')
-  w<-as.numeric(ir$v005[id])/1e6
-  if('wt'%in%names(data)&&any(abs(as.numeric(data$wt)-w)>1e-10))stop('Calendar weight inheritance failed.')
-  data$wt<-w;data$v021<-as.numeric(ir$v021[id]);data$v022<-as.numeric(ir$v022[id])
-  data$woman_id<-as.character(ir$caseid[id])
-  attr(data,'dhs_ir_design')<-as.data.frame(ir[,intersect(c('caseid','v005','v021','v022'),names(ir)),drop=FALSE])
-  data
-}
-
-# Preserve survey covariance on fitted multinomial objects so subsequent
-# summary()/vcov() calls cannot silently fall back to independent-record errors.
-dhs_multinom_fit <- function(formula, data, weights, ...) {
-  supplied<-as.numeric(eval(substitute(weights),envir=data,enclos=parent.frame()))
-  if(length(supplied)!=nrow(data)||anyNA(supplied)||any(supplied<0))stop('Invalid multinomial estimation weights.')
-  data<-dhs_attach_design(data,check_weights=FALSE);data$.dhs_fit_weight<-supplied
-  fit<-nnet::multinom(formula,data=data,weights=.dhs_fit_weight,...)
-  if(!is.null(fit$Hessian)&&!isTRUE(getOption('dhs.replication',FALSE))) {
-    data$fit_weight<-supplied
-    z<-dhs_multinom_summary(fit,data)
-    fit$dhs_survey_vcov<-z$covariance;fit$dhs_design_df<-z$design_df
-  }
-  fit$dhs_inference<-if(is.null(fit$dhs_survey_vcov))'Stratified PSU refits required; ordinary Hessian inference disabled'else'Full-frame stratified PSU sandwich'
-  class(fit)<-c('dhs_multinom',class(fit));fit
-}
-vcov.dhs_multinom <- function(object, ...) {
-  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model has no point survey covariance. Use its stratified-PSU replicate inference.')
-  object$dhs_survey_vcov
-}
-summary.dhs_multinom <- function(object, ...) {
-  if(is.null(object$dhs_survey_vcov))stop('This prediction/refit model requires its stratified-PSU replicate inference.')
-  getS3method('summary','multinom',envir=asNamespace('nnet'))(object,...)
-}
+reference<-readRDS(file.path(root,'output/survey_planning/planning_point.rds'))
+stopifnot(abs(100*unname(dhs_percentage(ir_design,as.numeric(ir$v313)==3)['percent'])/100-reference$mcpr)<1e-10)
+cat('Complete. Outcome WRA',w25,'current mCPR unchanged',reference$mcpr,'\n')
 )----------------------")
-MODULES[["dhs_survey_descriptives.R"]] <- list(language="R",args=character(),packaged_sha256="8ea87334fad4a5e2414113503a825c5d1ea8867ee162d7e2377020a31cfebbc9",code=r"----------------------(# DHS complex survey design for this module.
-.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
-if (!nzchar(.dhs_root)) {
- .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
- .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
-}
-source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
-dhs_set_context(country='Nigeria',root=.dhs_root)
-#!/usr/bin/env Rscript
-# National and subnational descriptive percentages. Supply the prepared project
-# root through the country entry point; no existing report is an input.
-country <- Sys.getenv('ANALYSIS_COUNTRY')
-if (!country%in%c('Ethiopia','Nigeria','DRC')) stop('Set ANALYSIS_COUNTRY through the country entry point.')
-root <- Sys.getenv(paste0(toupper(country),'_PROJECT_ROOT'))
-if (!nzchar(root)) stop('A prepared project root is required.')
-source(file.path(root,'Code','dhs_survey_tools.R'),local=TRUE)
-raw <- switch(country,Ethiopia='Data/ET2024DHS__ETIR8ADT__IR_raw.rds',
- Nigeria='Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds',DRC='Data/ir.rds')
-episodes <- switch(country,Ethiopia='ethiopia_2024_table_7_11_episodes.rds',
- Nigeria='nigeria_2024_table_7_12_episodes.rds',DRC='drc_2023_24_table_7_13_episodes.rds')
-ir <- readRDS(file.path(root,raw)); e <- readRDS(file.path(root,'Data/Derived',episodes))
-frame <- dhs_frame(ir)
-modern_codes <- c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L)
-actionable <- c(1L,4L,5L,6L,7L,8L,10L,15L)
-reason_groups <- list('Method failure'=1L,'Wanted pregnancy'=2L,
- 'Other fertility'=c(9L,12L,13L),'Bleeding changes'=15L,
- 'Other side effects/health'=c(4L,5L),'Wanted more effective method'=7L,
- 'Access/cost/convenience'=c(6L,8L,10L),'Partner/spousal disapproval'=3L,
- 'Other/unspecified'=c(11L,14L,96L,98L,99L,0L))
-method_group <- function(code) {
- x <- rep('Other modern',length(code));x[code==1L]<-'Pill';x[code==2L]<-'IUD'
- x[code==3L]<-'Injectables';x[code==11L]<-'Implants';x[code==16L]<-'EC'
- x[!code%in%c(modern_codes,16L)]<-'Non-modern/no method';x
-}
-women <- data.frame(wt=as.numeric(ir$v005)/1e6,cluster=as.character(ir$v021),
- stratum=as.character(ir$v022),region=as.character(ir$v024),
- modern=as.numeric(ir$v313)==3L,method=method_group(as.numeric(ir$v312)))
-e$cluster <- as.character(ir$v021[e$woman_row]);e$stratum <- as.character(ir$v022[e$woman_row])
-e$region <- as.character(ir$v024[e$woman_row]);e$group <- method_group(e$method_code)
-dw <- dhs_design(women,frame);de <- dhs_design(e,frame)
-scopes <- c('National',sort(unique(women$region)))
-results <- list();check <- 0
-add <- function(design,data,indicator,domain,analysis,scope,category,method='All') {
- z <- dhs_percentage(design,indicator,domain)
- valid <- domain & !is.na(indicator)
- plain <- if(any(valid))100*sum(data$wt[valid]*as.numeric(indicator[valid]))/sum(data$wt[valid])else NA_real_
- if(is.finite(plain)) {
-   if(abs(z['percent']-plain)>1e-9) stop('Survey and weighted descriptive point estimates disagree.')
-   check <<- check+1L
- }
- results[[length(results)+1L]] <<- data.frame(country=country,analysis=analysis,
-  scope=scope,method=method,category=category,as.list(z),row.names=NULL,
-  observed_events=sum(as.logical(indicator[valid])),
-  limited_sample=sum(valid)<25L || sum(as.logical(indicator[valid]))<10L,
-  uncertainty='survey Taylor linearization; full PSU frame; 95% t interval',
-  stringsAsFactors=FALSE)
-}
-for(scope in scopes) {
- wdomain <- if(scope=='National')rep(TRUE,nrow(women))else women$region==scope
- edomain <- if(scope=='National')rep(TRUE,nrow(e))else e$region==scope
- add(dw,women,women$modern,wdomain,'All-women mCPR',scope,'Modern use including EC')
- for(m in c('Injectables','Implants','Pill','IUD','Other modern','EC')) {
-  add(dw,women,women$method==m,wdomain & women$modern,'Current modern-method mix',scope,m)
-  add(dw,women,women$modern & women$method==m,wdomain,'Method-specific prevalence among all women',scope,m)
- }
- start_domain <- edomain & e$entry==0L
- for(m in sort(unique(e$group))) add(de,e,e$group==m,start_domain,'Observed starts: all methods',scope,m)
- for(m in c('Injectables','Implants','Pill','IUD','Other modern'))
-  add(de,e,e$group==m,start_domain & e$method_code%in%modern_codes,'Observed starts: modern excluding EC',scope,m)
- for(m in c('All','Injectables','Implants','Pill','IUD','Other modern')) {
-  mdomain <- edomain & e$method_code%in%modern_codes & (m=='All' | e$group==m)
-  for(window in c('All eligible endings','First-12-month endings')) {
-   ended <- mdomain & e$discontinued
-   if(window=='First-12-month endings')ended<-ended & e$exposure<=12 & e$entry<e$exposure
-   # These are shares AMONG observed endings, not life-table discontinuation risks.
-   for(reason in names(reason_groups))add(de,e,e$reason_code%in%reason_groups[[reason]],ended,
-    paste('Recorded reason shares:',window),scope,reason,m)
-   for(reason in c('Method failure','Bleeding changes','Other side effects/health',
-                    'Wanted more effective method','Access/cost/convenience'))
-    add(de,e,e$reason_code%in%reason_groups[[reason]],ended & e$reason_code%in%actionable,
-     paste('Shares within potentially actionable endings:',window),scope,reason,m)
-  }
- }
-}
-out <- file.path(root,'output/Supporting_data');dir.create(out,recursive=TRUE,showWarnings=FALSE)
-write.csv(do.call(rbind,results),file.path(out,'dhs_survey_descriptive_percentages.csv'),row.names=FALSE,na='')
-metadata <- data.frame(country=country,weight='v005 / 1000000',PSU='v021',stratum='v022',
- PSUs=nrow(frame),strata=length(unique(frame$stratum)),
- design_df=survey::degf(dw),point_comparisons=check,
- all_point_comparisons_passed=TRUE,full_frame_including_zero_domain_PSUs=TRUE,
- repeated_episodes_kept_within_PSU=TRUE,survey_version=as.character(packageVersion('survey')))
-write.csv(metadata,file.path(out,'dhs_survey_design_checks.csv'),row.names=FALSE)
-cat('Survey descriptives complete:',country,';',check,'weighted point comparisons passed.\n')
-)----------------------")
+
+
+REVISION_HELPERS <- setNames(lapply(REVISION_HELPER_NAMES, function(name) MODULES[[name]]$code), REVISION_HELPER_NAMES)
 
 if (sys.nframe() == 0L) main()

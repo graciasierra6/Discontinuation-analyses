@@ -120,3 +120,58 @@ for(state in c('Kano','Kaduna','Lagos')) {
 env<-new.env();sys.source(file.path(repo,'discontinuation_extensions/run_analysis.R'),env)
 stopifnot(identical(trim(env$EXTENSION_FILES[['src/R/dhs_survey_tools.R']]),trim(canonical)))
 cat('PASS: national, state and extensions bundles share the identical design implementation.\n')
+
+# Dependency declarations include every namespaced package in the country modules.
+# This check parses code and tests setup behavior without accessing IR or CRAN.
+base_packages <- rownames(installed.packages(priority='base'))
+for (country in c('Ethiopia','Nigeria','DRC')) {
+  env <- new.env()
+  path <- file.path(repo,paste0(country,'_analysis'),paste0(country,'_final_html_analysis.R'))
+  sys.source(path,env)
+  code <- c(lapply(env$MODULES,function(z)if(z$language=='R')z$code else ''),
+            env$REPORT_FILES[grepl('[.]R$',names(env$REPORT_FILES))])
+  used <- unique(unlist(lapply(code,function(txt) {
+    parsed <- getParseData(parse(text=txt,keep.source=TRUE))
+    parsed$text[parsed$token=='SYMBOL_PACKAGE']
+  })))
+  stopifnot(all(used %in% c(env$REQUIRED_R_PACKAGES,base_packages)))
+  header <- paste(readLines(path,n=16L,warn=FALSE),collapse=' ')
+  stopifnot(grepl('Individual Recode',header,fixed=TRUE),
+            grepl('vcal_1',header,fixed=TRUE),grepl('vcal_2',header,fixed=TRUE),
+            grepl('episode-level',header,fixed=TRUE))
+  env$setup_analysis_packages(c('stats','tools'),install_missing=FALSE)
+  stopifnot(inherits(try(env$setup_analysis_packages(
+    'unavailable_dependency_test_only',install_missing=FALSE),silent=TRUE),'try-error'))
+}
+cat('PASS: country data headers, complete namespace dependency declarations and non-installing setup checks.\n')
+
+# Behavioral checks for the separate absorbing permanent-method destination.
+for(country in c('Ethiopia','Nigeria','DRC')){
+ bundle<-new.env();sys.source(file.path(repo,paste0(country,'_analysis'),paste0(country,'_final_html_analysis.R')),bundle)
+ text<-bundle$MODULES[['transition_model.R']]$code;env<-new.env(parent=globalenv())
+ for(expr in parse(text=text))if(is.call(expr)&&as.character(expr[[1]])[1]=='<-'&&is.call(expr[[3]])&&identical(expr[[3]][[1]],as.name('function')))eval(expr,env)
+ env$states<-c('Modern','Nonmodern','Pregnancy-related');env$methods<-c('Injectables','Implants','Pill','IUD','Other modern');env$model_methods<-env$methods[env$methods!='IUD'];env$causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience')
+ env$data.table<-data.table::data.table;env$rbindlist<-data.table::rbindlist
+ env$initial_probs<-function(f,d)matrix(rep(c(.3,.5,.2),each=nrow(d)),nrow(d),dimnames=list(NULL,c('Modern','Nonmodern','Pregnancy-related')))
+ env$increment<-function(t,mu,ls,family)list(h=mu)
+ gr<-data.frame(gid=1:2,method=env$methods[1:2],cause=env$causes[1:2],end_duration=c(5,12))
+ tmp<-gr;tmp$state_duration<-1;tmp$post_month<-1
+ fits<-setNames(lapply(env$states,function(s){X<-if('from'%in%names(formals(env$design)))env$design(tmp,s)else env$design(tmp);p<-ncol(X);b1<-b2<-numeric(p);b1[1]<-.1;b2[1]<-.2;list(par=c(b1,0,b2,0),p=p,columns=colnames(X),dest=setdiff(env$states,s),family='lognormal')}),env$states)
+ model<-list(initial=structure(list(),permanent_probability=0),permanent_monthly_probability=0,transitions=fits)
+ z<-env$endpoint_prob(model,gr,12);P<-matrix(0,3,3)
+ for(i in 1:3){j<-setdiff(1:3,i);P[i,i]<-exp(-.3);P[i,j]<-(-expm1(-.3))*c(.1,.2)/.3}
+ pi<-c(.3,.5,.2);expected<-pi[1];for(t in 2:12){pi<-as.numeric(pi%*%P);expected<-c(expected,pi[1])}
+ stopifnot(max(abs(z$p_modern[z$gid==1]-expected))<1e-10,all(z$p_permanent==0))
+ attr(model$initial,'permanent_probability')<-1;z<-env$endpoint_prob(model,gr,12);stopifnot(all(z$p_modern==1),all(z$p_permanent==1))
+ attr(model$initial,'permanent_probability')<-.02;model$permanent_monthly_probability<-.01;z<-env$endpoint_prob(model,gr,12)
+ stopifnot(max(abs(z$p_permanent-(1-.98*.99^(z$horizon-1))))<1e-10,all(z$p_modern>=z$p_permanent),all(z$p_modern<=1+1e-10))
+ model$permanent_monthly_probability<-1;z<-env$endpoint_prob(model,gr,12);stopifnot(all(z$p_permanent[z$horizon>=2]==1))
+ stopifnot(!grepl("if('risk_strata'%in%tasks) {",bundle$MODULES[['200_reference_analysis_extensions.R']]$code,fixed=TRUE))
+ if(exists('REVISION_HELPERS',bundle,inherits=FALSE))stopifnot(all(vapply(names(bundle$REVISION_HELPERS),function(name)identical(bundle$REVISION_HELPERS[[name]],bundle$MODULES[[name]]$code),FALSE)))
+ # The pooled uptake probability is a full-frame survey percentage.
+ env$dhs_context<-function()list(frame=dhs_frame(ir))
+ env$dhs_design<-dhs_design;env$dhs_percentage<-dhs_percentage
+ uptake_records<-data.frame(wt=c(1,4,2),psu=ir$v021[c(1,6,11)],stratum=ir$v022[c(1,6,11)],permanent_entry=c(FALSE,TRUE,FALSE))
+ stopifnot(abs(env$permanent_rate(uptake_records)-4/7)<1e-10)
+ cat(country,': absorbing permanence, mass conservation, full-frame uptake ratios and retired branch checks pass.\n')
+}

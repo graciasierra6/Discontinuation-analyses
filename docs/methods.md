@@ -77,6 +77,21 @@ composition come from the IR; external UN WPP women-aged-15–49 populations
 convert prevalence into user counts. Normalized survey weights alone do not
 provide national population totals.
 
+Permanent-method users (female or male sterilization, method codes 6 and 7)
+remain in all-women mCPR and observed subsequent modern use. National planning
+models use reversible original methods: permanent current users receive no
+modeled stopping probability or additional retention gain. Their stock is
+shown separately, not redistributed across reversible methods. This does not
+claim permanent-method failure is impossible. Those rare events are not
+estimated separately here. Reason code 7 (wanting a more effective method)
+remains actionable; method codes and reason codes are different fields.
+
+Current-user proportions are calculated before display rounding. Method-specific
+usual-condition projections include the permanent stock and reconcile with the
+all-modern total. Retention increments come only from the reversible cohort.
+Observed DHS benchmarks, initiation mixes, reason shares and historical
+post-ending displays retain their stated modern-method definitions.
+
 The report distinguishes three probability approaches:
 
 - **First-year:** apply first-year method-specific probabilities. This does not
@@ -220,3 +235,70 @@ those cells exactly against the combined HTML after refresh. The overview mCPR
 table also comes from the fresh IR-derived state results. The refresh preserves
 the existing report layout and graphics; it is not an independent reconstruction
 of that complete combined document. State SVG figures are separate fresh exports.
+
+## Separate condom and LAM checks
+
+Nigeria and DRC append an overall sensitivity that separates male condoms and
+reported LAM from the remaining reversible methods. Ethiopia retains the pooled
+reversible group because the separate samples are too limited. These checks
+exclude partner/spousal disapproval and retain permanent users and EC in
+observed endpoint modern use.
+
+Both columns in each comparison use the same sensitivity specification. The
+first-year check uses the weighted competing-event life table. Historical
+probabilities pool adjacent duration bins until at least 25 distinct episodes
+are available, where possible; this support rule does not guarantee precision.
+Users at 61+ months borrow observed shorter-duration experience. Observed
+switching fractions require 10 distinct actionable endings before pooling
+across durations or methods. Samples of repeated landmarks are not counted as
+independent episodes for these rules.
+
+The AFT check combines the actionable causes into one event competing with
+other endings. Selected distribution families are held constant between the
+pooled and separated fits. DRC retains the pooled reversible IUD proxy in both
+columns. Consequently these controlled overall checks can differ slightly from
+the primary cause-specific AFT allocation and historical pooling specification;
+compare the two columns within the check. They do not replace the main tables
+or refit the separate fully modeled post-ending transition sensitivity.
+The additional checks show point estimates, without new confidence intervals.
+
+LAM is the method reported in the calendar. Long reported durations do not
+verify postpartum, amenorrhea or breastfeeding eligibility. The planning
+interpretation is maintaining appropriate modern use, not extending LAM beyond
+eligibility. The secondary modeled-switching sensitivity distinguishes three transient
+states (reversible/other modern use, nonmodern use, and pregnancy-related
+records) and a separate absorbing permanent-method destination. Once a
+predicted pathway enters female or male sterilization, it remains in modern
+use through the endpoint; ordinary stopping is not assigned to that state.
+This planning assumption does not claim that sterilization failure is impossible.
+
+Permanent uptake is too sparse for method-by-cause AFT entry models. Instead,
+the model estimates two pooled weighted probabilities using full-frame survey
+ratios: permanent use immediately after the original ending, and monthly entry
+among subsequent at-risk steps before permanent use is first recorded. The
+latter competes with the AFT transient-state transitions. Conditional transient
+models use the remaining nonpermanent transitions. Both pooled probabilities
+and the transient models are re-estimated in each joint PSU replicate.
+Selected AFT families remain fixed within replicates. These pooled adoption
+assumptions are a limitation of the modeled sensitivity, not a method-specific
+sterilization uptake forecast.
+
+Training transitions end at first recorded permanent use. Original calendar
+histories are retained unchanged for observed endpoint calibration; later
+records inconsistent with the absorbing assumption remain visible in that
+validation rather than being rewritten. Permanent uptake and assumption
+checks are saved as aggregate diagnostics in the private build directory.
+
+This update covers the three national reports. The state exports retain their
+earlier specification and are outside this national permanent-method correction.
+
+First-year immediate-switch diagnostics calculate counts within each cause and
+then sum them. This keeps direct switches bounded by the corresponding method
+and cause endings. It does not change the historical or AFT year-end-loss
+estimands.
+
+The unused optional `risk_strata` task in the legacy reference-alignment module
+has been retired. It is not part of the current national report build. The
+country-specific risk-profile modules used by the reports remain available.
+Remaining reference-alignment tasks use the full IR survey frame and map their
+own analytical records into it.
