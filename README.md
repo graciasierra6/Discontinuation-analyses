@@ -2,7 +2,7 @@
 
 Reproduce DHS contraceptive-calendar analyses for **Ethiopia, Nigeria and DRC** from authorized women's Individual Recode (IR) files. The analyses cover method starts, discontinuation, reasons, timing, switching/restarting, regional comparisons and potential contributions to mCPR.
 
-**Choose either workflow. Both national workflows run the same analysis and report builder.**
+**Choose either workflow. To use RStudio, you can download just one report R file; its public support files are prepared automatically.**
 
 | How you prefer to work | What to open |
 |---|---|
@@ -15,19 +15,19 @@ No microdata are included. Existing HTMLs and presentations are read-only refere
 
 ## Reports and scripts
 
-Use the script links to find the correct entry point. For a full HTML rebuild, **download the complete repository first**, then open the script from that extracted folder. The saved HTML links below identify the reviewed reports; GitHub may show their source, so open the downloaded HTML in your browser to view it. Presentations are reviewed references used for comparison, not newly generated decks.
+Use the script links to find the correct entry point. **For RStudio, download the report R file and click Source.** The script installs missing packages and obtains pinned public support files automatically. A complete repository download remains available for the terminal workflow. The saved HTML links below identify the reviewed reports; GitHub may show their source, so open the downloaded HTML in your browser to view it. Presentations are reviewed references used for comparison, not newly generated decks.
 
 | Report | Script to open in RStudio | Saved HTML | Presentation |
 |---|---|---|---|
 | Ethiopia national analysis | [Ethiopia R script](Ethiopia_analysis/Ethiopia_final_html_analysis.R) | [Ethiopia HTML](Ethiopia_analysis/Ethiopia_discontinuation_analysis.html) | [Ethiopia PPTX](Ethiopia_analysis/ethiopia_presentation.pptx) |
 | Nigeria national analysis | [Nigeria R script](Nigeria_analysis/Nigeria_final_html_analysis.R) | [Nigeria HTML](Nigeria_analysis/Nigeria_discontinuation_analysis.html) | [Nigeria PPTX](Nigeria_analysis/Nigeria_discontinuation.pptx) |
 | DRC national analysis | [DRC R script](DRC_analysis/DRC_final_html_analysis.R) | [DRC HTML](DRC_analysis/DRC_discontinuation_analysis.html) | [DRC PPTX](DRC_analysis/DRC_discontinuation.pptx) |
-| Timing, alluvials and switching extensions | [Extensions R script](discontinuation_extensions/run_analysis.R) | [Extensions HTML](discontinuation_extensions/output/Discontinuation_and_switching_extensions.html) | — |
-| Interactive discontinuation maps | [Extensions R script](discontinuation_extensions/run_analysis.R) | [Maps HTML](discontinuation_extensions/output/Modern_method_discontinuation_maps.html) | — |
-| Return and continuation curves | [Extensions R script](discontinuation_extensions/run_analysis.R) | [Return/continuation HTML](discontinuation_extensions/output/Return_and_continuation_same_cohort_preview.html) | — |
+| Timing, alluvials and switching extensions | [Extensions R script](discontinuation_extensions/Discontinuation_and_switching_extensions.R) | [Extensions HTML](discontinuation_extensions/output/Discontinuation_and_switching_extensions.html) | — |
+| Interactive discontinuation maps | [Maps R script](discontinuation_extensions/Modern_method_discontinuation_maps.R) | [Maps HTML](discontinuation_extensions/output/Modern_method_discontinuation_maps.html) | — |
+| Return and continuation curves | [Return/continuation R script](discontinuation_extensions/Return_and_continuation_analysis.R) | [Return/continuation HTML](discontinuation_extensions/output/Return_and_continuation_same_cohort_preview.html) | — |
 | Optional state numerical results | [Kano](Nigeria_analysis/Kano_Kaduna_Lagos/Kano_discontinuation_analysis.R) · [Kaduna](Nigeria_analysis/Kano_Kaduna_Lagos/Kaduna_discontinuation_analysis.R) · [Lagos](Nigeria_analysis/Kano_Kaduna_Lagos/Lagos_discontinuation_analysis.R) | [Combined state reference](Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation_analysis.html) | [Combined state PPTX](Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation.pptx) |
 
-The extensions entry point produces all three extensions/maps reports and asks for all three countries' IR files. The optional state scripts generate individual numerical results and simple galleries; they do not independently reconstruct the saved combined state HTML/PPTX layout. See [optional analyses](#optional-extensions-maps-and-state-analyses).
+Each extensions/maps entry asks for all three countries' IR files. The return/continuation and main extensions entries share calculations and also produce the companion extensions report. The original [combined extensions entry](discontinuation_extensions/run_analysis.R) can still build all three outputs. The optional state scripts generate individual numerical results and simple galleries; they do not independently reconstruct the saved combined state HTML/PPTX layout. See [optional analyses](#optional-extensions-maps-and-state-analyses).
 
 ## Country file locations
 
@@ -35,7 +35,7 @@ All locations below start at the **repository root**: the extracted folder conta
 
 **Which file should I use?**
 
-- **R script (`.R`):** the country analysis entry point. It contains package installation/loading and the analysis code. With the complete repository, open it in RStudio and click Source to select your own authorized IR file and rebuild the HTML. A single downloaded R file supports [numerical-only analysis](#one-script-numerical-analysis-without-html).
+- **R script (`.R`):** the country analysis entry point. It contains package installation/loading and the analysis code. Open the downloaded file in RStudio and click Source to select your own authorized IR file and rebuild the HTML. Public supporting code is obtained automatically. [Numerical-only analysis](#one-script-numerical-analysis-without-html) is also available.
 - **HTML report (`.html`):** the detailed, reviewed analysis, including figures, tables, methods and planning scenarios. To read the findings, open the downloaded HTML in Chrome, Edge, Safari or another browser. You do not need R just to view it.
 - **PowerPoint presentation (`.pptx`):** the reviewed presentation slides for PowerPoint or Keynote, with no presenter notes. Use this for presenting the findings. The report workflow checks editable slide tables against the HTML; it does not regenerate or edit the deck.
 
@@ -56,7 +56,7 @@ All locations below start at the **repository root**: the extracted folder conta
 ## Before your first run
 
 1. Install a current **R** and, for the graphical workflow, **RStudio Desktop**. The checked analysis environment uses R 4.6.0; package versions are recorded in `renv.lock`.
-2. On the GitHub repository page, click **Code → Download ZIP**. Extract the complete ZIP (**Extract All** on Windows; double-click on macOS) and keep its folders together. You do not need to install or use Git.
+2. **For RStudio:** download the report's `.R` file using its link above and open it in RStudio. **For the terminal workflow:** click **Code → Download ZIP**, extract the complete ZIP, and keep its folders together. Git is not required.
 3. Obtain the authorized DHS women's IR download and extract it separately. Keep the data outside the repository. Select the original labelled **`.dta` file**, not the ZIP or an HTML report.
 4. For **DRC only**, install **LibreOffice** once. Its command-line renderer reproduces the report's presentation-preview gallery; it is not used to estimate discontinuation. The workflow checks for it before the long analytical run.
 5. Keep internet access available for first-time dependency installation. R packages, Python and the pinned Python rendering packages are prepared automatically. Later runs can reuse the installed dependencies.
@@ -116,9 +116,9 @@ That last command produces R/CSV results without formatting the national HTML. I
 
 **You do not need to type a command or edit a personal file path.**
 
-Use this route for the full report if you prefer opening a script and clicking Source. Keep the complete repository together; downloading just the R file is not sufficient to assemble the HTML.
+Use this route for the full report if you prefer opening one script and clicking Source. **You do not need a local repository checkout.** On first use, the entry prepares a checked public support version automatically; you still supply the original IR data yourself.
 
-1. In RStudio, choose **File → Open File** and open the script for your country:
+1. Download the country R file from its GitHub file page. In RStudio, choose **File → Open File** and open that downloaded file:
 
    | Country | Script inside the extracted repository |
    |---|---|
@@ -128,7 +128,7 @@ Use this route for the full report if you prefer opening a script and clicking S
 
 2. Click **Source** at the top right of the script editor. Use Source for the entire file, rather than running one selected line.
 3. The package block near the top automatically installs missing R packages into a writable R library and loads the declared libraries. A private user library is created if the existing libraries are not writable.
-4. A file browser asks you to select the country's extracted **IR `.dta`** file.
+4. Public support files are downloaded once, verified against pinned checksums, and cached. A file browser asks you to select the country's extracted **IR `.dta`** file.
 5. The workflow prepares the Python report renderer, reconstructs calendars, fits the models and survey bootstrap replicates, then builds and checks the HTML.
 6. Leave RStudio running. A full build can take **several hours**. The Console reports its current stage; it is not necessary to click Source again.
 7. After a successful build, the HTML opens in your browser. In RStudio's Environment pane:
@@ -137,7 +137,7 @@ Use this route for the full report if you prefer opening a script and clicking S
 
 ### Where are my results?
 
-By default, a new `discontinuation_results` folder is created **alongside the extracted repository folder**. Each run has its own country and timestamp:
+If you downloaded one R file, its default results go into **`discontinuation_results` beside that R file**. If you use a complete local repository, results go alongside the repository folder. Each run has its own country and timestamp:
 
 ```text
 Discontinuation-analyses/             # extracted repository; left unchanged
@@ -177,9 +177,9 @@ To **load functions without starting a build**, run `Sys.setenv(DHS_AUTO_RUN = "
 
 ### One-script numerical analysis without HTML
 
-A national R script alone can run its embedded numerical analysis. It cannot assemble the full HTML without the repository's reporting resources. For the verified full-report workflow, use Option 1 or Option 2 above.
+The default one-file Source workflow builds the HTML and obtains its public rendering resources automatically. If you want only R/CSV results, the national script also has an embedded numerical-only mode that bypasses report formatting.
 
-If you deliberately downloaded just one country R script:
+To run numerical-only mode:
 
 1. In the RStudio Console, run `Sys.setenv(DHS_AUTO_RUN = "false")`.
 2. Open that country R script and click **Source** to load its functions.
@@ -198,7 +198,15 @@ analysis_results <- run_analysis(
 analysis_results$planning_overall
 ```
 
-`run_analysis()` installs/loads the declared packages before calculating results. It returns numerical tables in R and writes numerical files; it does not create the national HTML or a new PPTX. To return to the full-report Source workflow, keep the complete repository and run `Sys.setenv(DHS_AUTO_RUN = "true")` before sourcing the country script again.
+`run_analysis()` installs/loads the declared packages before calculating results. It returns numerical tables in R and writes numerical files; it does not create the national HTML or a new PPTX. To return to the automatic HTML workflow, run `Sys.setenv(DHS_AUTO_RUN = "true")` before sourcing the report R file again.
+
+## How a single-file report starts
+
+The entry obtains supporting code and reviewed comparison assets from a [fixed public source revision](https://github.com/graciasierra6/Discontinuation-analyses/tree/78b16c17deeb5ab359977d276e8a496c9190a65a). Every cached file is checked against its SHA-256 checksum before use. This public cache contains code, public inputs and report references; it does not contain IR microdata.
+
+For national reports, the country code in the R file you opened is staged with those support files and used for the analysis. The original IR is read from your selection, calendars and episodes are reconstructed, and estimates are recomputed. Reviewed HTML/PPTX files are comparison references after estimation; DRC also uses its PPTX for the display-only slide gallery.
+
+You can change the output location with `OUTPUT_DIRECTORY`. Advanced users can choose a writable public dependency cache through the runtime `DHS_RUNTIME_CACHE` environment variable. Neither setting contains a location specific to the original developer's computer.
 
 ## What lives where?
 
@@ -207,6 +215,7 @@ Discontinuation-analyses/
   README.md                          # start here
   build_reports.R                    # national CLI builder
   workflow.R                         # RStudio launchers and dependency setup
+  standalone_support.R               # pinned public dependency startup
   survey_design.R                    # shared DHS survey estimators/checks
   report_tools.py                    # reporting and comparison resources
   method_sensitivity_report.py        # method-group sensitivity displays
@@ -218,17 +227,28 @@ Discontinuation-analyses/
     Kano_Kaduna_Lagos/                # optional state scripts/results
   DRC_analysis/                      # DRC script + approved HTML/PPTX
   discontinuation_extensions/
-    run_analysis.R                   # extensions/maps entry point
+    Discontinuation_and_switching_extensions.R
+    Modern_method_discontinuation_maps.R
+    Return_and_continuation_analysis.R
+    run_analysis.R                   # optional combined extensions entry
     output/                          # approved extensions/maps references
   docs/                              # data access, methods and survey design
   tests/                             # analytical and workflow checks
 ```
 
-Supporting source is expanded into a private runtime during a build. You do not need to find or run those pieces yourself. **A single national script is sufficient for numerical-only mode; the complete extracted repository is required to assemble the full HTML.**
+Supporting source is expanded into a private runtime during a build. You do not need to find or run those pieces yourself. **One downloaded country/report entry is sufficient to start the HTML workflow.** First-time dependency preparation needs internet access.
 
 ## Optional extensions, maps and state analyses
 
-For the extensions/maps in RStudio, open [discontinuation_extensions/run_analysis.R](discontinuation_extensions/run_analysis.R) and click **Source**. It asks for the **three IR `.dta` files**, one country at a time, and writes new HTMLs in a private extensions results folder. This reproduces reason-specific timing, alluvials, subsequent-use displays, destinations and interactive maps.
+Download the entry for the report you want, open it in RStudio and click **Source**:
+
+| Report | Independent R entry |
+|---|---|
+| Timing, alluvials and switching | [Discontinuation_and_switching_extensions.R](discontinuation_extensions/Discontinuation_and_switching_extensions.R) |
+| Interactive maps | [Modern_method_discontinuation_maps.R](discontinuation_extensions/Modern_method_discontinuation_maps.R) |
+| Return and continuation curves | [Return_and_continuation_analysis.R](discontinuation_extensions/Return_and_continuation_analysis.R) |
+
+Each entry installs missing libraries, obtains public support files when needed, and asks for the **three original IR `.dta` files**, one country at a time. The requested HTML opens after a successful build. The original combined entry below remains available for CLI use.
 
 CLI equivalent, with caller-supplied input variables:
 
@@ -242,7 +262,7 @@ The state scripts—[Kano](Nigeria_analysis/Kano_Kaduna_Lagos/Kano_discontinuati
 
 | What happened? | What to do |
 |---|---|
-| The script cannot find `workflow.R` or a report resource | Extract the complete repository ZIP and keep the folders together. Open the country script from inside that folder. |
+| A public support download or checksum check fails | Check internet access and retry Source. Use a fresh copy of the current report R file. No models run with an unverified public dependency cache. |
 | The file browser was cancelled | Click Source again and select the IR `.dta`. |
 | Source loads functions but no file browser appears | Restart R, or run `Sys.setenv(DHS_AUTO_RUN = "true")`, then click Source for the entire country script. |
 | Wrong survey/release or missing calendar variables | Check the table of required IR files above; do not edit calendar strings or substitute a different release. |
@@ -262,6 +282,8 @@ Potentially actionable planning causes are method failure, wanting a more effect
 Historical and AFT planning account for method and elapsed use. Main calculations count actionable endings as losses; switching/restarting sensitivities count absence from modern use at the common next-12-month endpoint. Population projections, growth scenarios and selected AFT families are held fixed. These are conditional planning scenarios, not established intervention effects.
 
 Verification on 23 November 2026 used fresh authorized-IR builds with 500 joint planning replicates per country, followed by targeted rechecks of Nigeria's supplemental current-user pathway correction. The resulting 515 HTML tables, 171 embedded figures and 168 editable presentation tables reconcile with the reviewed references. All 13,349 planning estimate/interval records matched the validated baseline exactly. Nigeria's supplemental pathway now includes permanent users consistently in its table and figure; this correction does not change the main planning results. A source-only test does not certify a complete numerical rebuild. The Windows serial branch is implemented and tested through portable checks; a full build has not yet been run on a native Windows host.
+
+The new independent-entry structure has passed isolated-file setup, public-download/checksum, file-picker and report-dispatch checks. End-to-end numerical rechecks continue after this structure update. The isolated Ethiopia numerical run already matches all 2,687 planning estimate/interval records and all 500 planning replicates exactly; its remaining regional analyses are still running. The saved reports and PPTX files have not been changed by the startup update. Kano, Kaduna and Lagos are outside this update.
 
 For exact package restoration, advanced users may install `renv` and run `renv::restore(lockfile="renv.lock", prompt=FALSE)` from the repository root. Automatic setup installs missing R packages; it does not silently replace existing versions. Different R/BLAS, package or font environments can introduce small numerical or rendering differences.
 

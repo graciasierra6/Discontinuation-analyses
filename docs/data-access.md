@@ -3,7 +3,7 @@
 IR microdata are **not included in this repository**. Supply an authorized file
 through the RStudio file browser, `--ir-file`, or the documented runtime
 environment variables. Start with the [two quick-start workflows](../README.md).
-Both national routes call the same report builder. Build directories, downloaded archives, extracted records and
+Both national routes call the same report builder. A single downloaded country R file can prepare its public supporting resources automatically; a manual repository checkout is not required for the RStudio route. Build directories, downloaded archives, extracted records and
 authentication configuration must stay outside the repository.
 
 ## Which data?

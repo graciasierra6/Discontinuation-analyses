@@ -315,10 +315,12 @@ own analytical records into it.
 
 ## RStudio entry points
 
-Open a country script from the complete extracted repository and click Source.
+Open a downloaded country script in RStudio and click Source. Missing public support files are obtained automatically from a version-pinned, checksum-checked source.
 The visible setup block installs missing R libraries before asking for the
 extracted IR `.dta`. The launcher prepares pinned Python rendering dependencies
 and invokes `build_reports.R`; existing HTML/PPTX references stay read-only.
+The selected country R file itself supplies the national analytical code; the
+public runtime supplies supporting code and comparison assets.
 Numerical results are also written to `results/analysis_results.rds` and CSVs.
 
 The optional state Source workflow opens a simple gallery generated from that
