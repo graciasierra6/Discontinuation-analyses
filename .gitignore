@@ -1,11 +1,11 @@
 # Private survey inputs and individual-level intermediate records
-*.dta
-*.sav
-*.sas7bdat
-*.rds
-*.RData
-*.rda
-*.zip
+*.[dD][tT][aA]
+*.[sS][aA][vV]
+*.[sS][aA][sS]7[bB][dD][aA][tT]
+*.[rR][dD][sS]
+*.[rR][dD][aA][tT][aA]
+*.[rR][dD][aA]
+*.[zZ][iI][pP]
 
 # Runtime output, credentials and editor caches
 analysis_output/
