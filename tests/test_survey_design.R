@@ -114,8 +114,11 @@ for(country in c('Ethiopia','Nigeria','DRC')) {
 for(state in c('Kano','Kaduna','Lagos')) {
  text<-paste(readLines(file.path(repo,'Nigeria_analysis/Kano_Kaduna_Lagos',paste0(state,'_discontinuation_analysis.R')),warn=FALSE),collapse='\n')
  start<-regexpr('# DHS design utilities.',text,fixed=TRUE)[1]
- end<-regexpr('REPORT_STATE <-',text,fixed=TRUE)[1]
- stopifnot(start>0,end>start,identical(trim(substr(text,start,end-1L)),trim(canonical)))
+ stopifnot(start>0)
+ # The user-facing state setting also appears above the shared implementation.
+ fragment<-substring(text,start)
+ end<-regexpr('REPORT_STATE <-',fragment,fixed=TRUE)[1]
+ stopifnot(end>0,identical(trim(substr(fragment,1L,end-1L)),trim(canonical)))
 }
 env<-new.env();sys.source(file.path(repo,'discontinuation_extensions/run_analysis.R'),env)
 stopifnot(identical(trim(env$EXTENSION_FILES[['src/R/dhs_survey_tools.R']]),trim(canonical)))

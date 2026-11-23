@@ -17,3 +17,9 @@ private/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Keep accidental local result/library/environment folders out of uploads
+analysis_results/
+discontinuation_results/
+.venv/
+.RDataTmp

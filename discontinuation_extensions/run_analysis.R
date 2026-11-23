@@ -11,18 +11,56 @@
 # v005/1e6; PSU: v021; stratum: v022. The full sampling frame is retained.
 # This module reconstructs its own analytical records from the IR inputs.
 
+# RStudio settings: select the extracted IR file(s) when Source is clicked.
+IR_FILE <- Sys.getenv("DHS_IR_FILE",unset="")
+OUTPUT_DIRECTORY <- Sys.getenv("DHS_ANALYSIS_OUTPUT",unset="")
+ANALYSIS_WORKERS <- 1L
+OPEN_REPORT <- TRUE
+RUN_ON_SOURCE <- interactive() && !tolower(Sys.getenv("DHS_AUTO_RUN",unset="true")) %in% c("false","no","0")
+ENTRY_SCRIPT <- local({
+  paths<-as.character(unlist(lapply(sys.frames(),function(f)if(is.character(f$ofile))f$ofile else character()),use.names=FALSE))
+  paths<-paths[file.exists(paths)]
+  if(length(paths))normalizePath(tail(paths,1L),winslash="/",mustWork=TRUE)else{
+    arg<-grep("^--file=",base::commandArgs(FALSE),value=TRUE)
+    if(length(arg))gsub("~+~"," ",sub("^--file=","",arg[1]),fixed=TRUE)else ""
+  }
+})
+load_report_workflow <- function(script=ENTRY_SCRIPT) {
+  directory<-dirname(normalizePath(script,winslash="/",mustWork=TRUE))
+  for(i in 1:6){
+    helper<-file.path(directory,"workflow.R")
+    if(file.exists(helper)){env<-new.env(parent=globalenv());sys.source(helper,envir=env);return(env)}
+    directory<-dirname(directory)
+  }
+  stop("Extract the complete repository and keep its folders together.",call.=FALSE)
+}
+
 # Package setup: install missing packages, then attach them before analysis.
 # For the validated package versions, run renv::restore() from the repo root first.
 # Help, source inspection and syntax checks do not install the full analysis stack.
 REQUIRED_R_PACKAGES <- c('digest', 'grid', 'haven', 'jsonlite', 'MASS', 'nnet', 'stats', 'survey', 'survival', 'svglite', 'tools')
 setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  # Use a writable R library and pass the selected library paths to R children.
+  libraries<-.libPaths()
+  writable<-libraries[dir.exists(libraries)&file.access(libraries,2L)==0L]
+  if(!length(writable)){
+    managed_library<-file.path(tools::R_user_dir('discontinuation-analyses','data'),
+      paste0('R-',getRversion()),'library')
+    dir.create(managed_library,recursive=TRUE,showWarnings=FALSE)
+    if(!dir.exists(managed_library)||file.access(managed_library,2L)!=0L)
+      stop('Cannot create a writable R package library. Ask your IT team to enable a user R library.',call.=FALSE)
+    .libPaths(c(managed_library,libraries));writable<-managed_library
+  }
+  .libPaths(c(writable[1],.libPaths()))
+  Sys.setenv(R_LIBS=paste(.libPaths(),collapse=.Platform$path.sep))
+  install_library<-writable[1]
   packages <- unique(as.character(packages))
   available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
   missing <- packages[!available]
   if (length(missing)) {
     if (!isTRUE(install_missing))
       stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
-    utils::install.packages(missing, repos='https://cloud.r-project.org')
+    utils::install.packages(missing, lib=install_library, repos='https://cloud.r-project.org')
   }
   missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
   if (length(missing))
@@ -2681,13 +2719,13 @@ run_extensions<-function(){
       'Required: --ethiopia-ir=FILE --nigeria-ir=FILE --drc-ir=FILE',
       'Accepted inputs: original Stata .dta or lossless labelled IR .rds.',
       'Alternative inputs: ETHIOPIA_IR_FILE, NIGERIA_IR_FILE, DRC_IR_FILE.',
-      'Required: --output-dir=PRIVATE_NEW_DIRECTORY; optional: --python=python3 --target=all|extensions|maps',
+      'Required: --output-dir=PRIVATE_NEW_DIRECTORY; optional: --python=auto --target=all|extensions|maps',
       'Default uncertainty: 1,999 full-frame stratified PSU bootstrap replicates.',
       'Inputs stay private; intermediate woman/episode files are temporary and removed.',
       sep='\n'),'\n')
     quit(status=if(length(args))0 else 1)
   }
-  opt <- list(python='python3',target='all')
+  opt <- list(python=Sys.getenv('PYTHON',unset='auto'),target='all')
   for(a in args) {
     if(!grepl('^--[^=]+=.+$',a)) stop('Use --name=value arguments.',call.=FALSE)
     opt[[sub('^--([^=]+)=.*$','\\1',a)]]<-sub('^--[^=]+=','',a)
@@ -2697,23 +2735,26 @@ run_extensions<-function(){
   stopifnot(opt$target %in% c('all','extensions','maps'))
   script <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
   script <- gsub('~+~',' ',script,fixed=TRUE)
-  public_root <- dirname(normalizePath(script,mustWork=TRUE))
+  public_root <- dirname(normalizePath(script,winslash='/',mustWork=TRUE))
   repo_root <- dirname(public_root)
   if(is.null(opt[['output-dir']]))stop('Supply --output-dir in private storage outside the repository.',call.=FALSE)
   setup_analysis_packages()
   dir.create(opt[['output-dir']],recursive=TRUE,showWarnings=FALSE)
-  opt[['output-dir']]<-normalizePath(opt[['output-dir']])
-  if(startsWith(opt[['output-dir']],paste0(repo_root,.Platform$file.sep))||identical(opt[['output-dir']],repo_root))stop('Use a private output directory outside the repository.',call.=FALSE)
+  opt[['output-dir']]<-normalizePath(opt[['output-dir']],winslash='/')
+  if(startsWith(opt[['output-dir']],paste0(repo_root,'/'))||identical(opt[['output-dir']],repo_root))stop('Use a private output directory outside the repository.',call.=FALSE)
   if(length(list.files(opt[['output-dir']],all.files=TRUE,no..=TRUE)))stop('Choose a new empty output directory.',call.=FALSE)
   root<-tempfile('discontinuation-extension-source-');dir.create(root)
   on.exit(unlink(root,recursive=TRUE),add=TRUE)
-  for(rel in names(EXTENSION_FILES)){dest<-file.path(root,rel);dir.create(dirname(dest),recursive=TRUE,showWarnings=FALSE);writeLines(enc2utf8(EXTENSION_FILES[[rel]]),dest,sep='',useBytes=TRUE)}
+  shared<-load_report_workflow(script)
+  for(rel in names(EXTENSION_FILES)){dest<-file.path(root,rel);dir.create(dirname(dest),recursive=TRUE,showWarnings=FALSE);text<-EXTENSION_FILES[[rel]];if(grepl('[.]R$',rel))text<-shared$dhs_portable_source(text);writeLines(enc2utf8(text),dest,sep='',useBytes=TRUE)}
   geometry<-jsonlite::read_json(file.path(repo_root,'geography.json'))$files
   prefix<-'discontinuation_extensions/'
   for(rel in names(geometry)[startsWith(names(geometry),prefix)]){dest<-file.path(root,substring(rel,nchar(prefix)+1L));dir.create(dirname(dest),recursive=TRUE,showWarnings=FALSE);writeLines(enc2utf8(geometry[[rel]]),dest,sep='',useBytes=TRUE)}
 
-  python <- Sys.which(opt$python)
-  if(!nzchar(python))stop('Supply a working Python 3 executable with --python.',call.=FALSE)
+  python<-shared$dhs_python(repo_root,opt$python)
+  previous_path<-Sys.getenv('PATH')
+  on.exit(Sys.setenv(PATH=previous_path),add=TRUE)
+  Sys.setenv(PATH=paste(R.home('bin'),previous_path,sep=.Platform$path.sep))
   run <- function(exe,parameters,label) {
     log <- tempfile(fileext='.log');on.exit(unlink(log),add=TRUE)
     status <- system2(exe,args=vapply(parameters,shQuote,''),stdout=log,stderr=log)
@@ -2807,8 +2848,8 @@ run_extensions<-function(){
     }
     py('validate_results.py',c('--work-dir',work,'--reference',file.path(root,'validation/expected_results.json'),
       '--output',file.path(out,'validation.json'),'--target',opt$target),'Numerical and output validation')
-    versions<-data.frame(package=c('R',needed),version=c(as.character(getRversion()),
-      vapply(needed,function(p)as.character(utils::packageVersion(p)),'')))
+    versions<-data.frame(package=c('R',REQUIRED_R_PACKAGES),version=c(as.character(getRversion()),
+      vapply(REQUIRED_R_PACKAGES,function(p)as.character(utils::packageVersion(p)),'')))
     write.csv(versions,file.path(out,'software_versions.csv'),row.names=FALSE)
     message('Completed: regenerated reports passed numerical regression and structural checks.')
   }
@@ -3089,4 +3130,9 @@ summary.dhs_multinom <- function(object, ...) {
   getS3method('summary','multinom',envir=asNamespace('nnet'))(object,...)
 }
 )----------------------"
-if(sys.nframe()==0L)run_extensions()
+if(sys.nframe()==0L)run_extensions()else if(isTRUE(RUN_ON_SOURCE)){
+  setup_analysis_packages()
+  shared<-load_report_workflow()
+  report_results<-shared$dhs_run_extensions_ui(ENTRY_SCRIPT,OUTPUT_DIRECTORY,
+    python=Sys.getenv("PYTHON",unset="auto"),open_report=OPEN_REPORT)
+}

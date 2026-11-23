@@ -12,18 +12,48 @@
 # Supply the authorized IR through --ir-file or DHS_IR_FILE; no microdata are embedded.
 # The root build_reports.R runs fresh estimation and HTML rendering.
 
+# In RStudio: open this file and click Source. Select the extracted IR .dta file when prompted.
+# Or: Rscript Nigeria_final_html_analysis.R --run=analysis --ir-file=INPUT --output-dir=OUTPUT
+# Source builds the HTML using the complete repository. --run=analysis is numerical-only.
+
+# Most users change nothing here: click Source, then select the extracted IR .dta.
+# All output paths below are project-relative unless supplied by the caller.
+IR_FILE <- Sys.getenv("DHS_IR_FILE", unset="")
+OUTPUT_DIRECTORY <- Sys.getenv("DHS_ANALYSIS_OUTPUT", unset="")
+ANALYSIS_SCOPE <- "all"          # "all", "planning", or "core"
+PLANNING_REPLICATES <- 500L       # retain 500 for the planning uncertainty analysis
+ANALYSIS_WORKERS <- 1L            # increase only if your computer has capacity
+# Source runs automatically in an interactive R session. Set this environment
+# variable to false before source() only when loading functions for advanced use.
+RUN_ON_SOURCE <- interactive() &&
+  !tolower(Sys.getenv("DHS_AUTO_RUN", unset="true")) %in% c("false","no","0")
+
 # Package setup: install missing packages, then attach them before analysis.
 # For the validated package versions, run renv::restore() from the repo root first.
 # Help, source inspection and syntax checks do not install the full analysis stack.
-REQUIRED_R_PACKAGES <- c('abind', 'data.table', 'digest', 'ggplot2', 'grDevices', 'grid', 'gridExtra', 'haven', 'jsonlite', 'MASS', 'nnet', 'parallel', 'scales', 'sf', 'splines', 'stats', 'survey', 'survival', 'svglite', 'tools')
+REQUIRED_R_PACKAGES <- c('abind', 'data.table', 'digest', 'ggplot2', 'grDevices', 'grid', 'gridExtra', 'haven', 'jsonlite', 'MASS', 'nnet', 'parallel', 'scales', 'sf', 'splines', 'stats', 'survey', 'survival', 'svglite', 'tools', 'reticulate')
 setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  # Use a writable R library and pass the selected library paths to R children.
+  libraries<-.libPaths()
+  writable<-libraries[dir.exists(libraries)&file.access(libraries,2L)==0L]
+  if(!length(writable)){
+    managed_library<-file.path(tools::R_user_dir('discontinuation-analyses','data'),
+      paste0('R-',getRversion()),'library')
+    dir.create(managed_library,recursive=TRUE,showWarnings=FALSE)
+    if(!dir.exists(managed_library)||file.access(managed_library,2L)!=0L)
+      stop('Cannot create a writable R package library. Ask your IT team to enable a user R library.',call.=FALSE)
+    .libPaths(c(managed_library,libraries));writable<-managed_library
+  }
+  .libPaths(c(writable[1],.libPaths()))
+  Sys.setenv(R_LIBS=paste(.libPaths(),collapse=.Platform$path.sep))
+  install_library<-writable[1]
   packages <- unique(as.character(packages))
   available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
   missing <- packages[!available]
   if (length(missing)) {
     if (!isTRUE(install_missing))
       stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
-    utils::install.packages(missing, repos='https://cloud.r-project.org')
+    utils::install.packages(missing, lib=install_library, repos='https://cloud.r-project.org')
   }
   missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
   if (length(missing))
@@ -32,6 +62,384 @@ setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missin
   suppressPackageStartupMessages(invisible(lapply(packages, function(package)
     library(package, character.only=TRUE, quietly=TRUE, warn.conflicts=FALSE))))
   invisible(packages)
+}
+
+# Locate this saved entry point independently of RStudio's working directory.
+ENTRY_SCRIPT <- local({
+  paths<-as.character(unlist(lapply(sys.frames(),function(frame)if(is.character(frame$ofile))frame$ofile else character()),use.names=FALSE))
+  paths<-paths[file.exists(paths)]
+  if(length(paths))normalizePath(tail(paths,1L),winslash="/",mustWork=TRUE)else{
+    arg<-grep("^--file=",base::commandArgs(FALSE),value=TRUE)
+    if(length(arg))gsub("~+~"," ",sub("^--file=","",arg[1]),fixed=TRUE)else ""
+  }
+})
+REPORT_WORKERS <- 1L
+PYTHON_EXECUTABLE <- Sys.getenv("PYTHON",unset="auto")
+REFERENCE_POLICY <- "strict"
+OPEN_REPORT <- TRUE
+
+launch_report <- function(script=ENTRY_SCRIPT,ir_file=IR_FILE,output=OUTPUT_DIRECTORY,
+                          cores=REPORT_WORKERS,python=PYTHON_EXECUTABLE,
+                          reference_policy=REFERENCE_POLICY,open_report=OPEN_REPORT) {
+  setup_analysis_packages()
+  if(!nzchar(script)||!file.exists(script))
+    stop("Open the saved country script in RStudio and click Source.",call.=FALSE)
+  helper<-file.path(dirname(dirname(normalizePath(script,winslash="/",mustWork=TRUE))),"workflow.R")
+  if(!file.exists(helper))stop("Extract the complete repository folder before running this report. Keep workflow.R and the country folders together.",call.=FALSE)
+  shared<-new.env(parent=environment());sys.source(helper,envir=shared)
+  register_analysis_survey_methods()
+  shared$dhs_run_report(script,COUNTRY,ir_file,output,cores,python,reference_policy,open_report)
+}
+
+# Package installation/loading happens automatically when Source is clicked.
+if(isTRUE(RUN_ON_SOURCE))setup_analysis_packages()
+
+# Resolve a caller-selected DHS download without extracting unrelated files.
+resolve_analysis_input <- function(input_file) {
+  if(length(input_file)!=1L || is.na(input_file) || !nzchar(input_file) || !file.exists(input_file))
+    stop('Select an existing DHS IR file or its Stata download ZIP.',call.=FALSE)
+  input_file<-normalizePath(input_file,mustWork=TRUE)
+  extension<-tolower(tools::file_ext(input_file))
+  allowed<-if(COUNTRY=='Nigeria')c('dta','rds','zip')else c('dta','zip')
+  if(!extension%in%allowed)
+    stop('Select the original Stata IR (.dta) or a ZIP containing it.',call.=FALSE)
+  if(extension!='zip')return(list(file=input_file,temporary_directory=NULL,archive=NULL))
+  expected<-switch(COUNTRY,Ethiopia='ETIR8AFL.dta',Nigeria='NGIR8BFL.dta',DRC='CDIR81FL.dta')
+  archive_sha<-digest::digest(file=input_file,algo='sha256')
+  entries<-tryCatch(utils::unzip(input_file,list=TRUE),
+    error=function(e)stop('Cannot read this ZIP. Select an intact DHS Stata download or the extracted IR.',call.=FALSE))
+  index<-which(tolower(basename(gsub('\\\\','/',entries$Name)))==tolower(expected))
+  if(length(index)!=1L)
+    stop('The ZIP must contain exactly one ',expected,'. Select the corresponding DHS Stata IR download.',call.=FALSE)
+  member<-entries$Name[index]
+  if(grepl('(^[/\\\\]|^[A-Za-z]:|(^|[/\\\\])[.][.]([/\\\\]|$))',member))
+    stop('The selected ZIP contains an unsafe member location; use the extracted IR instead.',call.=FALSE)
+  directory<-tempfile('dhs-ir-');dir.create(directory)
+  success<-FALSE
+  on.exit(if(!success)unlink(directory,recursive=TRUE),add=TRUE)
+  tryCatch(utils::unzip(input_file,files=member,exdir=directory,junkpaths=TRUE),
+    error=function(e)stop('IR extraction failed. Extract the download yourself and select the .dta file.',call.=FALSE))
+  selected<-file.path(directory,basename(gsub('\\\\','/',member)))
+  if(!file.exists(selected)||file.info(selected)$size!=entries$Length[index])
+    stop('IR extraction was incomplete. Select an intact extracted .dta file.',call.=FALSE)
+  success<-TRUE
+  list(file=selected,temporary_directory=directory,
+       archive=list(sha256=archive_sha,selected_member=basename(selected),format='zip'),
+       archive_file=input_file)
+}
+
+ANALYSIS_PLANNING_INPUTS <- c("02_nigeria_descriptive_analyses.R","12_nigeria_all_reason_bridge.R","15_nigeria_initiation_mix.R","70_modern_five_year_reasons.R","08_nigeria_population_and_planning.R","23_nigeria_current_user_switch_and_duration.R","91_nigeria_aft_switching_bridge.R")
+ANALYSIS_NUMERICAL_MODULES <- c("03_nigeria_zone_models.R","04_nigeria_subgroups_and_tests.R","13_nigeria_all_reason_models.R","17_nigeria_selected_reason_models.R","26_nigeria_actionable_method_zone_models.R","29_zone_method_mix_decomposition.R","09_nigeria_post_discontinuation_pathways.R","34_nigeria_historical_current_user_pathways.R","37_nigeria_selected_reason_extensions.R","38_nigeria_other_reason_followup.R","40_nigeria_selected_current_user_planning.R","42_nigeria_crossvalidated_selected_risk_strata.R","analysis_all_reason_user_bridge.R","22_nigeria_landmark_support.R","25_duration_aware_cause_pp_tables.R","35_nigeria_alluvial_figures.R","202_nigeria_survey_coefficients.R")
+
+# Run from R with result <- run_analysis(ir_file=..., output_dir=...).
+# Only this country file and the authorized IR are needed for this numerical mode.
+# Dependencies are R packages; no HTML, PowerPoint, Python or repository files are read.
+run_analysis <- function(ir_file=Sys.getenv('DHS_IR_FILE', unset=''),
+                         output_dir=Sys.getenv('DHS_ANALYSIS_OUTPUT', unset=''),
+                         scope=c('all','planning','core'), replicates=500L,
+                         cores=1L, analysis_replicates=NULL) {
+  scope <- match.arg(scope)
+  replicates <- as.integer(replicates); cores <- as.integer(cores)
+  if(!is.null(analysis_replicates))analysis_replicates <- as.integer(analysis_replicates)
+  if(length(replicates)!=1L || is.na(replicates) || replicates<0L || replicates==1L)
+    stop('Use replicates=0 for point estimates or at least 2 for uncertainty.')
+  if(replicates>0L && replicates<500L)
+    warning('Fewer than 500 planning replicates: use for testing, not for the validated presentation intervals.',call.=FALSE)
+  if(length(cores)!=1L || is.na(cores) || cores<1L)stop('cores must be positive.')
+  if(!is.null(analysis_replicates) && (length(analysis_replicates)!=1L || is.na(analysis_replicates)||analysis_replicates<2L))
+    stop('analysis_replicates must be NULL for validated module defaults or at least 2.')
+  if(scope=='all' && !is.null(analysis_replicates) && analysis_replicates<1000L)
+    stop('For scope=all, retain module defaults (analysis_replicates=NULL) or request at least 1000.')
+  if(!nzchar(ir_file)||!file.exists(ir_file))stop('Supply the authorized IR file or Stata ZIP with ir_file or DHS_IR_FILE.')
+  if(!nzchar(output_dir))stop('Supply a new private output_dir or DHS_ANALYSIS_OUTPUT.')
+  if(dir.exists(output_dir)&&length(list.files(output_dir,all.files=TRUE,no..=TRUE)))
+    stop('Use an empty output directory; this mode never imports earlier fitted results.')
+  setup_analysis_packages()
+  register_analysis_survey_methods()
+  selected_input <- resolve_analysis_input(ir_file)
+  if(!is.null(selected_input$temporary_directory))
+    on.exit(unlink(selected_input$temporary_directory,recursive=TRUE),add=TRUE)
+  ir_file <- selected_input$file
+  dir.create(output_dir,recursive=TRUE,showWarnings=FALSE)
+  output_dir <- normalizePath(output_dir,mustWork=TRUE)
+  root <- file.path(output_dir,'work')
+  extract_sources(root)
+  result_dir <- file.path(output_dir,'results')
+  dir.create(result_dir,recursive=TRUE,showWarnings=FALSE)
+  env_names <- unique(c(paste0(toupper(COUNTRY),c('_PROJECT_ROOT','_INPUT_DIR','_IR_FILE')),
+                        'DHS_IR_FILE','DHS_ANALYSIS_CORES','ANALYSIS_COUNTRY',BOOTSTRAP_ENV))
+  old_env <- Sys.getenv(env_names,unset=NA_character_)
+  on.exit({for(k in seq_along(env_names))if(is.na(old_env[k]))Sys.unsetenv(env_names[k])else
+    do.call(Sys.setenv,setNames(list(old_env[k]),env_names[k]))},add=TRUE)
+  do.call(Sys.setenv,setNames(list(root),paste0(toupper(COUNTRY),'_PROJECT_ROOT')))
+  data_dir <- if(COUNTRY=='Nigeria')file.path(root,'Data/raw_dhs_ir')else file.path(root,'Data')
+  do.call(Sys.setenv,setNames(list(data_dir),paste0(toupper(COUNTRY),'_INPUT_DIR')))
+  Sys.setenv(DHS_IR_FILE=ir_file,ANALYSIS_COUNTRY=COUNTRY,DHS_ANALYSIS_CORES=as.character(cores))
+  if(COUNTRY=='DRC')Sys.setenv(DRC_IR_FILE=ir_file)
+  Sys.unsetenv(BOOTSTRAP_ENV)
+  if(COUNTRY=='Ethiopia')Sys.setenv(BOOTSTRAP_REPS='300',REGIONAL_ACTIONABLE_BOOTSTRAP_REPS='500')
+  if(!is.null(analysis_replicates))for(k in BOOTSTRAP_ENV)
+    do.call(Sys.setenv,setNames(list(as.character(analysis_replicates)),k))
+  # read_validated_ir() uses haven::read_dta() on the supplied Stata IR.
+  validation <- read_validated_ir(ir_file)
+  prepare_ir(root,ir_file)
+  write_ir_validation(root,validation)
+  ir_dimensions <- c(women=validation$rows,variables=validation$columns)
+  input_sha256 <- validation$sha256
+  rm(validation);invisible(gc())
+  log_dir <- file.path(root,'output/logs');dir.create(log_dir,recursive=TRUE,showWarnings=FALSE)
+  rscript <- file.path(R.home('bin'),'Rscript')
+  completed <- character()
+  run <- function(name,arguments=character()) {
+    if(!name%in%names(MODULES)||MODULES[[name]]$language!='R')
+      stop('Numerical R module is unavailable: ',name)
+    cat('Running ',name,'\n',sep='');flush.console()
+    log_file<-file.path(log_dir,paste0(name,'.log'))
+    status<-system2(rscript,shQuote(c(file.path(root,'Code',name),arguments)),
+                    stdout=log_file,stderr=log_file)
+    txt<-readLines(log_file,warn=FALSE)
+    txt<-gsub(ir_file,'<IR_FILE>',txt,fixed=TRUE)
+    txt<-gsub(root,'<PROJECT_ROOT>',txt,fixed=TRUE)
+    txt<-gsub(output_dir,'<OUTPUT_DIR>',txt,fixed=TRUE)
+    writeLines(txt,log_file,useBytes=TRUE)
+    if(status!=0L)stop('Analysis stopped in ',name,'. See work/output/logs/',basename(log_file),'.')
+    completed<<-c(completed,name)
+    invisible(NULL)
+  }
+  # Calendar reconstruction and analysis-specific cohorts are fresh IR-derived records.
+  for(n in c(CORE_MODULES,'210_prepare_analysis_inputs.R'))run(n)
+  validation <- read_validated_ir(ir_file)
+  complete_preparation_audit(root,validation)
+  rm(validation);invisible(gc())
+  if(scope!='core')for(n in ANALYSIS_PLANNING_INPUTS)run(n)
+  run('dhs_survey_descriptives.R')
+  stats<-file.path(root,'output/survey_planning')
+  if(scope!='core') {
+    dir.create(stats,recursive=TRUE,showWarnings=FALSE)
+    driver<-switch(COUNTRY,Ethiopia='planning_audit.R',Nigeria='310_nigeria_planning_audit.R',DRC='217_aft_transition_planning.R')
+    run(driver,c(root,stats,as.character(replicates),as.character(cores)))
+    if(replicates>0L) {
+      draws<-readRDS(file.path(stats,'planning_replicates.rds'))
+      if(length(draws)!=replicates||!all(vapply(draws,function(z)is.null(z$error),FALSE)))
+        stop('Every requested survey replicate must succeed; no failed replicate is silently omitted.')
+      if(COUNTRY=='Ethiopia') {
+        run('analysis_planning_diagnostics.R',c(root,stats))
+        run('summarize_planning.R',stats)
+      }else{
+        growth<-file.path(stats,'growth_assumptions.json')
+        writeLines(REVISED_GROWTH_ASSUMPTIONS,growth,useBytes=TRUE)
+        run('300_revised_planning.R',c(stats,growth,stats))
+      }
+    }
+    if(COUNTRY!='Ethiopia')run('999_method_group_sensitivity.R',c(COUNTRY,root,file.path(root,'output/method_group_sensitivity')))
+  }
+  if(scope=='all') {
+    for(n in ANALYSIS_NUMERICAL_MODULES)run(n)
+  }
+  if(scope=='all')run('dhs_survey_descriptives.R')
+  if(scope=='all')run(if(COUNTRY=='DRC')'218_validate_aft_transitions.R'else'analysis_validate_transitions.R',
+    c(root,stats,file.path(root,'output/validation/transitions')))
+  result <- export_numerical_results(root,result_dir,scope,replicates)
+  if(!identical(input_sha256,digest::digest(file=ir_file,algo='sha256')))
+    stop('The supplied IR changed during analysis.')
+  result$country<-COUNTRY;result$input_sha256<-input_sha256
+  if(!is.null(selected_input$archive)){
+    if(!identical(selected_input$archive$sha256,digest::digest(file=selected_input$archive_file,algo='sha256')))
+      stop('The supplied ZIP changed during analysis.')
+    result$input_archive<-selected_input$archive
+  }
+  result$input_dimensions<-ir_dimensions
+  result$run_settings<-list(scope=scope,planning_replicates=replicates,
+                            analysis_replicates=analysis_replicates,cores=cores)
+  result$completed_modules<-completed
+  result$software_versions<-data.frame(package=REQUIRED_R_PACKAGES,
+    version=vapply(REQUIRED_R_PACKAGES,function(n)as.character(utils::packageVersion(n)),''))
+  write.csv(result$software_versions,file.path(result_dir,'software_versions.csv'),row.names=FALSE)
+  result$record_locations<-list(calendar='work/Data/Derived',individual_recode='work/Data',
+                                numerical_sources='work/Code')
+  saveRDS(result,file.path(result_dir,'analysis_results.rds'))
+  write.csv(data.frame(module=completed),file.path(result_dir,'completed_modules.csv'),row.names=FALSE)
+  writeLines(c(paste('Country:',COUNTRY),paste('Scope:',scope),
+    paste('Planning replicates:',replicates),
+    'analysis_results.rds contains the named result tables and aggregate planning objects.',
+    'All primary CSV tables are in this results directory. Additional numerical outputs are in work/output/Supporting_data.',
+    'The work/Data directory contains restricted derived records; keep the entire output directory private.',
+    'No existing HTML, presentation, fitted-model cache or repository layout is used as an analytical input.'),
+    file.path(result_dir,'README.txt'))
+  if(!is.null(result$planning_overall)){cat('\nPotentially actionable endings and year-end losses:\n');print(result$planning_overall[c('approach','estimated_users','contribution_pp','users_ci_low','users_ci_high','pp_ci_low','pp_ci_high')],row.names=FALSE)}
+  cat('\nNumerical analysis complete. Read the returned R list or results/analysis_results.rds.\n')
+  invisible(result)
+}
+
+# Restore the protected survey methods when opening saved fitted objects in R.
+register_analysis_survey_methods <- function() {
+  helper <- new.env(parent=globalenv())
+  eval(parse(text=MODULES[['dhs_survey_tools.R']]$code),envir=helper)
+  registerS3method('vcov','dhs_multinom',helper$vcov.dhs_multinom,envir=asNamespace('stats'))
+  registerS3method('summary','dhs_multinom',helper$summary.dhs_multinom,envir=asNamespace('base'))
+  invisible(NULL)
+}
+load_analysis_results <- function(file) {
+  setup_analysis_packages()
+  register_analysis_survey_methods()
+  readRDS(file)
+}
+
+# Adapt only execution mechanics; statistical formulas, cohorts and seeds stay intact.
+portable_runtime_source <- function(code,language='R') {
+  if(language!='R')return(code)
+  code<-gsub('parallel::mclapply(','dhs_parallel_apply(',code,fixed=TRUE)
+  code<-gsub('mclapply(','dhs_parallel_apply(',code,fixed=TRUE)
+  prefix<-r"-----(# Portable argument handling and bootstrap worker scheduling.
+commandArgs <- function(trailingOnly=FALSE) {
+  args<-base::commandArgs(trailingOnly=trailingOnly)
+  if(!trailingOnly){i<-startsWith(args,'--file=');args[i]<-gsub('~+~',' ',args[i],fixed=TRUE)}
+  args
+}
+dhs_parallel_apply <- function(X,FUN,...,mc.preschedule=TRUE,mc.set.seed=TRUE,
+    mc.silent=FALSE,mc.cores=1L,mc.cleanup=TRUE,mc.allow.recursive=TRUE,
+    affinity.list=NULL) {
+  limit<-suppressWarnings(as.integer(Sys.getenv('DHS_ANALYSIS_CORES',unset='1')))
+  requested<-suppressWarnings(as.integer(mc.cores))
+  if(length(limit)!=1L||is.na(limit)||limit<1L)limit<-1L
+  if(length(requested)!=1L||is.na(requested)||requested<1L)requested<-1L
+  use<-max(1L,min(requested,limit))
+  if(.Platform$OS.type=='windows'||use==1L)return(lapply(X,FUN,...))
+  parallel::mclapply(X,FUN,...,mc.preschedule=mc.preschedule,mc.set.seed=mc.set.seed,
+    mc.silent=mc.silent,mc.cores=use,mc.cleanup=mc.cleanup,
+    mc.allow.recursive=mc.allow.recursive,affinity.list=affinity.list)
+}
+)-----"
+  paste0(prefix,'\n',code)
+}
+prepare_numerical_runtime <- function(root,cores=1L) {
+  for(name in names(MODULES))writeLines(portable_runtime_source(MODULES[[name]]$code,
+    MODULES[[name]]$language),file.path(root,'Code',name),useBytes=TRUE)
+  manifest<-data.frame(module=names(MODULES),language=vapply(MODULES,function(z)z$language,''),
+    sha256=vapply(names(MODULES),function(n)digest::digest(file=file.path(root,'Code',n),algo='sha256'),''))
+  write.table(manifest,file.path(root,'Code/numerical_source_manifest.tsv'),sep='\t',quote=FALSE,row.names=FALSE)
+  invisible(NULL)
+}
+
+export_numerical_results <- function(root,destination,scope,replicates) {
+  support<-file.path(root,'output/Supporting_data')
+  result<-list()
+  files<-list.files(support,pattern='[.]csv$',recursive=TRUE,full.names=TRUE)
+  # Analysis tables are freshly computed; documented population assumptions remain fixed inputs.
+  # No report or previously fitted result is parsed to supply estimates.
+  result$supporting_tables<-setNames(lapply(files,function(p)read.csv(p,check.names=FALSE)),
+    make.unique(sub('[.]csv$','',substring(files,nchar(support)+2L))))
+  direct<-list.files(file.path(root,'output'),pattern='[.]csv$',full.names=TRUE)
+  result$analysis_tables<-setNames(lapply(direct,function(p)read.csv(p,check.names=FALSE)),
+    sub('[.]csv$','',basename(direct)))
+  checks<-list.files(file.path(root,'output/method_group_sensitivity'),pattern='[.]csv$',full.names=TRUE)
+  result$method_group_checks<-setNames(lapply(checks,function(p)read.csv(p,check.names=FALSE)),
+    sub('[.]csv$','',basename(checks)))
+  from<-strsplit(normalizePath(destination,winslash='/',mustWork=TRUE),'/',fixed=TRUE)[[1]]
+  to<-strsplit(normalizePath(root,winslash='/',mustWork=TRUE),'/',fixed=TRUE)[[1]]
+  shared<-0L
+  for(i in seq_len(min(length(from),length(to)))){
+    same<-if(.Platform$OS.type=='windows')tolower(from[i])==tolower(to[i])else from[i]==to[i]
+    if(!same)break
+    shared<-i
+  }
+  parts<-c(rep('..',length(from)-shared),if(shared<length(to))to[seq.int(shared+1L,length(to))])
+  root_prefix<-if(length(parts))paste0(paste(parts,collapse='/'),'/')else ''
+  index<-function(tables,paths,collection){
+    data.frame(collection=rep(collection,length(paths)),table=if(length(paths))names(tables)else character(),
+      rows=vapply(tables,nrow,0L),columns=vapply(tables,ncol,0L),
+      file=if(length(paths))paste0(root_prefix,substring(paths,nchar(root)+2L))else character())
+  }
+  result$table_index<-rbind(index(result$analysis_tables,direct,'analysis_tables'),
+    index(result$supporting_tables,files,'supporting_tables'),
+    index(result$method_group_checks,checks,'method_group_checks'))
+  write.csv(result$table_index,file.path(destination,'table_index.csv'),row.names=FALSE)
+  stats<-file.path(root,'output/survey_planning')
+  if(scope=='core')return(result)
+  p<-readRDS(file.path(stats,'planning_point.rds'));meta<-readRDS(file.path(stats,'planning_metadata.rds'))
+  primary<-c('First-year: every actionable ending'=1L,'Historical: every actionable ending'=2L,
+             'AFT: every actionable ending'=3L,'Historical + observed switching'=4L,
+             'AFT + observed switching'=5L,'AFT + modeled switching'=9L)
+  interval_id<-c(1L,2L,3L,4L,5L,12L)
+  outcome<-meta[[paste0('wra',meta$outcome_year)]]
+  baseline<-meta[[paste0('wra',meta$reference_year)]]
+  interval_file<-file.path(stats,'planning_intervals.csv')
+  # Full national builds place the freshly summarized intervals with their
+  # planning tables; numerical-only builds summarize into the statistics folder.
+  if(!file.exists(interval_file))interval_file<-file.path(root,'output/planning_tables/planning_intervals.csv')
+  intervals<-if(replicates>0L)read.csv(interval_file)else NULL
+  ci<-function(key){if(is.null(intervals))return(c(NA_real_,NA_real_));i<-match(key,intervals$key)
+    if(is.na(i))stop('A requested interval is missing: ',key)
+    row<-intervals[i,]
+    if(grepl('^(count|pp)[|]',key) && max(abs(as.numeric(row[c('estimate','lower','upper')])))<1e-9)
+      return(c(NA_real_,NA_real_))
+    as.numeric(row[c('lower','upper')])}
+  rows<-list()
+  for(a in seq_along(primary))for(m in c(meta$methods,'Total'))for(ca in c(meta$causes,'Total')){
+    mi<-if(m=='Total')seq_along(meta$methods)else match(m,meta$methods)
+    cj<-if(ca=='Total')seq_along(meta$causes)else match(ca,meta$causes)
+    n<-sum(p$counts[primary[a],mi,cj]);stock<-if(m=='Total')sum(p$stock[meta$methods])else p$stock[m]
+    base_approach<-c(1L,2L,3L,2L,3L,3L)[a]
+    original_endings<-sum(p$counts[base_approach,mi,cj])
+    key<-paste(interval_id[a],m,ca,sep='|');nc<-ci(paste0('count|',key));pc<-ci(paste0('pp|',key))
+    rows[[length(rows)+1L]]<-data.frame(approach=names(primary)[a],method=m,cause=ca,
+      current_reversible_users=stock,estimated_users=n,
+      actionable_ending_probability_pct=100*original_endings/stock,
+      year_end_loss_probability_pct=if(a>3L)100*n/stock else NA_real_,
+      original_method_endings=original_endings,
+      modern_at_endpoint_after_ending=if(a>3L)original_endings-n else NA_real_,
+      contribution_pp=100*n/outcome,users_ci_low=nc[1],users_ci_high=nc[2],
+      pp_ci_low=pc[1],pp_ci_high=pc[2],outcome_year=meta$outcome_year,outcome_wra=outcome,
+      definition=if(a<=3)'Every actionable original-method ending counted as lost'else
+        'Actionable ending followed by absence from any modern method at the common next-12-month endpoint')
+  }
+  all<-do.call(rbind,rows)
+  result$planning_by_method_cause<-all[all$method!='Total'&all$cause!='Total',]
+  result$planning_by_method<-all[all$method!='Total'&all$cause=='Total',]
+  result$planning_by_cause<-all[all$method=='Total'&all$cause!='Total',]
+  result$planning_overall<-all[all$method=='Total'&all$cause=='Total',]
+  if(COUNTRY=='Ethiopia'){
+    rates<-c((22.7286887783964-28.1)/6,(22.7286887783964-24.9)/9,.7)
+    labels<-c('6-year DHS trend','9-year DHS trend','FPET-informed growth')
+  }else{
+    growth<-jsonlite::fromJSON(REVISED_GROWTH_ASSUMPTIONS)
+    rates<-growth$scenarios$annual_change_pp;labels<-growth$scenarios$scenario
+  }
+  scenario<-list();methods<-c(meta$methods,'EC','Permanent methods','Total')
+  for(a in seq_along(primary))for(j in seq_along(rates))for(m in methods){
+    usual<-p$mcpr+rates[j];mix<-if(m=='Total')1 else p$mix[m]
+    add<-if(m=='Total')sum(p$counts[primary[a],,])else
+      if(m%in%c('EC','Permanent methods'))0 else sum(p$counts[primary[a],m,])
+    stock<-if(m=='Total')sum(p$stock)else p$stock[m]
+    scenario[[length(scenario)+1L]]<-data.frame(approach=names(primary)[a],scenario=labels[j],
+      annual_change_pp=rates[j],method=m,baseline_year=meta$reference_year,
+      outcome_year=meta$outcome_year,baseline_wra=baseline,outcome_wra=outcome,
+      baseline_users=stock,baseline_mcpr_pct=p$mcpr*mix,
+      usual_users=usual/100*outcome*mix,usual_mcpr_pct=usual*mix,
+      additional_users=add,contribution_pp=100*add/outcome,
+      users_if_retained=usual/100*outcome*mix+add,mcpr_if_retained_pct=usual*mix+100*add/outcome)
+  }
+  scenario<-do.call(rbind,scenario)
+  result$planning_scenarios<-scenario[scenario$method=='Total',]
+  result$planning_method_scenarios<-scenario[scenario$method!='Total',]
+  result$current_users<-data.frame(method=names(p$stock),estimated_users=as.numeric(p$stock),
+                                   baseline_year=meta$reference_year,baseline_wra=baseline,
+                                   prevalence_pct=100*as.numeric(p$stock)/baseline)
+  result$planning_point<-p;result$planning_metadata<-meta
+  result$transition_models<-readRDS(file.path(stats,'transition_point_fits.rds'))
+  if(!is.null(intervals))result$planning_intervals<-intervals
+  for(n in names(result))if(is.data.frame(result[[n]]))
+    write.csv(result[[n]],file.path(destination,paste0(n,'.csv')),row.names=FALSE,na='')
+  # Exact accounting checks are independent of HTML/PPTX reference values.
+  stopifnot(all(is.finite(all$estimated_users)),all(all$estimated_users>=-1e-6),
+    abs(sum(p$stock)-baseline*p$mcpr/100)<1e-5,
+    all(abs(scenario$users_if_retained-scenario$usual_users-scenario$additional_users)<1e-5),
+    all(abs(scenario$mcpr_if_retained_pct-scenario$usual_mcpr_pct-scenario$contribution_pp)<1e-10))
+  for(a in names(primary)){
+    v<-all[all$approach==a,];t<-v$estimated_users[v$method=='Total'&v$cause=='Total']
+    stopifnot(abs(sum(v$estimated_users[v$method!='Total'&v$cause!='Total'])-t)<1e-5)
+  }
+  result
 }
 
 RECONCILIATION_CODE <- r"-----(#!/usr/bin/env python3
@@ -296,7 +704,7 @@ parse_options <- function(args) {
     i <- i + 1L
   }
   allowed <- c('list','validate','extract','overwrite','help','packages','run',
-               'project-root','ir-file','auxiliary-dir','python','bootstrap-reps','reconcile','report-html','fresh-root','audit-output','verify-planning','expected-ir-sha256','validate-input','statistics-dir','base-html','revision-inputs')
+               'project-root','ir-file','auxiliary-dir','python','bootstrap-reps','reconcile','report-html','fresh-root','audit-output','verify-planning','expected-ir-sha256','validate-input','statistics-dir','base-html','revision-inputs','output-dir','replicates','cores','analysis-scope','analysis-replicates')
   if (length(setdiff(names(out), allowed))) stop('Unrecognized option.')
   out
 }
@@ -327,7 +735,7 @@ extract_sources <- function(root, overwrite=FALSE, aux='') {
   dir.create(root, recursive=TRUE, showWarnings=FALSE)
   root <- normalizePath(root, mustWork=TRUE)
   for (name in names(MODULES)) {
-    write_checked(MODULES[[name]]$code, file.path(root,'Code',name), overwrite)
+    write_checked(portable_runtime_source(MODULES[[name]]$code,MODULES[[name]]$language), file.path(root,'Code',name), overwrite)
   }
   # User-supplied auxiliary inputs take precedence over frozen external inputs.
   if (nzchar(aux)) {
@@ -396,7 +804,7 @@ run_full_rebuild <- function(opt,planning_only=FALSE) {
  if(!file.exists(script))stop('Run from the complete repository, including the root build script and tools directory.')
  input<-if(!is.null(opt[['ir-file']]))opt[['ir-file']]else Sys.getenv('DHS_IR_FILE',unset='')
  if(!nzchar(input)||is.null(opt[['project-root']]))stop('A full rebuild requires --ir-file and a new --project-root output directory.')
- python<-if(!is.null(opt$python))opt$python else Sys.getenv('PYTHON',unset='python3')
+ python<-if(!is.null(opt$python))opt$python else Sys.getenv('PYTHON',unset='auto')
  status<-system2(file.path(R.home('bin'),'Rscript'),shQuote(c(script,paste0('--country=',COUNTRY),paste0('--ir-file=',input),paste0('--output-dir=',opt[['project-root']]),paste0('--python=',python))))
  if(status!=0L)stop('The full raw-IR build failed. Inspect its runtime diagnostics.')
  invisible(NULL)
@@ -404,11 +812,32 @@ run_full_rebuild <- function(opt,planning_only=FALSE) {
 
 main <- function() {
   opt <- parse_options(commandArgs(trailingOnly=TRUE))
+  if(isTRUE(opt$help)){
+    cat(COUNTRY," national discontinuation analysis\n\n",sep="")
+    cat("RStudio: open this script from the complete repository and click Source.\n")
+    cat("Select the extracted IR .dta when asked; the workflow builds the national HTML.\n\n")
+    cat("CLI full report, from the repository root:\nRscript build_reports.R --country=",COUNTRY,
+      " --ir-file=INPUT --output-dir=NEW_PRIVATE_DIRECTORY\n\n",sep="")
+    cat("Numerical results only, from the repository root:\nRscript ",COUNTRY,"_analysis/",COUNTRY,"_final_html_analysis.R --run=analysis --ir-file=INPUT --output-dir=NEW_PRIVATE_DIRECTORY --analysis-scope=all --replicates=500\n\n",sep="")
+    cat("See README.md for Windows/macOS instructions. Advanced source inspection: --list or --validate.\n")
+    return(invisible(NULL))
+  }
+  if(!length(opt)){
+    report_results <- launch_report()
+    assign('report_results',report_results,envir=.GlobalEnv)
+    return(invisible(report_results))
+  }
+  if(identical(opt$run,'analysis') || (is.null(opt$run) && !is.null(opt[['ir-file']]) && !is.null(opt[['output-dir']]))) {
+    return(run_analysis(ir_file=if(!is.null(opt[['ir-file']]))opt[['ir-file']]else Sys.getenv('DHS_IR_FILE',unset=''),
+      output_dir=if(!is.null(opt[['output-dir']]))opt[['output-dir']]else Sys.getenv('DHS_ANALYSIS_OUTPUT',unset=''),
+      scope=if(!is.null(opt[['analysis-scope']]))opt[['analysis-scope']]else'all',
+      replicates=if(!is.null(opt$replicates))as.integer(opt$replicates)else 500L,
+      cores=if(!is.null(opt$cores))as.integer(opt$cores)else 1L,
+      analysis_replicates=if(!is.null(opt[['analysis-replicates']]))as.integer(opt[['analysis-replicates']])else NULL))
+  }
+
   if(!is.null(opt$run) && opt$run %in% c('full','build-html'))return(run_full_rebuild(opt))
   if(identical(opt$run,'build-planning'))return(run_full_rebuild(opt,TRUE))
-  if (identical(opt$run,"build-html")) opt$run <- "revised-html"
-  if (identical(opt$run,"build-planning")) opt$run <- "revised-planning"
-  if (isTRUE(opt$help)) cat("Build modes: --run=build-html|build-planning, --statistics-dir, --base-html, --revision-inputs. See the revised README for the build boundary.\n")
   if (!is.null(opt$run) && opt$run %in% c("revised-html","revised-planning")) return(run_revised_report(opt))
   if (isTRUE(opt$reconcile) || isTRUE(opt[['verify-planning']])) {
     if (is.null(opt[['report-html']]) || is.null(opt[['project-root']]))
@@ -430,7 +859,7 @@ main <- function() {
     cat('Portable numerical source collection for ', COUNTRY, '.\n',sep='')
     cat('Options: --list, --validate, --validate-input, --packages, --extract, --run=core|planning|survey-update|reference|MODULE[,MODULE], --reconcile\n')
     cat('Inputs: --project-root, --ir-file, --auxiliary-dir; optional --expected-ir-sha256, --python and --bootstrap-reps.\n')
-    cat('No analyses run without --run. Original modules and supplied inputs determine the outputs.\n')
+    cat('Use --run=analysis for the standalone numerical workflow; no analysis runs without inputs.\n')
     return(invisible(NULL))
   }
   if (isTRUE(opt$list)) list_modules()
@@ -3706,7 +4135,7 @@ write.csv(detail,file.path(out,'nigeria_actionable_zone_method_mix_cells.csv'),r
 cat('Wrote',nrow(summary),'decomposition rows and',nrow(detail),'cells\n')
 )----------------------")
 
-MODULES[["34_nigeria_historical_current_user_pathways.R"]] <- list(language="R", packaged_sha256="28d4e1b7d3813ef8105e8bd804492a2173be4da16a4b8abfe2a5721fb0781556", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
+MODULES[["34_nigeria_historical_current_user_pathways.R"]] <- list(language="R", packaged_sha256="dd3ef1b98678cf2d78cfabcc3346b245e3ff1bd7f62cc080d155931d6c5a62ab", args=character(0), code=r"----------------------(if(!requireNamespace('haven',quietly=TRUE))stop('Install R package haven first.')
 # DHS complex survey design for this module.
 .dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
 if (!nzchar(.dhs_root)) {
@@ -3789,14 +4218,24 @@ write.csv(flows,file.path(out,'nigeria_current_user_pathway_flows.csv'),row.name
 current <- data.frame(method_code=as.integer(ir$v312),
  duration=as.numeric(ir$v337),wt=as.numeric(ir$v005)/1e6,
  modern=as.integer(ir$v313)==3)
+permanent_current <- current[current$modern & current$method_code%in%c(6L,7L),]
 current <- current[current$modern & current$method_code %in% setdiff(modern,c(6L,7L)) &
  is.finite(current$duration) & current$duration<997,]
 current$method <- group(current$method_code)
 current$duration_group <- durgroup(current$duration)
 current_cells <- aggregate(wt~method+duration_group,current,sum)
 names(current_cells)[3]<-'current_weight'
-current_cells$current_share <- current_cells$current_weight/sum(current_cells$current_weight)
-write.csv(current_cells,file.path(out,'nigeria_current_user_method_duration_distribution.csv'),row.names=FALSE)
+# Permanent users remain in the current-user denominator and do not stop.
+permanent_weight <- sum(permanent_current$wt)
+stock_weight <- sum(current_cells$current_weight)+permanent_weight
+current_cells$current_share <- current_cells$current_weight/stock_weight
+stock_cells <- current_cells
+stock_cells$duration_group <- as.character(stock_cells$duration_group)
+if(permanent_weight>0)stock_cells<-rbind(stock_cells,data.frame(
+ method='Permanent methods',duration_group='Not applicable',
+ current_weight=permanent_weight,current_share=permanent_weight/stock_weight))
+stopifnot(abs(sum(stock_cells$current_share)-1)<1e-10)
+write.csv(stock_cells,file.path(out,'nigeria_current_user_method_duration_distribution.csv'),row.names=FALSE)
 h <- h[!h$baseline_code%in%c(6L,7L),]
 historical <- aggregate(wt~baseline_method+duration_group+outcome,h,sum)
 historical_n <- aggregate(woman_row~baseline_method+duration_group,h,length)
@@ -3814,12 +4253,21 @@ stopifnot(nrow(standard)>0,all(current_cells$current_share>0),
  all(paste(current_cells$method,current_cells$duration_group)%in%
      paste(standard$method,standard$duration_group)))
 standard$contribution <- standard$current_share*standard$conditional_probability
+if(permanent_weight>0){
+ standard$duration_group<-as.character(standard$duration_group)
+ fixed<-standard[1L,,drop=FALSE]
+ fixed$method<-'Permanent methods';fixed$duration_group<-'Not applicable'
+ fixed$current_share<-permanent_weight/stock_weight
+ fixed$outcome<-'No gross exit: baseline method';fixed$conditional_probability<-1
+ fixed$historical_n<-NA_integer_;fixed$contribution<-fixed$current_share
+ standard<-rbind(standard,fixed)
+}
 summary <- aggregate(contribution~outcome,standard,sum)
 summary$pct <- 100*summary$contribution
 stopifnot(abs(sum(summary$pct)-100)<1e-8)
 write.csv(standard,file.path(out,'nigeria_standardized_current_user_pathway_contributions.csv'),row.names=FALSE)
 write.csv(summary,file.path(out,'nigeria_standardized_current_user_pathway_summary.csv'),row.names=FALSE)
-cat('Historical women',nrow(h),'current modern users',nrow(current),
+cat('Historical women',nrow(h),'current modern users',nrow(current)+nrow(permanent_current),
     'smallest historical cell',min(historical_n$historical_n),'\n')
 print(summary)
 )----------------------")
@@ -7463,7 +7911,7 @@ if toc not in source:
 page.write_text(source)
 print(page))----------------------")
 
-MODULES[["36_add_alluvial_pathways_html.py"]] <- list(language="Python", packaged_sha256="97b072b1862d13ead1b1ac792fbcf845934bbb0c05fd89f24d4afc8e44589d5c", args=character(0), code=r"----------------------(#!/usr/bin/env python3
+MODULES[["36_add_alluvial_pathways_html.py"]] <- list(language="Python", packaged_sha256="87a0b2a2736ccedeb53bb0712e09b231e40085d0113a3a89bb3b5a9db571b575", args=character(0), code=r"----------------------(#!/usr/bin/env python3
 """Insert Nigeria episode and current-user pathway sections into working HTML."""
 import csv
 import html
@@ -7512,7 +7960,7 @@ for name in ['No gross exit: baseline method','No gross exit: modern switch',
     rows.append((name,f'{stock[name]:.1f}%'))
 section2=('''<section id="standardized-current-users" class="analysis-section">
 <div class="eyebrow">Current-user standardization</div><h2>Expected pathway among current modern users</h2>
-<p>The following illustration estimates the 12-month pathway for the interview-date current-user stock. Historical outcome probabilities are calculated within four method groups and five completed-duration groups, then averaged using the DHS-weighted method-duration distribution of current users. The historical follow-up contains 3,747 women, and the current-stock standardization uses 5,357 DHS respondents reporting a modern method with valid duration. These are weighted percentages per 100 current users; they are not 12-month original-method discontinuation rates.</p>'''+
+<p>The following illustration estimates the 12-month pathway for the interview-date current-user stock. Historical outcome probabilities are calculated within four method groups and five completed-duration groups, then averaged using the DHS-weighted method-duration distribution of current users. The historical follow-up contains 3,747 women, and the current-stock standardization uses 5,357 DHS respondents using a modern method: reversible-method users with known duration, plus permanent-method users who remain in the baseline-method group. These are weighted percentages per 100 current users; they are not 12-month original-method discontinuation rates.</p>'''+
 img('nigeria_standardized_current_user_stock_alluvial.png','Standardized current user stock to gross modern-use exit and month 12 outcome')+
 table(['12-month pathway','Percent of current modern users'],rows)+
 '''<p class="small">A gross exit is any month outside modern use. Continuous modern-to-modern switching remains in modern use. Re-entry is modern use at month 12 after an earlier exit. Net absence combines no modern method and pregnancy-related calendar states at month 12. This descriptive transport from past calendar users assumes historical method-duration risks apply to current users; it does not estimate the causal effect of preventing a particular reason for discontinuation. EC is grouped with other modern methods for mCPR consistency, although it is a one-time method.</p>
@@ -9742,7 +10190,7 @@ for name in ['No gross exit: baseline method','No gross exit: modern switch',
     rows.append((name,f'{stock[name]:.1f}%'))
 section2=('''<section id="standardized-current-users" class="analysis-section">
 <div class="eyebrow">Current-user standardization</div><h2>Expected pathway among current modern users</h2>
-<p>The following illustration estimates the 12-month pathway for the interview-date current-user stock. Historical outcome probabilities are calculated within four method groups and five completed-duration groups, then averaged using the DHS-weighted method-duration distribution of current users. The historical follow-up contains 3,747 women, and the current-stock standardization uses 5,357 DHS respondents reporting a modern method with valid duration. These are weighted percentages per 100 current users; they are not 12-month original-method discontinuation rates.</p>'''+
+<p>The following illustration estimates the 12-month pathway for the interview-date current-user stock. Historical outcome probabilities are calculated within four method groups and five completed-duration groups, then averaged using the DHS-weighted method-duration distribution of current users. The historical follow-up contains 3,747 women, and the current-stock standardization uses 5,357 DHS respondents using a modern method: reversible-method users with known duration, plus permanent-method users who remain in the baseline-method group. These are weighted percentages per 100 current users; they are not 12-month original-method discontinuation rates.</p>'''+
 img('nigeria_standardized_current_user_stock_alluvial.png','Standardized current user stock to gross modern-use exit and month 12 outcome')+
 table(['12-month pathway','Percent of current modern users'],rows)+
 '''<p class="small">A gross exit is any month outside modern use. Continuous modern-to-modern switching remains in modern use. Re-entry is modern use at month 12 after an earlier exit. Net absence combines no modern method and pregnancy-related calendar states at month 12. This descriptive transport from past calendar users assumes historical method-duration risks apply to current users; it does not estimate the causal effect of preventing a particular reason for discontinuation. EC is grouped with other modern methods for mCPR consistency, although it is a one-time method.</p>
@@ -10475,4 +10923,65 @@ cat('Complete. Outcome WRA',w25,'current mCPR unchanged',reference$mcpr,'\n')
 
 REVISION_HELPERS <- setNames(lapply(REVISION_HELPER_NAMES, function(name) MODULES[[name]]$code), REVISION_HELPER_NAMES)
 
-if (sys.nframe() == 0L) main()
+MODULES[["analysis_validate_transitions.R"]] <- list(language="R", packaged_sha256="66b25437034f2bb888a6640a4bdf7e2158bfbef84a118bbe93dcace7a61c2f6a", args=character(0), code=r"----------------------(# DHS complex survey design for this module.
+.dhs_root <- Sys.getenv('NIGERIA_PROJECT_ROOT')
+if (!nzchar(.dhs_root)) {
+ .dhs_file <- sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
+ .dhs_root <- dirname(dirname(normalizePath(.dhs_file)))
+}
+source(file.path(.dhs_root,'Code','dhs_survey_tools.R'),local=TRUE)
+dhs_set_context(country='Nigeria',root=.dhs_root)
+#!/usr/bin/env Rscript
+# Held-out PSU checks of modern use following actionable original-method endings.
+a<-commandArgs(TRUE);stopifnot(length(a)==3);root<-a[1];fitdir<-a[2];out<-a[3];dir.create(out,recursive=TRUE,showWarnings=FALSE)
+suppressPackageStartupMessages({library(data.table);library(jsonlite)})
+ir<-readRDS(file.path(root,'Data/raw_dhs_ir/NG2024DHS__NGIR8BDT__IR_raw.rds'));cal<-readRDS(file.path(root,'Data/Derived/nigeria_2024_calendar_events.rds'))
+methods<-c('Injectables','Implants','Pill','IUD','Other modern');causes<-c('Method failure','Wanted more effective method','Changes in menstrual bleeding','Other side effects/health','Access/cost/convenience');codes<-list(1L,7L,15L,c(4L,5L),c(6L,8L,10L));action<-unlist(codes)
+modern<-c(1L,2L,3L,5L,6L,7L,11L,13L,14L,15L,17L,18L,19L,20L);modern<-setdiff(modern,c(6L,7L));endpoint_modern<-c(modern,6L,7L,16L)
+method_group<-function(x)ifelse(x==3,'Injectables',ifelse(x==11,'Implants',ifelse(x==1,'Pill',ifelse(x==2,'IUD','Other modern'))));cause_group<-function(x){z<-rep(NA_integer_,length(x));for(j in 1:5)z[x%in%codes[[j]]]<-j;z}
+source(file.path(root,'Code/transition_model.R'))
+point<-readRDS(file.path(fitdir,'transition_point_fits.rds'))
+diagnostics<-rbindlist(lapply(states,function(s){f<-point$transitions[[s]];check<-fit_transition(follow[follow$current_state==s,],s,f$family,.1,start=f$par,check_gradient=TRUE);data.table(state=s,family=f$family,boundary=f$boundary,convergence=f$convergence,max_gradient_error=check$max_gradient_error)}));write.csv(diagnostics,file.path(out,'transition_fit_diagnostics.csv'),row.names=FALSE)
+set.seed(20261110);frame<-unique(data.table(psu=as.integer(ir$v021),stratum=as.integer(ir$v022)));frame[,fold:=sample(rep(1:5,length.out=.N)),by=stratum]
+initial<-merge(initial,frame[,.(psu,fold)],by='psu');follow<-merge(follow,frame[,.(psu,fold)],by='psu');histories<-merge(histories,frame[,.(psu,fold)],by='psu');validation<-list()
+for(k in 1:5){cat('Held-out fold',k,'\n');flush.console();fit<-fit_models(initial[initial$fold!=k,],follow[follow$fold!=k,],'selected',.1);test<-histories[histories$fold==k & histories$horizon%in%c(1L,3L,6L,12L),];gr<-unique(test[,.(method,cause,end_duration,duration_log)]);gr$gid<-seq_len(nrow(gr));pred<-merge(gr,endpoint_prob(fit,gr,12L),by='gid');v<-merge(test,pred,by=c('method','cause','end_duration','duration_log','horizon'));v[,observed:=as.numeric(observed_state%in%c('Modern','Permanent'))];validation[[k]]<-v[,.(horizon,wt,observed,p_modern,fold)]}
+v<-rbindlist(validation);c<-v[,.(observations=.N,observed_modern=sum(wt*observed)/sum(wt),predicted_modern=sum(wt*p_modern)/sum(wt),brier=sum(wt*(observed-p_modern)^2)/sum(wt)),by=horizon];c[,difference_pp:=100*(predicted_modern-observed_modern)];write.csv(c,file.path(out,'held_out_calibration.csv'),row.names=FALSE);print(c)
+
+checks<-jsonlite::fromJSON(file.path(fitdir,'transition_fit_metadata.json'),simplifyVector=FALSE)
+checks$held_out<-lapply(seq_len(nrow(c)),function(i)as.list(c[i,]))
+checks$fit_diagnostics<-lapply(seq_len(nrow(diagnostics)),function(i)as.list(diagnostics[i,]))
+jsonlite::write_json(checks,file.path(fitdir,'transition_validation.json'),auto_unbox=TRUE,pretty=TRUE))----------------------")
+
+MODULES[["analysis_all_reason_user_bridge.R"]] <- list(language="R", packaged_sha256="7001b086eadbe33a1a03c15ee0b2af56272129a21980ee1074faa1d5785b78f8", args=character(0), code=r"----------------------(# All-reason first-year illustration, reconstructed from this run's IR-derived tables.
+root<-Sys.getenv('NIGERIA_PROJECT_ROOT');stopifnot(nzchar(root))
+sup<-file.path(root,'output/Supporting_data')
+read<-function(n)read.csv(file.path(sup,n),check.names=FALSE)
+times<-read('nigeria_reversible_planning_all_reason_timepoints.csv')
+reasons<-read('nigeria_reversible_planning_all_reason_reason_mix.csv')
+users<-read('nigeria_current_users_by_method_and_actionable_projection.csv')
+methods<-c('Injectables','Implants','Pill','IUD','Other modern')
+cause_names<-reasons$reason[reasons$scope=='National']
+summary<-list();causes<-list()
+for(m in methods){
+ u<-users[users$method==m,];t<-times[times$scope==paste0('National: ',m)&times$month==12,]
+ stopifnot(nrow(u)==1L,nrow(t)==1L)
+ stock<-u$current_users_2025
+ summary[[m]]<-data.frame(method=m,current_users_2025=stock,
+  all_reason_first_year_risk_pct=t$all_reason_pct,
+  illustrative_original_method_endings=stock*t$all_reason_pct/100)
+ for(ca in cause_names){d<-reasons[reasons$scope==paste0('National: ',m)&reasons$reason==ca,];stopifnot(nrow(d)==1L)
+  causes[[length(causes)+1L]]<-data.frame(method=m,reason=ca,current_users_2025=stock,
+    cause_specific_first_year_risk_pct=d$cause_specific_12_month_pct,
+    illustrative_original_method_endings=stock*d$cause_specific_12_month_pct/100)}
+}
+a<-do.call(rbind,summary);b<-do.call(rbind,causes)
+for(m in methods)stopifnot(abs(sum(b$illustrative_original_method_endings[b$method==m])-a$illustrative_original_method_endings[a$method==m])<1e-6)
+write.csv(a,file.path(sup,'nigeria_current_users_all_reason_projection.csv'),row.names=FALSE)
+write.csv(b,file.path(sup,'nigeria_current_users_all_reason_by_cause.csv'),row.names=FALSE))----------------------")
+
+if (sys.nframe() == 0L) {
+  main()
+  quit(save='no',status=0L,runLast=FALSE)
+} else if (isTRUE(RUN_ON_SOURCE)) {
+  report_results <- launch_report()
+}

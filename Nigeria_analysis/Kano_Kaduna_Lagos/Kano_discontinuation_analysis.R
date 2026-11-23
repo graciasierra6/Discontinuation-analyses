@@ -11,18 +11,58 @@
 # The joint three-state models export Kano tables/figures; this script does not
 # independently author the combined HTML or PowerPoint layout. See --help and README.
 
+REPORT_STATE <- "Kano"
+
+# RStudio settings: select the extracted IR file(s) when Source is clicked.
+IR_FILE <- Sys.getenv("DHS_IR_FILE",unset="")
+OUTPUT_DIRECTORY <- Sys.getenv("DHS_ANALYSIS_OUTPUT",unset="")
+ANALYSIS_WORKERS <- 1L
+OPEN_REPORT <- TRUE
+RUN_ON_SOURCE <- interactive() && !tolower(Sys.getenv("DHS_AUTO_RUN",unset="true")) %in% c("false","no","0")
+ENTRY_SCRIPT <- local({
+  paths<-as.character(unlist(lapply(sys.frames(),function(f)if(is.character(f$ofile))f$ofile else character()),use.names=FALSE))
+  paths<-paths[file.exists(paths)]
+  if(length(paths))normalizePath(tail(paths,1L),winslash="/",mustWork=TRUE)else{
+    arg<-grep("^--file=",base::commandArgs(FALSE),value=TRUE)
+    if(length(arg))gsub("~+~"," ",sub("^--file=","",arg[1]),fixed=TRUE)else ""
+  }
+})
+load_report_workflow <- function(script=ENTRY_SCRIPT) {
+  directory<-dirname(normalizePath(script,winslash="/",mustWork=TRUE))
+  for(i in 1:6){
+    helper<-file.path(directory,"workflow.R")
+    if(file.exists(helper)){env<-new.env(parent=globalenv());sys.source(helper,envir=env);return(env)}
+    directory<-dirname(directory)
+  }
+  stop("Extract the complete repository and keep its folders together.",call.=FALSE)
+}
+
 # Package setup: install missing packages, then attach them before analysis.
 # For the validated package versions, run renv::restore() from the repo root first.
 # Help, source inspection and syntax checks do not install the full analysis stack.
 REQUIRED_R_PACKAGES <- c('digest', 'haven', 'jsonlite', 'MASS', 'nnet', 'parallel', 'stats', 'survey', 'survival', 'svglite', 'tools', 'xml2')
 setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  # Use a writable R library and pass the selected library paths to R children.
+  libraries<-.libPaths()
+  writable<-libraries[dir.exists(libraries)&file.access(libraries,2L)==0L]
+  if(!length(writable)){
+    managed_library<-file.path(tools::R_user_dir('discontinuation-analyses','data'),
+      paste0('R-',getRversion()),'library')
+    dir.create(managed_library,recursive=TRUE,showWarnings=FALSE)
+    if(!dir.exists(managed_library)||file.access(managed_library,2L)!=0L)
+      stop('Cannot create a writable R package library. Ask your IT team to enable a user R library.',call.=FALSE)
+    .libPaths(c(managed_library,libraries));writable<-managed_library
+  }
+  .libPaths(c(writable[1],.libPaths()))
+  Sys.setenv(R_LIBS=paste(.libPaths(),collapse=.Platform$path.sep))
+  install_library<-writable[1]
   packages <- unique(as.character(packages))
   available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
   missing <- packages[!available]
   if (length(missing)) {
     if (!isTRUE(install_missing))
       stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
-    utils::install.packages(missing, repos='https://cloud.r-project.org')
+    utils::install.packages(missing, lib=install_library, repos='https://cloud.r-project.org')
   }
   missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
   if (length(missing))
@@ -33,6 +73,19 @@ setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missin
   invisible(packages)
 }
 
+# Windows uses serial workers; replicate seeds and estimators are unchanged.
+dhs_parallel_apply <- function(X,FUN,...,mc.cores=1L,mc.preschedule=TRUE) {
+  if(.Platform$OS.type=="windows"||mc.cores<=1L)return(lapply(X,FUN,...))
+  parallel::mclapply(X,FUN,...,mc.cores=mc.cores,mc.preschedule=mc.preschedule)
+}
+
+if(isTRUE(RUN_ON_SOURCE)) {
+  setup_analysis_packages()
+  shared<-load_report_workflow()
+  report_results<-shared$dhs_run_state_ui(ENTRY_SCRIPT,REPORT_STATE,IR_FILE,
+    OUTPUT_DIRECTORY,ANALYSIS_WORKERS,OPEN_REPORT)
+} else {
+# CLI numerical analysis begins here.
 # DHS design utilities. Inputs are supplied by the calling analysis.
 # No finite population correction: use the with-replacement PSU approximation.
 dhs_require_survey <- function() {
@@ -806,7 +859,7 @@ point<-measure(rep(1,nrow(frame)))
 cat('Planning point estimates computed.\n');flush.console()
 one<-function(b)tryCatch(measure(bootstrap_mult[,b+1L]),error=function(e)list(error=conditionMessage(e)))
 res<-if(B>0L) {
- if(.Platform$OS.type=='windows'||cores==1L)lapply(seq_len(B),one) else parallel::mclapply(seq_len(B),one,mc.cores=cores,mc.preschedule=TRUE)
+ if(.Platform$OS.type=='windows'||cores==1L)lapply(seq_len(B),one) else dhs_parallel_apply(seq_len(B),one,mc.cores=cores,mc.preschedule=TRUE)
 } else list()
 valid<-if(B>0L)!vapply(res,function(z)!is.null(z$error),FALSE)else logical()
 if(B>0L&&mean(valid)<.95)stop('Fewer than 95% of planning bootstrap replicates converged.')
@@ -977,8 +1030,10 @@ plot_outputs <- function(state,d,t,folder) {
 # the joint three-state AFT fit. Only aggregate outputs for REPORT_STATE are exported.
 script_arg <- grep("^--file=",commandArgs(),value=TRUE)
 code_signature <- if(length(script_arg)) {
-  code <- readLines(sub("^--file=","",script_arg[1]),warn=FALSE)
+  code <- readLines(ENTRY_SCRIPT,warn=FALSE)
   code <- sub('^REPORT_STATE <- .*$', 'REPORT_STATE <- "STATE"',code)
+  # Ignore state-specific documentation when identifying the shared joint fit.
+  code <- code[!grepl("^[[:space:]]*(#|$)",code)]
   digest::digest(paste(code,collapse="\n"),algo="sha256",serialize=FALSE)
 } else ANALYSIS_VERSION
 key <- digest::digest(list(version=ANALYSIS_VERSION,code=code_signature,input=input_sha,
@@ -1052,3 +1107,5 @@ manifest<-list(analysis_version=ANALYSIS_VERSION,state=REPORT_STATE,input_sha256
 jsonlite::write_json(manifest,file.path(out,"validation","analysis_manifest.json"),pretty=TRUE,auto_unbox=TRUE)
 cat(REPORT_STATE,"complete. Aggregate tables, figures and validation checks saved.\n")
 
+
+}

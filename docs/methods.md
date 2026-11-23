@@ -3,7 +3,11 @@
 This guide describes the national analyses and the independent extensions.
 See [data access](data-access.md) for authorized inputs and
 [survey design](survey-design.md) for estimators, variance calculations and
-country-specific sampling checks. The root README contains the build commands.
+country-specific sampling checks. The root README gives step-by-step RStudio, Windows PowerShell and macOS
+instructions. Each national RStudio launcher invokes the same CLI builder;
+file selection and dependency setup do not change the analytical specification.
+Windows runs fork-based bootstrap stages serially, retaining their replicate
+seeds. A full native Windows build has not yet been exercised.
 
 ## From the IR file to analytical records
 
@@ -91,6 +95,12 @@ usual-condition projections include the permanent stock and reconcile with the
 all-modern total. Retention increments come only from the reversible cohort.
 Observed DHS benchmarks, initiation mixes, reason shares and historical
 post-ending displays retain their stated modern-method definitions.
+
+Nigeria's supplemental current-user pathway illustration also retains permanent
+users in its current-stock denominator. Historical method-duration probabilities
+apply to reversible users; permanent users remain in the baseline-method category
+throughout the follow-up. The table and figure use the same denominator. This
+illustration is separate from the actionable-retention planning models.
 
 The report distinguishes three probability approaches:
 
@@ -302,3 +312,16 @@ has been retired. It is not part of the current national report build. The
 country-specific risk-profile modules used by the reports remain available.
 Remaining reference-alignment tasks use the full IR survey frame and map their
 own analytical records into it.
+
+## RStudio entry points
+
+Open a country script from the complete extracted repository and click Source.
+The visible setup block installs missing R libraries before asking for the
+extracted IR `.dta`. The launcher prepares pinned Python rendering dependencies
+and invokes `build_reports.R`; existing HTML/PPTX references stay read-only.
+Numerical results are also written to `results/analysis_results.rds` and CSVs.
+
+The optional state Source workflow opens a simple gallery generated from that
+run's 20 CSV tables and SVG figures. It does not replace the approved combined
+three-state report or expand the older table-refresh validation into a full
+independent layout reconstruction.

@@ -12,13 +12,27 @@
 # Help, source inspection and syntax checks do not install the full analysis stack.
 REQUIRED_R_PACKAGES <- c('digest', 'jsonlite')
 setup_analysis_packages <- function(packages=REQUIRED_R_PACKAGES, install_missing=TRUE) {
+  # Use a writable R library and pass the selected library paths to R children.
+  libraries<-.libPaths()
+  writable<-libraries[dir.exists(libraries)&file.access(libraries,2L)==0L]
+  if(!length(writable)){
+    managed_library<-file.path(tools::R_user_dir('discontinuation-analyses','data'),
+      paste0('R-',getRversion()),'library')
+    dir.create(managed_library,recursive=TRUE,showWarnings=FALSE)
+    if(!dir.exists(managed_library)||file.access(managed_library,2L)!=0L)
+      stop('Cannot create a writable R package library. Ask your IT team to enable a user R library.',call.=FALSE)
+    .libPaths(c(managed_library,libraries));writable<-managed_library
+  }
+  .libPaths(c(writable[1],.libPaths()))
+  Sys.setenv(R_LIBS=paste(.libPaths(),collapse=.Platform$path.sep))
+  install_library<-writable[1]
   packages <- unique(as.character(packages))
   available <- vapply(packages, requireNamespace, logical(1), quietly=TRUE)
   missing <- packages[!available]
   if (length(missing)) {
     if (!isTRUE(install_missing))
       stop('Missing R packages: ', paste(missing, collapse=', '), call.=FALSE)
-    utils::install.packages(missing, repos='https://cloud.r-project.org')
+    utils::install.packages(missing, lib=install_library, repos='https://cloud.r-project.org')
   }
   missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly=TRUE)]
   if (length(missing))
@@ -33,12 +47,12 @@ CONTROLLER_CODE <- r"-----------------------(#!/usr/bin/env Rscript
 # Cold national rebuild from an authorized, caller-supplied DHS IR file.
 main<-function(){
   a<-commandArgs(TRUE)
-  if('--help'%in%a){cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=OUTPUT [--python=python3] [--cores=4] [--soffice=soffice] [--reference-policy=strict|report]\nA new output directory is required. Restricted inputs and intermediate records remain there. Approved presentations are read-only comparison artifacts.\n');quit(status=0)}
-  opt<-list('reference-policy'='strict',python=Sys.getenv('PYTHON',unset='python3'),cores='4',soffice=Sys.getenv('SOFFICE',unset='soffice'))
+  if('--help'%in%a){cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=OUTPUT [--python=auto|EXECUTABLE] [--cores=1] [--soffice=soffice] [--reference-policy=strict|report]\nA new output directory is required. Restricted inputs and intermediate records remain there. Approved presentations are read-only comparison artifacts.\n');quit(status=0)}
+  opt<-list('reference-policy'='strict',python=Sys.getenv('PYTHON',unset='auto'),cores='1',soffice=Sys.getenv('SOFFICE',unset='soffice'))
   for(x in a){if(!grepl('^--[^=]+=.+$',x))stop('Use --name=value arguments.');k<-sub('^--([^=]+)=.*$','\\1',x);if(!k%in%c('country','ir-file','output-dir','python','cores','soffice','reference-policy'))stop('Unknown option.');opt[[k]]<-sub('^--[^=]+=','',x)}
   if(!all(c('country','ir-file','output-dir')%in%names(opt)))stop('Supply country, ir-file and output-dir.')
   country<-opt$country;if(!country%in%c('Ethiopia','Nigeria','DRC'))stop('Unknown country.')
-  f<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1]);if(!file.exists(f))f<-gsub('~+~',' ',f,fixed=TRUE);repo<-dirname(normalizePath(f))
+  f<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1]);if(!file.exists(f))f<-gsub('~+~',' ',f,fixed=TRUE);repo<-dirname(normalizePath(f,winslash='/'))
   rscript<-file.path(R.home('bin'),'Rscript');root<-opt[['output-dir']]
   if(dir.exists(root)&&length(list.files(root,all.files=TRUE,no..=TRUE)))stop('Choose an empty output directory; an old analysis cache is not a cold rebuild.')
   # All existing report artifacts are immutable throughout a build, including failures.
@@ -50,11 +64,11 @@ main<-function(){
   frozen_hashes<-hash_reports()
   verify_frozen<-function(){if(!identical(frozen_hashes,hash_reports()))stop('A frozen HTML/PPTX artifact changed. The build is not validated.')}
   on.exit(verify_frozen(),add=TRUE)
-  dir.create(root,recursive=TRUE,showWarnings=FALSE);root<-normalizePath(root)
-  if(identical(root,repo)||startsWith(root,paste0(repo,.Platform$file.sep)))stop('Use a private build directory outside the repository.')
+  dir.create(root,recursive=TRUE,showWarnings=FALSE);root<-normalizePath(root,winslash='/')
+  if(identical(root,repo)||startsWith(root,paste0(repo,'/')))stop('Use a private build directory outside the repository.')
   status<-system2(rscript,shQuote(c(file.path(repo,'recompute_planning.R'),paste0('--country=',country),paste0('--ir-file=',opt[['ir-file']]),paste0('--output-dir=',root),paste0('--python=',opt$python),paste0('--cores=',opt$cores))))
   if(status!=0L)stop('Fresh data preparation or planning estimation failed.')
-  root<-normalizePath(root);entry<-file.path(root,'Code',paste0(country,'_source_snapshot.R'))
+  root<-normalizePath(root,winslash='/');entry<-file.path(root,'Code',paste0(country,'_source_snapshot.R'))
   if(!file.exists(entry))stop('The preparation source snapshot is missing.')
   logs<-file.path(root,'output/logs');stats<-file.path(root,'output/survey_planning');tables<-file.path(root,'output/planning_tables')
   run<-function(exe,arguments,label,cwd=NULL){old<-getwd();on.exit(setwd(old),add=TRUE);if(!is.null(cwd))setwd(cwd);cat('Running ',label,'\n',sep='');flush.console();status<-system2(exe,shQuote(arguments),stdout=file.path(logs,paste0(label,'.log')),stderr=file.path(logs,paste0(label,'.log')));if(status!=0L)stop('Stage failed: ',label,'. Inspect its runtime log.')}
@@ -73,6 +87,12 @@ main<-function(){
   if(country=='Nigeria')run(rscript,c(file.path(repo,'Nigeria_analysis/src/validate_aft_transitions.R'),root,stats,file.path(root,'output/validation/transitions')),'post_ending_model_validation')
   if(country=='Ethiopia')run(rscript,c(file.path(repo,'Ethiopia_analysis/src/validate_aft_transitions.R'),root,stats,file.path(root,'output/validation/transitions')),'post_ending_model_validation')
   if(country!='Ethiopia'&&file.exists(file.path(stats,'transition_validation.json')))file.copy(file.path(stats,'transition_validation.json'),file.path(tables,'transition_validation.json'),overwrite=TRUE)
+  numeric_source<-new.env(parent=globalenv());sys.source(entry,envir=numeric_source)
+  numeric_source$register_analysis_survey_methods()
+  numeric_output<-file.path(root,'results');dir.create(numeric_output,showWarnings=FALSE)
+  numeric_results<-numeric_source$export_numerical_results(root,numeric_output,'all',500L)
+  numeric_results$country<-country
+  saveRDS(numeric_results,file.path(numeric_output,'analysis_results.rds'))
   assembler<-file.path(repo,'tools',if(country=='Ethiopia')'assemble_ethiopia.py'else'assemble_national.py')
   run(opt$python,c(assembler,paste0('--country=',country),paste0('--project-root=',root),paste0('--repo-root=',repo),paste0('--statistics-dir=',stats),paste0('--table-dir=',tables),paste0('--rscript=',rscript),paste0('--soffice=',opt$soffice)),'assemble_national_html')
   run(opt$python,c(file.path(repo,'tools/restore_report_navigation.py'),'--country',country,'--source',file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html')),'--output',file.path(root,'output',paste0(country,'_discontinuation_analysis_rebuilt.html'))),'restore_publication_navigation')
@@ -109,11 +129,11 @@ PLANNING_CODE <- r"-----------------------(#!/usr/bin/env Rscript
 # This numerical entry point does not use revision_inputs or an existing HTML.
 args<-commandArgs(TRUE)
 if('--help'%in%args){
- cat('Rscript recompute_planning.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=OUTPUT [--cores=4] [--python=python3]\n')
+ cat('Rscript recompute_planning.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=OUTPUT [--cores=4] [--python=auto|EXECUTABLE]\n')
  cat('Reconstructs calendars, estimates historical and AFT probabilities, and refits 500 joint survey replicates. No existing report or fitted estimates are inputs.\n')
  quit(status=0)
 }
-opt<-list(cores='4',python=Sys.getenv('PYTHON',unset='python3'))
+opt<-list(cores='1',python=Sys.getenv('PYTHON',unset='auto'))
 for(a in args){
  if(!grepl('^--[^=]+=.+$',a))stop('Use --name=value arguments.')
  key<-sub('^--([^=]+)=.*$','\\1',a)
@@ -130,12 +150,12 @@ if(dir.exists(opt[['output-dir']])&&length(list.files(opt[['output-dir']],all.fi
  stop('Choose an empty output directory. This entry point does not import an old analysis cache.')
 script<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1])
 if(!file.exists(script))script<-gsub('~+~',' ',script,fixed=TRUE)
-repo<-dirname(normalizePath(script))
+repo<-dirname(normalizePath(script,winslash='/'))
 entry<-file.path(repo,paste0(country,'_analysis'),paste0(country,'_final_html_analysis.R'))
 dir.create(opt[['output-dir']],recursive=TRUE,showWarnings=FALSE)
-root<-normalizePath(opt[['output-dir']]);input<-normalizePath(opt[['ir-file']])
-if(startsWith(input,paste0(repo,.Platform$file.sep)))stop('Supply an authorized IR file from private storage outside the repository.')
-if(identical(root,repo)||startsWith(root,paste0(repo,.Platform$file.sep)))stop('Use a private build directory outside the repository.')
+root<-normalizePath(opt[['output-dir']],winslash='/');input<-normalizePath(opt[['ir-file']],winslash='/')
+if(startsWith(input,paste0(repo,'/')))stop('Supply an authorized IR file from private storage outside the repository.')
+if(identical(root,repo)||startsWith(root,paste0(repo,'/')))stop('Use a private build directory outside the repository.')
 # Freeze the analysis source for the lifetime of this build.
 dir.create(file.path(root,'Code'),recursive=TRUE,showWarnings=FALSE)
 snapshot<-file.path(root,'Code',paste0(country,'_source_snapshot.R'))
@@ -228,13 +248,14 @@ materialize_sources<-function(repo,destination,python,reference){
   relative<-file.path(paste0(country,'_analysis'),paste0(country,'_final_html_analysis.R'))
   entry<-file.path(repo,relative);e<-new.env(parent=globalenv());sys.source(entry,envir=e)
   write_source(paste(readLines(entry,warn=FALSE),collapse='\n'),file.path(destination,relative))
-  for(name in names(e$REPORT_FILES))write_source(e$REPORT_FILES[[name]],file.path(destination,paste0(country,'_analysis'),name))
+  for(name in names(e$REPORT_FILES)){text<-e$REPORT_FILES[[name]];if(grepl('[.]R$',name))text<-e$portable_runtime_source(text);write_source(text,file.path(destination,paste0(country,'_analysis'),name))}
  }
  states<-list.files(file.path(repo,'Nigeria_analysis/Kano_Kaduna_Lagos'),pattern='[.]R$',full.names=TRUE)
  for(from in states){to<-file.path(destination,'Nigeria_analysis/Kano_Kaduna_Lagos',basename(from));dir.create(dirname(to),recursive=TRUE,showWarnings=FALSE);stopifnot(file.copy(from,to,overwrite=TRUE))}
  geometry<-jsonlite::read_json(file.path(repo,'geography.json'))$files
  for(name in names(geometry))write_source(geometry[[name]],file.path(destination,name))
  stopifnot(file.copy(file.path(repo,'geography.json'),file.path(destination,'geography.json'),overwrite=TRUE))
+ stopifnot(file.copy(file.path(repo,'workflow.R'),file.path(destination,'workflow.R'),overwrite=TRUE))
  stopifnot(file.copy(file.path(repo,'method_sensitivity_report.py'),file.path(destination,'method_sensitivity_report.py'),overwrite=TRUE))
  write_source(CONTROLLER_CODE,file.path(destination,'build_reports.R'))
  write_source(PLANNING_CODE,file.path(destination,'recompute_planning.R'))
@@ -243,7 +264,8 @@ materialize_sources<-function(repo,destination,python,reference){
  # Extension sources are also inspectable and independently executable.
  extension<-file.path(repo,'discontinuation_extensions/run_analysis.R')
  e<-new.env(parent=globalenv());sys.source(extension,envir=e)
- for(name in names(e$EXTENSION_FILES))write_source(e$EXTENSION_FILES[[name]],file.path(destination,'discontinuation_extensions',name))
+ shared<-new.env();sys.source(file.path(repo,'workflow.R'),envir=shared)
+ for(name in names(e$EXTENSION_FILES)){text<-e$EXTENSION_FILES[[name]];if(grepl('[.]R$',name))text<-shared$dhs_portable_source(text);write_source(text,file.path(destination,'discontinuation_extensions',name))}
  for(name in reference_files()){
   from<-file.path(reference,name);to<-file.path(destination,name)
   if(file.exists(from)){dir.create(dirname(to),recursive=TRUE,showWarnings=FALSE);stopifnot(file.copy(from,to,overwrite=TRUE))}
@@ -253,13 +275,13 @@ materialize_sources<-function(repo,destination,python,reference){
 main<-function(){
  args<-commandArgs(TRUE)
  if('--help'%in%args||!length(args)){
-  cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=PRIVATE_NEW_DIRECTORY [--python=python3] [--cores=4] [--reference-dir=REPOSITORY] [--reference-policy=strict|report]\n')
-  cat('Rscript build_reports.R --check [--python=python3]\n')
-  cat('Rscript build_reports.R --extract-source=PRIVATE_DIRECTORY [--python=python3]\n')
+  cat('Rscript build_reports.R --country=Ethiopia|Nigeria|DRC --ir-file=INPUT --output-dir=PRIVATE_NEW_DIRECTORY [--python=auto|EXECUTABLE] [--cores=1] [--reference-dir=REPOSITORY] [--reference-policy=strict|report]\n')
+  cat('Rscript build_reports.R --check [--python=auto|EXECUTABLE]\n')
+  cat('Rscript build_reports.R --extract-source=PRIVATE_DIRECTORY [--python=auto|EXECUTABLE]\n')
   cat('Existing HTML/PPTX files are read-only. Reference files are used after estimation; DRC also displays the reviewed slide preview.\n')
   return(invisible(NULL))
  }
- opt<-list('reference-policy'='strict',python=Sys.getenv('PYTHON',unset='python3'),cores='4',soffice=Sys.getenv('SOFFICE',unset='soffice'),check=FALSE)
+ opt<-list('reference-policy'='strict',python=Sys.getenv('PYTHON',unset='auto'),cores='1',soffice=Sys.getenv('SOFFICE',unset='soffice'),check=FALSE)
  for(x in args){
   if(x=='--check'){opt$check<-TRUE;next}
   if(!grepl('^--[^=]+=.+$',x))stop('Use --name=value arguments.')
@@ -268,16 +290,23 @@ main<-function(){
   opt[[key]]<-sub('^--[^=]+=','',x)
  }
  script<-sub('^--file=','',grep('^--file=',commandArgs(FALSE),value=TRUE)[1]);if(!file.exists(script))script<-gsub('~+~',' ',script,fixed=TRUE)
- repo<-dirname(normalizePath(script));reference<-if(is.null(opt[['reference-dir']]))repo else normalizePath(opt[['reference-dir']],mustWork=TRUE)
+ repo<-dirname(normalizePath(script,winslash='/'));reference<-if(is.null(opt[['reference-dir']]))repo else normalizePath(opt[['reference-dir']],winslash='/',mustWork=TRUE)
  setup_analysis_packages()
+ sys.source(file.path(repo,'workflow.R'),envir=environment())
+ previous_environment<-Sys.getenv(c('DHS_ANALYSIS_CORES','PATH'),unset=NA_character_)
+ on.exit({for(k in names(previous_environment))if(is.na(previous_environment[[k]]))Sys.unsetenv(k)else do.call(Sys.setenv,setNames(list(previous_environment[[k]]),k))},add=TRUE)
+ if(!grepl('^[1-9][0-9]*$',opt$cores))stop('cores must be a positive integer.')
+ Sys.setenv(DHS_ANALYSIS_CORES=opt$cores,PATH=paste(R.home('bin'),Sys.getenv('PATH'),sep=.Platform$path.sep))
+ opt$python<-dhs_python(repo,opt$python)
+ if(!is.null(opt$country)&&identical(opt$country,'DRC')&&!isTRUE(opt$check))opt$soffice<-dhs_soffice(opt$soffice)
  originals<-file.path(reference,reference_files());originals<-originals[file.exists(originals)]
  hashes<-vapply(originals,function(p)digest::digest(p,file=TRUE,algo='sha256'),'')
  on.exit({current<-vapply(originals,function(p)if(file.exists(p))digest::digest(p,file=TRUE,algo='sha256')else NA_character_,'');if(!identical(hashes,current))stop('A frozen report changed; validation failed.')},add=TRUE)
  extract<-opt[['extract-source']]
  if(!is.null(extract)){
   if(dir.exists(extract)&&length(list.files(extract,all.files=TRUE,no..=TRUE)))stop('Use an empty private source directory.')
-  dir.create(extract,recursive=TRUE,showWarnings=FALSE);extract<-normalizePath(extract)
-  if(identical(extract,repo)||startsWith(extract,paste0(repo,.Platform$file.sep)))stop('Extract sources outside the repository.')
+  dir.create(extract,recursive=TRUE,showWarnings=FALSE);extract<-normalizePath(extract,winslash='/')
+  if(identical(extract,repo)||startsWith(extract,paste0(repo,'/')))stop('Extract sources outside the repository.')
   materialize_sources(repo,extract,opt$python,reference)
   cat('Source extraction completed; no models were fitted.\n');return(invisible(NULL))
  }
@@ -286,18 +315,20 @@ main<-function(){
   materialize_sources(repo,runtime,opt$python,reference)
   status<-system2(opt$python,shQuote(c(file.path(repo,'report_tools.py'),paste0('--check-runtime=',runtime))))
   if(status!=0L)stop('Source validation failed.')
+  status<-system2(opt$python,shQuote(file.path(repo,'tests/test_reporting.py')))
+  if(status!=0L)stop('Report-rendering dependency or formatting checks failed.')
   return(invisible(NULL))
  }
  if(!all(c('country','ir-file','output-dir')%in%names(opt)))stop('Supply country, ir-file and output-dir.')
  country<-opt$country;if(!country%in%c('Ethiopia','Nigeria','DRC'))stop('Unknown country.')
  country_source<-new.env();sys.source(file.path(repo,paste0(country,'_analysis'),paste0(country,'_final_html_analysis.R')),country_source)
  country_source$setup_analysis_packages()
- input<-normalizePath(opt[['ir-file']],mustWork=TRUE)
- for(parent in unique(c(repo,reference)))if(startsWith(input,paste0(parent,.Platform$file.sep)))stop('Keep the IR in private storage outside the repository.')
+ input<-normalizePath(opt[['ir-file']],winslash='/',mustWork=TRUE)
+ for(parent in unique(c(repo,reference)))if(startsWith(input,paste0(parent,'/')))stop('Keep the IR in private storage outside the repository.')
  output<-opt[['output-dir']]
  if(dir.exists(output)&&length(list.files(output,all.files=TRUE,no..=TRUE)))stop('Use a new empty output directory.')
- dir.create(output,recursive=TRUE,showWarnings=FALSE);output<-normalizePath(output)
- for(parent in unique(c(repo,reference)))if(identical(output,parent)||startsWith(output,paste0(parent,.Platform$file.sep)))stop('Build outside the repository and reference directory.')
+ dir.create(output,recursive=TRUE,showWarnings=FALSE);output<-normalizePath(output,winslash='/')
+ for(parent in unique(c(repo,reference)))if(identical(output,parent)||startsWith(output,paste0(parent,'/')))stop('Build outside the repository and reference directory.')
  needed<-reference_files()[startsWith(reference_files(),paste0(country,'_analysis/'))]
  if(!all(file.exists(file.path(reference,needed))))stop('Approved HTML/PPTX references are missing. Supply --reference-dir or merge the code update into the existing repository.')
  materialize_sources(repo,runtime,opt$python,reference)

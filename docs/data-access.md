@@ -1,8 +1,9 @@
 # Data access and a reproducible build
 
 IR microdata are **not included in this repository**. Supply an authorized file
-through `--ir-file` (or the documented environment-variable input for the
-extensions). Build directories, downloaded archives, extracted records and
+through the RStudio file browser, `--ir-file`, or the documented runtime
+environment variables. Start with the [two quick-start workflows](../README.md).
+Both national routes call the same report builder. Build directories, downloaded archives, extracted records and
 authentication configuration must stay outside the repository.
 
 ## Which data?
@@ -27,7 +28,7 @@ Extract it into private storage. From the repository root, run:
 Rscript build_reports.R --country=Nigeria \
   --ir-file="$DHS_IR_FILE" \
   --output-dir="$DHS_BUILD_DIR" \
-  --python=python3
+  --python=auto
 ```
 
 The two variables are supplied by the caller; no actual input location is
@@ -107,7 +108,7 @@ status <- system2("Rscript", shQuote(c(
   paste0("--ir-file=", ir_file),
   paste0("--output-dir=", file.path(private_dir,
                                     paste0(tolower(country), "-build"))),
-  paste0("--python=", Sys.getenv("PYTHON", unset = "python3"))
+  paste0("--python=", Sys.getenv("PYTHON", unset = "auto"))
 )))
 stopifnot(status == 0L)
 ```
