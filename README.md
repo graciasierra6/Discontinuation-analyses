@@ -11,7 +11,7 @@ Reproduce DHS contraceptive-calendar analyses for **Ethiopia, Nigeria and DRC** 
 
 No microdata are included. Existing HTMLs and presentations are read-only references. A run writes new results to a separate private folder; it does not replace the approved files.
 
-[Reports and scripts](#reports-and-scripts) · [First-time setup](#before-your-first-run) · [Terminal workflow](#option-1--terminal-or-coding-assistant) · [RStudio workflow](#option-2--rstudio-open-source-select-the-ir) · [Results](#where-are-my-results) · [Troubleshooting](#troubleshooting)
+[Reports and scripts](#reports-and-scripts) · [Country file locations](#country-file-locations) · [First-time setup](#before-your-first-run) · [Terminal workflow](#option-1--terminal-or-coding-assistant) · [RStudio workflow](#option-2--rstudio-open-source-select-the-ir) · [Results](#where-are-my-results) · [Troubleshooting](#troubleshooting)
 
 ## Reports and scripts
 
@@ -28,6 +28,30 @@ Use the script links to find the correct entry point. For a full HTML rebuild, *
 | Optional state numerical results | [Kano](Nigeria_analysis/Kano_Kaduna_Lagos/Kano_discontinuation_analysis.R) · [Kaduna](Nigeria_analysis/Kano_Kaduna_Lagos/Kaduna_discontinuation_analysis.R) · [Lagos](Nigeria_analysis/Kano_Kaduna_Lagos/Lagos_discontinuation_analysis.R) | [Combined state reference](Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation_analysis.html) | [Combined state PPTX](Nigeria_analysis/Kano_Kaduna_Lagos/Kano_Kaduna_Lagos_discontinuation.pptx) |
 
 The extensions entry point produces all three extensions/maps reports and asks for all three countries' IR files. The optional state scripts generate individual numerical results and simple galleries; they do not independently reconstruct the saved combined state HTML/PPTX layout. See [optional analyses](#optional-extensions-maps-and-state-analyses).
+
+## Country file locations
+
+All locations below start at the **repository root**: the extracted folder containing this `README.md`. They are repository-relative locations, not locations on anyone's computer. The filename links open the corresponding file on GitHub; the same folders and filenames are present after you download and extract the complete repository.
+
+**Which file should I use?**
+
+- **R script (`.R`):** the country analysis entry point. It contains package installation/loading and the analysis code. With the complete repository, open it in RStudio and click Source to select your own authorized IR file and rebuild the HTML. A single downloaded R file supports [numerical-only analysis](#one-script-numerical-analysis-without-html).
+- **HTML report (`.html`):** the detailed, reviewed analysis, including figures, tables, methods and planning scenarios. To read the findings, open the downloaded HTML in Chrome, Edge, Safari or another browser. You do not need R just to view it.
+- **PowerPoint presentation (`.pptx`):** the reviewed presentation slides for PowerPoint or Keynote, with no presenter notes. Use this for presenting the findings. The report workflow checks editable slide tables against the HTML; it does not regenerate or edit the deck.
+
+| Country | File type | Location from the repository root |
+|---|---|---|
+| Ethiopia | R analysis script | [Ethiopia_analysis/Ethiopia_final_html_analysis.R](Ethiopia_analysis/Ethiopia_final_html_analysis.R) |
+| Ethiopia | HTML report | [Ethiopia_analysis/Ethiopia_discontinuation_analysis.html](Ethiopia_analysis/Ethiopia_discontinuation_analysis.html) |
+| Ethiopia | PowerPoint slides | [Ethiopia_analysis/ethiopia_presentation.pptx](Ethiopia_analysis/ethiopia_presentation.pptx) |
+| Nigeria | R analysis script | [Nigeria_analysis/Nigeria_final_html_analysis.R](Nigeria_analysis/Nigeria_final_html_analysis.R) |
+| Nigeria | HTML report | [Nigeria_analysis/Nigeria_discontinuation_analysis.html](Nigeria_analysis/Nigeria_discontinuation_analysis.html) |
+| Nigeria | PowerPoint slides | [Nigeria_analysis/Nigeria_discontinuation.pptx](Nigeria_analysis/Nigeria_discontinuation.pptx) |
+| DRC | R analysis script | [DRC_analysis/DRC_final_html_analysis.R](DRC_analysis/DRC_final_html_analysis.R) |
+| DRC | HTML report | [DRC_analysis/DRC_discontinuation_analysis.html](DRC_analysis/DRC_discontinuation_analysis.html) |
+| DRC | PowerPoint slides | [DRC_analysis/DRC_discontinuation.pptx](DRC_analysis/DRC_discontinuation.pptx) |
+
+**To read results:** choose the country's HTML. **To present results:** choose its PPTX. **To rerun the analysis:** choose its R script and follow the [RStudio instructions](#option-2--rstudio-open-source-select-the-ir) or the [terminal instructions](#option-1--terminal-or-coding-assistant).
 
 ## Before your first run
 
