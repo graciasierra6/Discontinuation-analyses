@@ -2,16 +2,17 @@
 
 Reproduce DHS contraceptive-calendar analyses for **Ethiopia, Nigeria and DRC** from authorized women's Individual Recode (IR) files. The analyses cover method starts, discontinuation, reasons, timing, switching/restarting, regional comparisons and potential contributions to mCPR.
 
-**Choose either workflow. To use RStudio, you can download just one report R file; its public support files are prepared automatically.**
+**Choose one of three ways to run the same analyses. For RStudio, you can download just one report R file; its public support files are prepared automatically.**
 
 | How you prefer to work | What to open |
 |---|---|
-| **Option 1: Terminal or coding assistant** | [National builder](build_reports.R) · [Windows instructions](#windows--powershell) · [macOS instructions](#macos--terminal-using-zsh) |
-| **Option 2: RStudio** | [Ethiopia script](Ethiopia_analysis/Ethiopia_final_html_analysis.R) · [Nigeria script](Nigeria_analysis/Nigeria_final_html_analysis.R) · [DRC script](DRC_analysis/DRC_final_html_analysis.R) |
+| **Option 1: Terminal** | [Terminal instructions](#option-1--terminal) · [Windows](#windows--powershell) · [macOS](#macos--terminal-using-zsh) |
+| **Option 2: RStudio** | [RStudio instructions](#option-2--rstudio-open-source-select-the-ir) · [Ethiopia script](Ethiopia_analysis/Ethiopia_final_html_analysis.R) · [Nigeria script](Nigeria_analysis/Nigeria_final_html_analysis.R) · [DRC script](DRC_analysis/DRC_final_html_analysis.R) |
+| **Option 3: Coding assistant with terminal access** | [Step-by-step instructions and request to copy](#option-3--coding-assistant) |
 
 No microdata are included. Existing HTMLs and presentations are read-only references. A run writes new results to a separate private folder; it does not replace the approved files.
 
-[Reports and scripts](#reports-and-scripts) · [Country file locations](#country-file-locations) · [First-time setup](#before-your-first-run) · [Terminal workflow](#option-1--terminal-or-coding-assistant) · [RStudio workflow](#option-2--rstudio-open-source-select-the-ir) · [Results](#where-are-my-results) · [Troubleshooting](#troubleshooting)
+[Reports and scripts](#reports-and-scripts) · [Country file locations](#country-file-locations) · [First-time setup](#before-your-first-run) · [Terminal workflow](#option-1--terminal) · [RStudio workflow](#option-2--rstudio-open-source-select-the-ir) · [Coding-assistant workflow](#option-3--coding-assistant) · [Results](#where-are-my-results) · [Troubleshooting](#troubleshooting)
 
 ## Reports and scripts
 
@@ -51,7 +52,7 @@ All locations below start at the **repository root**: the extracted folder conta
 | DRC | HTML report | [DRC_analysis/DRC_discontinuation_analysis.html](DRC_analysis/DRC_discontinuation_analysis.html) |
 | DRC | PowerPoint slides | [DRC_analysis/DRC_discontinuation.pptx](DRC_analysis/DRC_discontinuation.pptx) |
 
-**To read results:** choose the country's HTML. **To present results:** choose its PPTX. **To rerun the analysis:** choose its R script and follow the [RStudio instructions](#option-2--rstudio-open-source-select-the-ir) or the [terminal instructions](#option-1--terminal-or-coding-assistant).
+**To read results:** choose the country's HTML. **To present results:** choose its PPTX. **To rerun the analysis:** choose its R script and follow the [RStudio instructions](#option-2--rstudio-open-source-select-the-ir), the [terminal instructions](#option-1--terminal), or the [coding-assistant instructions](#option-3--coding-assistant).
 
 ## Before your first run
 
@@ -69,9 +70,11 @@ All locations below start at the **repository root**: the extracted folder conta
 
 The scripts check the validated release and calendar fields. They stop rather than silently use a different release. [Data access instructions](docs/data-access.md) explain DHS authorization, optional R download tools and why the public aggregate API cannot replace the individual calendars.
 
-## Option 1 — Terminal or coding assistant
+<a id="option-1--terminal-or-coding-assistant"></a>
 
-Choose this route if you use terminal commands, directly or through a coding assistant with terminal access. Use [build_reports.R](build_reports.R); the same R analysis runs in either case. No assistant-specific integration is required.
+## Option 1 — Terminal
+
+Choose this route if you prefer to run commands yourself. Use [build_reports.R](build_reports.R). The country R calculations are the same as in the RStudio and coding-assistant routes.
 
 Open the complete extracted repository, then open a terminal **in its root**, where `README.md` and `build_reports.R` live. `Rscript --version` must work in that terminal; on Windows this may require adding your R installation's executable directory to PATH. The RStudio workflow locates its own R executable and does not require that PATH setup.
 
@@ -200,6 +203,22 @@ analysis_results$planning_overall
 
 `run_analysis()` installs/loads the declared packages before calculating results. It returns numerical tables in R and writes numerical files; it does not create the national HTML or a new PPTX. To return to the automatic HTML workflow, run `Sys.setenv(DHS_AUTO_RUN = "true")` before sourcing the report R file again.
 
+## Option 3 — Coding assistant
+
+Choose this route if you want an assistant with **file and terminal access** to execute the repository's existing scripts. It must have access to R, the code and your authorized IR files in the environment where the analysis runs. A repository link alone does not supply the confidential data. This is another way to execute the same analyses, not a different statistical approach.
+
+1. Give it the [repository link](https://github.com/graciasierra6/Discontinuation-analyses) and specify **Ethiopia, Nigeria or DRC**, or one of the [extensions reports](#optional-extensions-maps-and-state-analyses).
+2. Make the original IR file available privately in that execution environment. Use the [country/file table](#before-your-first-run) to choose the correct release. Extensions and maps require all three IRs. Keep microdata out of GitHub.
+3. Ask it to obtain the repository, read this README and [data-access instructions](docs/data-access.md), and check R and the required software. The scripts handle package setup. DRC additionally needs LibreOffice for its slide-preview gallery.
+4. Ask it to execute the existing [terminal workflow](#option-1--terminal), supplying the input location at runtime and choosing a **new private output folder outside the repository**. It should preserve the analytical definitions and reviewed HTML/PPTX files.
+5. Ask for the command, commit, completion status, validation comparisons and location of the generated HTML. Reviewing source code or running `--check` alone does not reproduce results.
+
+**Request to copy for one national report:**
+
+> Reproduce the Nigeria national report from https://github.com/graciasierra6/Discontinuation-analyses using the authorized NGIR8BFL.dta file that I will make available privately. Obtain the repository and read README.md and docs/data-access.md. Run build_reports.R with --country=Nigeria, the IR supplied through --ir-file, and a new private --output-dir outside the repository. Let the workflow prepare its dependencies and run the full numerical/report comparisons. Use the existing analysis without changing definitions or the reviewed reports. Return the commit, executed command, completion status, comparison results and generated HTML location. Explain any failures or differences. Do not commit, push or upload microdata.
+
+For Ethiopia, substitute `Ethiopia` and `ETIR8AFL.dta`; for DRC, substitute `DRC` and `CDIR81FL.dta`. For extensions, select the linked report entry and follow its input instructions instead of the national builder. The assistant must execute and inspect the run; its choice of interface does not itself verify reproduction.
+
 ## How a single-file report starts
 
 The entry obtains supporting code and reviewed comparison assets from a [fixed public source revision](https://github.com/graciasierra6/Discontinuation-analyses/tree/78b16c17deeb5ab359977d276e8a496c9190a65a). Every cached file is checked against its SHA-256 checksum before use. This public cache contains code, public inputs and report references; it does not contain IR microdata.
@@ -283,7 +302,7 @@ Historical and AFT planning account for method and elapsed use. Main calculation
 
 Verification on 23 November 2026 used fresh authorized-IR builds with 500 joint planning replicates per country, followed by targeted rechecks of Nigeria's supplemental current-user pathway correction. The resulting 515 HTML tables, 171 embedded figures and 168 editable presentation tables reconcile with the reviewed references. All 13,349 planning estimate/interval records matched the validated baseline exactly. Nigeria's supplemental pathway now includes permanent users consistently in its table and figure; this correction does not change the main planning results. A source-only test does not certify a complete numerical rebuild. The Windows serial branch is implemented and tested through portable checks; a full build has not yet been run on a native Windows host.
 
-The new independent-entry structure has passed isolated-file setup, public-download/checksum, file-picker and report-dispatch checks. End-to-end numerical rechecks continue after this structure update. The isolated Ethiopia numerical run already matches all 2,687 planning estimate/interval records and all 500 planning replicates exactly; its remaining regional analyses are still running. The saved reports and PPTX files have not been changed by the startup update. Kano, Kaduna and Lagos are outside this update.
+The new independent-entry structure has passed isolated-file setup, public-download/checksum, file-picker and report-dispatch checks. Isolated-file maps and return/continuation runs have also rebuilt all three extensions HTML files byte for byte from the original IRs: 18,855 map values match exactly, and 9,362 extensions values differ by at most 1.43 × 10⁻¹⁴ from the checked baseline. National numerical rechecks continue after this structure update. The isolated Ethiopia numerical run already matches all 2,687 planning estimate/interval records and all 500 planning replicates exactly; its remaining regional analyses are still running. The saved reports and PPTX files have not been changed by the startup update. Kano, Kaduna and Lagos are outside this update.
 
 For exact package restoration, advanced users may install `renv` and run `renv::restore(lockfile="renv.lock", prompt=FALSE)` from the repository root. Automatic setup installs missing R packages; it does not silently replace existing versions. Different R/BLAS, package or font environments can introduce small numerical or rendering differences.
 
